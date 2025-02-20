@@ -1,0 +1,130 @@
+<template>
+  <div class="min-h-screen flex">
+    <!-- Fixed Left Sidebar (1/3 width) -->
+    <div class="w-1/3 fixed top-16 bottom-0 left-0 bg-white/90 border-r border-gray-200/50 backdrop-blur-sm">
+      <!-- Total Summary Section (1/3 height) -->
+      <div class="h-1/3 p-6 border-b border-gray-200/50">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Selected Products</h2>
+        <div class="text-center space-y-4">
+          <div>
+            <p class="text-sm text-gray-500">Total Amount</p>
+            <p class="text-2xl font-bold text-green-600">{{ formatCurrency(totalAmount) }}</p>
+          </div>
+          <button 
+            @click="submitToBalance"
+            class="w-full px-6 py-4 text-lg font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-0.5 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="selectedProducts.length === 0"
+          >
+            Add to Balance
+          </button>
+        </div>
+      </div>
+      <!-- Selected Products List (2/3 height) -->
+      <div class="h-2/3 overflow-y-auto">
+        <div class="p-6 space-y-4">
+          <template v-if="selectedProducts.length > 0">
+            <div v-for="product in selectedProducts" :key="product.id" class="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+              <div>
+                <h4 class="font-medium text-gray-800">{{ product.name }}</h4>
+                <p class="text-sm text-gray-500">{{ formatCurrency(product.price) }}</p>
+              </div>
+              <button @click="removeProduct(product)" class="text-red-500 hover:text-red-600">
+                <span class="sr-only">Remove</span>
+                ×
+              </button>
+            </div>
+          </template>
+          <p v-else class="text-sm text-gray-500 text-center">No products selected</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scrollable Right Content (2/3 width) -->
+    <div class="w-2/3 ml-[33.333333%] min-h-screen">
+      <div class="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <!-- Product Cards -->
+          <div
+            v-for="product in products"
+            :key="product.id"
+            class="card hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+            :class="{ 'ring-2 ring-blue-500': isSelected(product) }"
+            @click="toggleProduct(product)"
+          >
+            <div class="card-body">
+              <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ product.name }}</h3>
+              <p class="text-sm text-gray-500 mb-4">{{ product.description }}</p>
+              <div class="flex justify-between items-center">
+                <p class="text-lg font-bold text-blue-600">{{ formatCurrency(product.price) }}</p>
+                <div class="h-6 w-6 rounded-full border-2 flex items-center justify-center" :class="[isSelected(product) ? 'border-blue-500 bg-blue-500' : 'border-gray-300']">
+                  <svg v-if="isSelected(product)" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { formatCurrency } from '~/utils/currency'
+import { useTransactions } from '~/composables/useTransactions'
+
+// Sample products data
+const products = ref([
+  { id: 1, name: 'Basic Package', description: 'Essential features for small businesses', price: 29.99 },
+  { id: 2, name: 'Pro Package', description: 'Advanced features for growing businesses', price: 59.99 },
+  { id: 3, name: 'Enterprise Package', description: 'Complete solution for large organizations', price: 99.99 },
+  { id: 4, name: 'Starter Kit', description: 'Perfect for beginners', price: 19.99 },
+  { id: 5, name: 'Premium Bundle', description: 'All-in-one solution with premium support', price: 149.99 },
+  { id: 6, name: 'Custom Package', description: 'Tailored to your specific needs', price: 79.99 },
+  { id: 7, name: 'Team Package', description: 'Ideal for small teams', price: 89.99 },
+  { id: 8, name: 'Business Suite', description: 'Complete business management solution', price: 199.99 },
+  { id: 9, name: 'Developer Tools', description: 'Essential tools for developers', price: 49.99 }
+])
+
+const selectedProducts = ref([])
+
+const totalAmount = computed(() => {
+  return selectedProducts.value.reduce((sum, product) => sum + product.price, 0)
+})
+
+const isSelected = (product) => {
+  return selectedProducts.value.some(p => p.id === product.id)
+}
+
+const toggleProduct = (product) => {
+  const index = selectedProducts.value.findIndex(p => p.id === product.id)
+  if (index === -1) {
+    selectedProducts.value.push(product)
+  } else {
+    selectedProducts.value.splice(index, 1)
+  }
+}
+
+const removeProduct = (product) => {
+  const index = selectedProducts.value.findIndex(p => p.id === product.id)
+  if (index !== -1) {
+    selectedProducts.value.splice(index, 1)
+  }
+}
+
+const { addTransaction } = useTransactions()
+
+const submitToBalance = () => {
+  if (selectedProducts.value.length === 0) return
+  
+  addTransaction({
+    description: `Catalog Purchase - ${selectedProducts.value.length} items`,
+    amount: totalAmount.value,
+    date: new Date().toISOString().split('T')[0]
+  })
+
+  selectedProducts.value = []
+}
+</script>
