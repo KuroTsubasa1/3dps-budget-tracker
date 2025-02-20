@@ -25,6 +25,9 @@
         <h2 class="text-lg font-semibold text-gray-800">Add Transaction</h2>
       </div>
       <div class="card-body">
+        <div v-if="error" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-sm text-red-600">{{ error }}</p>
+        </div>
         <form class="space-y-6" @submit.prevent="handleAddTransaction">
           <div class="space-y-6">
             <div class="flex gap-4 mb-4">
@@ -45,7 +48,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
-              <input type="text" class="input w-full text-lg" placeholder="Enter description" v-model="transactionDescription">
+              <input type="text" :class="[`input w-full text-lg`, error && !transactionDescription ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']" placeholder="Enter description" v-model="transactionDescription">
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Amount</label>
@@ -111,6 +114,8 @@ import { ref } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
+const error = ref('')
+
 const { transactions, earnings, addTransaction: addTransactionToStore } = useTransactions()
 
 const transactionType = ref('income')
@@ -120,19 +125,24 @@ const transactionDate = ref(new Date().toISOString().split('T')[0])
 
 const handleAddTransaction = (e) => {
   e.preventDefault()
-  
-  const amount = transactionAmount.value ? parseFloat(transactionAmount.value) : 0
-  
-  if (!amount || !transactionDescription.value) {
-    alert('Please enter both amount and description')
+  error.value = ''
+
+  if (!transactionDescription.value?.trim()) {
+    error.value = 'Please enter a description for the transaction'
     return
   }
 
+  if (!transactionAmount.value || Number(transactionAmount.value) <= 0) {
+    error.value = 'Please enter a valid amount'
+    return
+  }
+
+  const amount = parseFloat(transactionAmount.value)
   const finalAmount = transactionType.value === 'expense' ? -amount : amount
 
   addTransactionToStore({
     id: Date.now(),
-    description: transactionDescription.value,
+    description: transactionDescription.value.trim(),
     amount: finalAmount,
     date: transactionDate.value
   })
@@ -140,6 +150,7 @@ const handleAddTransaction = (e) => {
   // Reset form
   transactionDescription.value = ''
   transactionAmount.value = ''
+  error.value = ''
 }
 
 const appendNumber = (num) => {
