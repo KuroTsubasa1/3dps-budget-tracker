@@ -15,6 +15,9 @@
               <NuxtLink to="/catalog" :class="[`nav-link inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`, $route.path === '/catalog' ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700']">
                 Catalog
               </NuxtLink>
+              <NuxtLink to="/business-card" :class="[`nav-link inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`, $route.path === '/business-card' ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700']">
+                Business Card
+              </NuxtLink>
             </div>
           </div>
           <div class="flex items-center">

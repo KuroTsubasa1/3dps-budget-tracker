@@ -13,6 +13,8 @@
     "@types/chart.js": "^2.9.41",
     "chart.js": "^4.4.8",
     "nuxt": "^3.15.4",
+    "qrcode-vue": "^1.2.0",
+    "qrcode-vue3": "^1.7.1",
     "vue": "latest",
     "vue-router": "latest"
   },
