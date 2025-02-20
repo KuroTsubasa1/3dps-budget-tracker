@@ -25,13 +25,18 @@
           <template v-if="selectedProducts.length > 0">
             <div v-for="product in selectedProducts" :key="product.id" class="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
               <div>
-                <h4 class="font-medium text-gray-800">{{ product.name }}</h4>
-                <p class="text-sm text-gray-500">{{ formatCurrency(product.price) }}</p>
+                <h4 class="font-medium text-gray-800">{{ product.name }} (x{{ product.quantity }})</h4>
+                <p class="text-sm text-gray-500">{{ formatCurrency(product.price * product.quantity) }}</p>
               </div>
-              <button @click="removeProduct(product)" class="text-red-500 hover:text-red-600">
-                <span class="sr-only">Remove</span>
-                ×
-              </button>
+              <div class="flex items-center space-x-2">
+                <button @click="decrementQuantity(product)" class="text-blue-500 hover:text-blue-600 px-2">−</button>
+                <span class="text-gray-600">{{ product.quantity }}</span>
+                <button @click="incrementQuantity(product)" class="text-blue-500 hover:text-blue-600 px-2">+</button>
+                <button @click="removeProduct(product)" class="text-red-500 hover:text-red-600 ml-2">
+                  <span class="sr-only">Remove</span>
+                  ×
+                </button>
+              </div>
             </div>
           </template>
           <p v-else class="text-sm text-gray-500 text-center">No products selected</p>
@@ -49,17 +54,20 @@
             :key="product.id"
             class="card hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
             :class="{ 'ring-2 ring-blue-500': isSelected(product) }"
-            @click="toggleProduct(product)"
+            @click="incrementQuantity(product)"
           >
             <div class="card-body">
               <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ product.name }}</h3>
               <p class="text-sm text-gray-500 mb-4">{{ product.description }}</p>
               <div class="flex justify-between items-center">
                 <p class="text-lg font-bold text-blue-600">{{ formatCurrency(product.price) }}</p>
-                <div class="h-6 w-6 rounded-full border-2 flex items-center justify-center" :class="[isSelected(product) ? 'border-blue-500 bg-blue-500' : 'border-gray-300']">
-                  <svg v-if="isSelected(product)" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                  </svg>
+                <div class="flex items-center space-x-2">
+                  <template v-if="isSelected(product)">
+                    <button @click.stop="decrementQuantity(product)" class="text-blue-500 hover:text-blue-600 px-2">−</button>
+                    <span class="text-gray-600 w-6 text-center">{{ product.quantity }}</span>
+                    <button @click.stop="incrementQuantity(product)" class="text-blue-500 hover:text-blue-600 px-2">+</button>
+                  </template>
+                  <div v-else class="h-6 w-6 rounded-full border-2 border-gray-300 flex items-center justify-center"></div>
                 </div>
               </div>
             </div>
@@ -77,41 +85,39 @@ import { useTransactions } from '~/composables/useTransactions'
 
 // Sample products data
 const products = ref([
-  { id: 1, name: 'Basic Package', description: 'Essential features for small businesses', price: 29.99 },
-  { id: 2, name: 'Pro Package', description: 'Advanced features for growing businesses', price: 59.99 },
-  { id: 3, name: 'Enterprise Package', description: 'Complete solution for large organizations', price: 99.99 },
-  { id: 4, name: 'Starter Kit', description: 'Perfect for beginners', price: 19.99 },
-  { id: 5, name: 'Premium Bundle', description: 'All-in-one solution with premium support', price: 149.99 },
-  { id: 6, name: 'Custom Package', description: 'Tailored to your specific needs', price: 79.99 },
-  { id: 7, name: 'Team Package', description: 'Ideal for small teams', price: 89.99 },
-  { id: 8, name: 'Business Suite', description: 'Complete business management solution', price: 199.99 },
-  { id: 9, name: 'Developer Tools', description: 'Essential tools for developers', price: 49.99 }
-])
+  { id: 1, name: 'Classic Pokéball', description: '3D printed classic red and white Pokéball, perfect display size', price: 24.99 },
+  { id: 2, name: 'Great Ball Set', description: 'Set of 3 blue Great Balls with enhanced detail', price: 59.99 },
+  { id: 3, name: 'Master Ball Premium', description: 'Highly detailed purple Master Ball with metallic finish', price: 49.99 },
+  { id: 4, name: 'Mini Pokéball Collection', description: 'Set of 6 miniature Pokéballs', price: 39.99 },
+  { id: 5, name: 'Ultra Ball Deluxe', description: 'Large Ultra Ball with opening mechanism', price: 44.99 },
+  { id: 6, name: 'Safari Ball Bundle', description: 'Set of 2 Safari Balls with display stand', price: 34.99 },
+  { id: 7, name: 'Love Ball Special', description: 'Pink Love Ball with heart details, perfect gift', price: 29.99 },
+  { id: 8, name: 'Luxury Ball Elite', description: 'Premium black and gold Luxury Ball', price: 54.99 },
+  { id: 9, name: 'Quick Ball Starter', description: 'Blue and yellow Quick Ball, beginner-friendly', price: 19.99 }
+].map(product => ({ ...product, quantity: 0 })))
 
-const selectedProducts = ref([])
+const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
 
 const totalAmount = computed(() => {
-  return selectedProducts.value.reduce((sum, product) => sum + product.price, 0)
+  return products.value.reduce((sum, product) => sum + (product.price * product.quantity), 0)
 })
 
 const isSelected = (product) => {
-  return selectedProducts.value.some(p => p.id === product.id)
+  return product.quantity > 0
 }
 
-const toggleProduct = (product) => {
-  const index = selectedProducts.value.findIndex(p => p.id === product.id)
-  if (index === -1) {
-    selectedProducts.value.push(product)
-  } else {
-    selectedProducts.value.splice(index, 1)
+const incrementQuantity = (product) => {
+  product.quantity++
+}
+
+const decrementQuantity = (product) => {
+  if (product.quantity > 0) {
+    product.quantity--
   }
 }
 
 const removeProduct = (product) => {
-  const index = selectedProducts.value.findIndex(p => p.id === product.id)
-  if (index !== -1) {
-    selectedProducts.value.splice(index, 1)
-  }
+  product.quantity = 0
 }
 
 const { addTransaction } = useTransactions()
@@ -125,6 +131,7 @@ const submitToBalance = () => {
     date: new Date().toISOString().split('T')[0]
   })
 
-  selectedProducts.value = []
+  // Reset all product quantities to 0
+  products.value.forEach(product => product.quantity = 0)
 }
 </script>
