@@ -47,16 +47,32 @@
     <!-- Scrollable Right Content (2/3 width) -->
     <div class="w-2/3 ml-[33.333333%] min-h-screen">
       <div class="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div v-if="loading" class="flex justify-center items-center h-64">
+          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+        <div v-else-if="error" class="text-center p-6 bg-red-50 rounded-xl">
+          <p class="text-red-600">{{ error }}</p>
+          <button @click="fetchProducts" class="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200">
+            Try Again
+          </button>
+        </div>
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <!-- Product Cards -->
           <div
             v-for="product in products"
             :key="product.id"
-            class="card hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+            class="card hover:scale-[1.02] transition-transform duration-300 cursor-pointer bg-white border border-gray-200/50 rounded-xl shadow-sm hover:shadow-lg p-4 mb-2"
             :class="{ 'ring-2 ring-blue-500': isSelected(product) }"
             @click="incrementQuantity(product)"
           >
             <div class="card-body">
+              <div v-if="product.images && product.images.length > 0" class="mb-4 h-48 overflow-hidden rounded-lg bg-gray-50">
+                <img 
+                  :src="`https://pocket.lasseharm.space/api/files/${product.collectionId}/${product.id}/${product.images[0]}?thumb=300x300`"
+                  :alt="product.name"
+                  class="w-full h-full object-cover"
+                />
+              </div>
               <h3 class="text-lg font-semibold text-gray-800 mb-2">{{ product.name }}</h3>
               <p class="text-sm text-gray-500 mb-4">{{ product.description }}</p>
               <div class="flex justify-between items-center">
@@ -79,22 +95,35 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
-// Sample products data
-const products = ref([
-  { id: 1, name: 'Classic Pokéball', description: '3D printed classic red and white Pokéball, perfect display size', price: 24.99 },
-  { id: 2, name: 'Great Ball Set', description: 'Set of 3 blue Great Balls with enhanced detail', price: 59.99 },
-  { id: 3, name: 'Master Ball Premium', description: 'Highly detailed purple Master Ball with metallic finish', price: 49.99 },
-  { id: 4, name: 'Mini Pokéball Collection', description: 'Set of 6 miniature Pokéballs', price: 39.99 },
-  { id: 5, name: 'Ultra Ball Deluxe', description: 'Large Ultra Ball with opening mechanism', price: 44.99 },
-  { id: 6, name: 'Safari Ball Bundle', description: 'Set of 2 Safari Balls with display stand', price: 34.99 },
-  { id: 7, name: 'Love Ball Special', description: 'Pink Love Ball with heart details, perfect gift', price: 29.99 },
-  { id: 8, name: 'Luxury Ball Elite', description: 'Premium black and gold Luxury Ball', price: 54.99 },
-  { id: 9, name: 'Quick Ball Starter', description: 'Blue and yellow Quick Ball, beginner-friendly', price: 19.99 }
-].map(product => ({ ...product, quantity: 0 })))
+const products = ref([])
+const loading = ref(false)
+const error = ref(null)
+
+const fetchProducts = async () => {
+  loading.value = true
+  error.value = null
+  try {
+    const response = await fetch('https://pocket.lasseharm.space/api/collections/budget_tracket_catalog/records')
+    if (!response.ok) throw new Error('Failed to fetch products')
+    const data = await response.json()
+    products.value = data.items.map(item => ({
+      ...item,
+      quantity: 0
+    }))
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchProducts()
+})
 
 const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
 
@@ -125,8 +154,12 @@ const { addTransaction } = useTransactions()
 const submitToBalance = () => {
   if (selectedProducts.value.length === 0) return
   
+  const productNames = selectedProducts.value
+    .map(product => `${product.name} (${formatCurrency(product.price)} × ${product.quantity})`)
+    .join('\n')
+
   addTransaction({
-    description: `Catalog Purchase - ${selectedProducts.value.length} items`,
+    description: `3D Printing Products:\n${productNames}`,
     amount: totalAmount.value,
     date: new Date().toISOString().split('T')[0]
   })
