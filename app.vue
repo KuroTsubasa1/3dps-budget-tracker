@@ -21,7 +21,7 @@
             </div>
           </div>
           <div class="flex items-center">
-            <div class="nav-balance transition-all duration-300" :class="{ 'opacity-100': isBalanceHidden, 'opacity-0': !isBalanceHidden }">
+            <div class="nav-balance transition-all duration-300" :class="{ 'opacity-0': isBalanceHidden, 'opacity-100': !isBalanceHidden }">
               <p class="text-sm font-medium" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings) }}</p>
             </div>
           </div>
