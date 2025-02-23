@@ -499,4 +499,51 @@ const focusFirstProduct = () => {
   const firstProduct = document.querySelector('.card')
   if (firstProduct) firstProduct.focus()
 }
+// ...
+const useKeyboardShortcuts = () => {
+  const handleKeyPress = (event) => {
+    if (event.target.tagName === 'INPUT') return
+
+    switch(event.key.toLowerCase()) {
+      case '/': // Quick search
+      case 'f': // Shift + F for search
+        if (event.key === 'f' && !event.shiftKey) return
+        event.preventDefault()
+        document.querySelector('input[placeholder="Search products..."]')?.focus()
+        break
+      case 'b': // Toggle bulk selection mode
+        event.preventDefault()
+        toggleBulkMode()
+        break
+      case 'escape': // Clear selection
+        clearSelection()
+        break
+      case 'enter': // Add selected to cart
+        if (selectedProducts.value.length > 0) {
+          submitToBalance()
+        }
+        break
+    }
+  }
+
+  onMounted(() => {
+    window.addEventListener('keydown', handleKeyPress)
+  })
+
+  onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyPress)
+  })
+}
+
+const bulkMode = ref(false)
+const toggleBulkMode = () => {
+  bulkMode.value = !bulkMode.value
+}
+
+const clearSelection = () => {
+  products.value.forEach(product => product.quantity = 0)
+}
+
+// Initialize keyboard shortcuts
+useKeyboardShortcuts()
 </script>
