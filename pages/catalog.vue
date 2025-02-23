@@ -67,7 +67,7 @@
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <!-- Product Cards -->
           <div
-            v-for="product in products"
+            v-for="product in filteredProducts"
             :key="product.id"
             class="card hover:scale-[1.02] transition-transform duration-300 cursor-pointer bg-white border border-gray-200/50 rounded-xl shadow-sm hover:shadow-lg p-4 mb-2"
             :class="{ 'ring-2 ring-blue-500': isSelected(product) }"
