@@ -47,13 +47,29 @@
     <!-- Scrollable Right Content (2/3 width) -->
     <div class="w-2/3 ml-[33.333333%] min-h-screen">
       <div class="max-w-5xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <div class="mb-6">
-          <input
-            type="text"
-            v-model="searchQuery"
-            placeholder="Search products..."
-            class="w-full px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
-          />
+        <div class="mb-6 flex justify-between items-center">
+          <div class="flex items-center space-x-4">
+            <input
+              type="text"
+              v-model="searchQuery"
+              placeholder="Search products..."
+              class="px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+              @keyup.enter="focusFirstProduct"
+            />
+            <select
+              v-model="sortOption"
+              class="px-4 py-2 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent"
+            >
+              <option value="name">Sort by Name</option>
+              <option value="price">Sort by Price</option>
+            </select>
+            <button
+              @click="sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'"
+              class="p-2 rounded-xl border border-gray-200 hover:bg-gray-50"
+            >
+              {{ sortDirection === 'asc' ? '↑' : '↓' }}
+            </button>
+          </div>
         </div>
         <div v-if="loading" class="flex justify-center items-center h-64">
           <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -129,8 +145,52 @@ const fetchProducts = async () => {
   }
 }
 
+const sortOption = ref('name') // 'name', 'price'
+const sortDirection = ref('asc') // 'asc', 'desc'
+const favorites = ref([])
+
+const toggleFavorite = (product) => {
+  const index = favorites.value.findIndex(fav => fav.id === product.id)
+  if (index === -1) {
+    favorites.value.push(product)
+  } else {
+    favorites.value.splice(index, 1)
+  }
+  localStorage.setItem('favorites', JSON.stringify(favorites.value))
+}
+
+const isFavorite = (product) => {
+  return favorites.value.some(fav => fav.id === product.id)
+}
+
+const sortProducts = (products) => {
+  return [...products].sort((a, b) => {
+    const modifier = sortDirection.value === 'asc' ? 1 : -1
+    if (sortOption.value === 'price') {
+      return (a.price - b.price) * modifier
+    }
+    return a.name.localeCompare(b.name) * modifier
+  })
+}
+
+const filteredProducts = computed(() => {
+  let result = products.value
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    result = result.filter(product => 
+      product.name.toLowerCase().includes(query) ||
+      product.description.toLowerCase().includes(query)
+    )
+  }
+  return sortProducts(result)
+})
+
 onMounted(() => {
   fetchProducts()
+  const savedFavorites = localStorage.getItem('favorites')
+  if (savedFavorites) {
+    favorites.value = JSON.parse(savedFavorites)
+  }
 })
 
 const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
@@ -177,13 +237,28 @@ const submitToBalance = () => {
 }
 // Add to script setup section
 const searchQuery = ref('')
-
-const filteredProducts = computed(() => {
-  if (!searchQuery.value) return products.value
-  const query = searchQuery.value.toLowerCase()
-  return products.value.filter(product => 
-    product.name.toLowerCase().includes(query) ||
-    product.description.toLowerCase().includes(query)
-  )
+// Add keyboard shortcuts
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyboardShortcuts)
 })
+
+const handleKeyboardShortcuts = (event) => {
+  if (event.ctrlKey || event.metaKey) {
+    switch(event.key) {
+      case 'f':
+        event.preventDefault()
+        document.querySelector('input[type="text"]').focus()
+        break
+      case 's':
+        event.preventDefault()
+        document.querySelector('select').focus()
+        break
+    }
+  }
+}
+
+const focusFirstProduct = () => {
+  const firstProduct = document.querySelector('.card')
+  if (firstProduct) firstProduct.focus()
+}
 </script>
