@@ -308,6 +308,29 @@
           </div>
         </div>
       </div>
+      <!-- Purchase Statistics -->
+      <div class="mb-8">
+        <div class="bg-white/90 rounded-xl p-6 shadow-sm border border-gray-200/50">
+          <h3 class="text-lg font-semibold text-gray-800 mb-4">Purchase Statistics</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="p-4 bg-blue-50 rounded-lg">
+              <p class="text-sm text-gray-600">Most Purchased Item</p>
+              <p class="text-xl font-semibold text-blue-700">{{ mostPurchasedProduct?.name || 'N/A' }}</p>
+              <p class="text-sm text-gray-500">{{ mostPurchasedProduct?.quantity || 0 }} times</p>
+            </div>
+            <div class="p-4 bg-green-50 rounded-lg">
+              <p class="text-sm text-gray-600">Total Purchases</p>
+              <p class="text-xl font-semibold text-green-700">{{ formatCurrency(totalPurchases) }}</p>
+              <p class="text-sm text-gray-500">All time</p>
+            </div>
+            <div class="p-4 bg-purple-50 rounded-lg">
+              <p class="text-sm text-gray-600">Average Order Value</p>
+              <p class="text-xl font-semibold text-purple-700">{{ formatCurrency(averageOrderValue) }}</p>
+              <p class="text-sm text-gray-500">Per transaction</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -320,6 +343,7 @@ import { useTransactions } from '~/composables/useTransactions'
 const products = ref([])
 const loading = ref(false)
 const error = ref(null)
+const searchQuery = ref('')
 
 const fetchProducts = async () => {
   loading.value = true
@@ -429,27 +453,47 @@ const submitToBalance = () => {
   // Reset all product quantities to 0
   products.value.forEach(product => product.quantity = 0)
 }
+
 // Add to script setup section
-const searchQuery = ref('')
-// Add keyboard shortcuts
-onMounted(() => {
-  window.addEventListener('keydown', handleKeyboardShortcuts)
+const totalPurchases = computed(() => {
+  return transactions.value.reduce((sum, transaction) => {
+    if (transaction.description.startsWith('3D Printing Products:')) {
+      return sum + transaction.amount
+    }
+    return sum
+  }, 0)
 })
 
-const handleKeyboardShortcuts = (event) => {
-  if (event.ctrlKey || event.metaKey) {
-    switch(event.key) {
-      case 'f':
-        event.preventDefault()
-        document.querySelector('input[type="text"]').focus()
-        break
-      case 's':
-        event.preventDefault()
-        document.querySelector('select').focus()
-        break
+const averageOrderValue = computed(() => {
+  const printingTransactions = transactions.value.filter(t => 
+    t.description.startsWith('3D Printing Products:')
+  )
+  return printingTransactions.length > 0 ? 
+    totalPurchases.value / printingTransactions.length : 0
+})
+
+const mostPurchasedProduct = computed(() => {
+  const productCounts = {}
+  transactions.value.forEach(transaction => {
+    if (transaction.description.startsWith('3D Printing Products:')) {
+      const lines = transaction.description.split('\n')
+      lines.slice(1).forEach(line => {
+        const match = line.match(/(.*?) \(.*? × (\d+)\)$/)
+        if (match) {
+          const [, name, quantity] = match
+          productCounts[name] = (productCounts[name] || 0) + parseInt(quantity)
+        }
+      })
     }
-  }
-}
+  })
+  const sortedProducts = Object.entries(productCounts)
+    .sort(([,a], [,b]) => b - a)
+  return sortedProducts.length > 0 ? 
+    { name: sortedProducts[0][0], quantity: sortedProducts[0][1] } : null
+})
+
+// Add to imports
+const { transactions } = useTransactions()
 
 const focusFirstProduct = () => {
   const firstProduct = document.querySelector('.card')
