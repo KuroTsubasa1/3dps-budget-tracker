@@ -6,9 +6,9 @@
         <div class="flex justify-between h-16">
           <div class="flex items-center">
             <div class="flex-shrink-0 flex items-center">
-              <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">Budget Tracker</h1>
+              <h1 class="text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">Budget Tracker</h1>
             </div>
-            <div class="hidden sm:ml-8 sm:flex sm:space-x-8">
+            <div class="hidden md:ml-8 md:flex md:space-x-8">
               <NuxtLink to="/" :class="[`nav-link inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`, $route.path === '/' ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700']">
                 Dashboard
               </NuxtLink>
@@ -22,17 +22,22 @@
           </div>
           
           <div class="flex items-center">
-            <div class="nav-balance transition-all duration-300 hidden sm:block" :class="{ 'opacity-0': isBalanceHidden, 'opacity-100': !isBalanceHidden }">
+            <div class="nav-balance transition-all duration-300 hidden md:block" :class="{ 'opacity-0': isBalanceHidden, 'opacity-100': !isBalanceHidden }">
               <p class="text-sm font-medium" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings) }}</p>
             </div>
             
             <!-- Mobile menu button -->
             <button 
-              @click="isMobileMenuOpen = !isMobileMenuOpen" 
-              class="sm:hidden ml-2 bg-gray-50 p-2 rounded-md text-gray-500 hover:text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              @click="toggleMobileMenu" 
+              type="button"
+              class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-blue-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              aria-controls="mobile-menu"
+              :aria-expanded="isMobileMenuOpen"
             >
-              <span class="sr-only">Open main menu</span>
+              <span class="sr-only">{{ isMobileMenuOpen ? 'Close menu' : 'Open menu' }}</span>
+              <!-- Icon when menu is closed -->
               <svg 
+                :class="{'hidden': isMobileMenuOpen, 'block': !isMobileMenuOpen }"
                 class="h-6 w-6" 
                 xmlns="http://www.w3.org/2000/svg" 
                 fill="none" 
@@ -40,37 +45,37 @@
                 stroke="currentColor" 
                 aria-hidden="true"
               >
-                <path 
-                  v-if="isMobileMenuOpen" 
-                  stroke-linecap="round" 
-                  stroke-linejoin="round" 
-                  stroke-width="2" 
-                  d="M6 18L18 6M6 6l12 12" 
-                />
-                <path 
-                  v-else 
-                  stroke-linecap="round" 
-                  stroke-linejoin="round" 
-                  stroke-width="2" 
-                  d="M4 6h16M4 12h16M4 18h16" 
-                />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              <!-- Icon when menu is open -->
+              <svg 
+                :class="{'block': isMobileMenuOpen, 'hidden': !isMobileMenuOpen }"
+                class="h-6 w-6" 
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor" 
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
         </div>
       </div>
       
-      <!-- Mobile menu -->
+      <!-- Mobile menu, show/hide based on menu state -->
       <div 
-        v-if="isMobileMenuOpen" 
-        class="sm:hidden bg-white border-t border-gray-200 transition-all duration-300"
+        id="mobile-menu"
+        class="md:hidden"
+        :class="{ 'block': isMobileMenuOpen, 'hidden': !isMobileMenuOpen }"
       >
-        <div class="px-2 pt-2 pb-3 space-y-1">
+        <div class="px-2 pt-2 pb-3 space-y-1 border-t border-gray-200">
           <NuxtLink 
             to="/" 
             class="block px-3 py-2 rounded-md text-base font-medium transition-colors"
             :class="[$route.path === '/' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900']"
-            @click="isMobileMenuOpen = false"
+            @click="closeMobileMenu"
           >
             Dashboard
           </NuxtLink>
@@ -78,7 +83,7 @@
             to="/catalog" 
             class="block px-3 py-2 rounded-md text-base font-medium transition-colors"
             :class="[$route.path === '/catalog' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900']"
-            @click="isMobileMenuOpen = false"
+            @click="closeMobileMenu"
           >
             Catalog
           </NuxtLink>
@@ -86,7 +91,7 @@
             to="/business-card" 
             class="block px-3 py-2 rounded-md text-base font-medium transition-colors"
             :class="[$route.path === '/business-card' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900']"
-            @click="isMobileMenuOpen = false"
+            @click="closeMobileMenu"
           >
             Business Card
           </NuxtLink>
@@ -120,7 +125,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
@@ -128,7 +133,58 @@ const { earnings } = useTransactions()
 const isBalanceHidden = ref(false)
 const isMobileMenuOpen = ref(false)
 
+// Toggle mobile menu
+const toggleMobileMenu = () => {
+  isMobileMenuOpen.value = !isMobileMenuOpen.value
+  
+  // If menu is opened, add event listener to detect clicks outside the menu
+  if (isMobileMenuOpen.value) {
+    setTimeout(() => {
+      window.addEventListener('click', handleOutsideClick)
+    }, 100)
+  }
+}
+
+// Close mobile menu
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false
+  window.removeEventListener('click', handleOutsideClick)
+}
+
+// Handle clicks outside the menu to close it
+const handleOutsideClick = (event) => {
+  const mobileMenu = document.getElementById('mobile-menu')
+  const mobileMenuButton = document.querySelector('button[aria-controls="mobile-menu"]')
+  
+  if (mobileMenu && mobileMenuButton && 
+      !mobileMenu.contains(event.target) && 
+      !mobileMenuButton.contains(event.target)) {
+    closeMobileMenu()
+  }
+}
+
+// Close menu when resizing to desktop view
+const handleResize = () => {
+  if (window.innerWidth >= 768 && isMobileMenuOpen.value) {
+    closeMobileMenu()
+  }
+}
+
+// Clean up event listeners
+const cleanupEventListeners = () => {
+  window.removeEventListener('click', handleOutsideClick)
+  window.removeEventListener('resize', handleResize)
+}
+
+// Close menu when changing pages
+watch(() => window.location.pathname, () => {
+  if (isMobileMenuOpen.value) {
+    closeMobileMenu()
+  }
+})
+
 onMounted(() => {
+  // Balance visibility observer
   const observer = new IntersectionObserver(
     ([entry]) => {
       isBalanceHidden.value = !entry.isIntersecting
@@ -142,6 +198,17 @@ onMounted(() => {
   const balanceCard = document.querySelector('.balance-card')
   if (balanceCard) {
     observer.observe(balanceCard)
+  }
+  
+  // Add resize event listener
+  window.addEventListener('resize', handleResize)
+  
+  // Clean up on unmount
+  return () => {
+    cleanupEventListeners()
+    if (balanceCard) {
+      observer.unobserve(balanceCard)
+    }
   }
 })
 </script>
