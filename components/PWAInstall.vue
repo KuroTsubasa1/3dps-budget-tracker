@@ -29,17 +29,72 @@
 
 <script setup>
 import { ref } from 'vue'
-import { usePWA } from '~/composables/usePWA'
+import { useRegisterSW } from '@vite-pwa/nuxt/client'
 
-const { isInstallable, isInstalled, installApp: triggerInstall, updateAvailable, updateApp } = usePWA()
+const { 
+  needRefresh: [updateAvailable], 
+  updateServiceWorker: updateApp,
+  offlineReady: [isOfflineReady]
+} = useRegisterSW()
+
+// Track PWA installation state
+const isInstalled = ref(false)
+const isInstallable = ref(false)
+const deferredPrompt = ref(null)
 const showInstallPrompt = ref(true)
 
+// Called when the PWA is installed
 const installApp = async () => {
-  await triggerInstall()
+  if (!deferredPrompt.value) return
+  
+  // Show the install prompt
+  deferredPrompt.value.prompt()
+  
+  // Wait for the user to respond to the prompt
+  const { outcome } = await deferredPrompt.value.userChoice
+  
+  // Reset the deferred prompt variable
+  deferredPrompt.value = null
+  isInstallable.value = false
+  showInstallPrompt.value = false
+  
+  if (outcome === 'accepted') {
+    isInstalled.value = true
+  }
+}
+
+// Hide the install prompt without installing
+const dismissInstall = () => {
   showInstallPrompt.value = false
 }
 
-const dismissInstall = () => {
-  showInstallPrompt.value = false
+// Check if the app is already installed
+const checkAppInstalled = () => {
+  if (window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true) {
+    isInstalled.value = true
+  }
+}
+
+// Listen for beforeinstallprompt event to detect if app is installable
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    // Prevent the mini-infobar from appearing on mobile
+    e.preventDefault()
+    
+    // Store the event so it can be triggered later
+    deferredPrompt.value = e
+    isInstallable.value = true
+  })
+  
+  // Listen for app installed event
+  window.addEventListener('appinstalled', () => {
+    isInstalled.value = true
+    isInstallable.value = false
+    deferredPrompt.value = null
+  })
+  
+  // Check if the app is already installed on mount
+  checkAppInstalled()
 }
 </script>
