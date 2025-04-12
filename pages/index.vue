@@ -125,7 +125,7 @@
         </div>
         <div>
           <h2 class="text-lg font-semibold text-gray-800">Add Transaction</h2>
-          <p class="text-xs text-gray-500">Record your income and expenses</p>
+          <p class="text-xs text-gray-500 mb-3">Record your income and expenses</p>
         </div>
       </div>
       <div class="card-body">
@@ -147,35 +147,35 @@
         </div>
         <form class="space-y-6" @submit.prevent="handleAddTransaction">
           <div class="space-y-6">
-            <div class="flex gap-4 mb-6">
+            <div class="flex gap-2 mb-3">
               <label class="flex-1">
                 <input type="radio" name="transactionType" value="income" v-model="transactionType" class="hidden">
-                <div class="p-3 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
+                <div class="px-1.5 py-1.5 rounded-md text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
                     :class="[transactionType === 'income' 
-                      ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 ring-2 ring-green-500 transform -translate-y-1' 
+                      ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 ring-1 ring-green-500 transform -translate-y-0.5' 
                       : 'bg-white/90 border-gray-100 hover:bg-green-50/50']">
-                  <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-100 mb-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 mb-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
                   </div>
-                  <p class="text-sm font-medium" :class="[transactionType === 'income' ? 'text-green-700' : 'text-green-500']">Income</p>
-                  <p class="text-xs text-gray-400">Add funds</p>
+                  <p class="text-[9px] font-medium" :class="[transactionType === 'income' ? 'text-green-700' : 'text-green-500']">Income</p>
+                  <p class="text-[7px] text-gray-400">Add funds</p>
                 </div>
               </label>
               <label class="flex-1">
                 <input type="radio" name="transactionType" value="expense" v-model="transactionType" class="hidden">
-                <div class="p-3 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
+                <div class="px-1.5 py-1.5 rounded-md text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
                     :class="[transactionType === 'expense' 
-                      ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 ring-2 ring-red-500 transform -translate-y-1' 
+                      ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 ring-1 ring-red-500 transform -translate-y-0.5' 
                       : 'bg-white/90 border-gray-100 hover:bg-red-50/50']">
-                  <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 mb-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-100 mb-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" />
                     </svg>
                   </div>
-                  <p class="text-sm font-medium" :class="[transactionType === 'expense' ? 'text-red-700' : 'text-red-500']">Expense</p>
-                  <p class="text-xs text-gray-400">Record spending</p>
+                  <p class="text-[9px] font-medium" :class="[transactionType === 'expense' ? 'text-red-700' : 'text-red-500']">Expense</p>
+                  <p class="text-[7px] text-gray-400">Record spending</p>
                 </div>
               </label>
             </div>
