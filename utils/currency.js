@@ -1,6 +1,13 @@
-export const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('de-DE', {
+export const formatCurrency = (amount, format = 'EUR') => {
+  // Default mapping of currency to locale
+  const localeMap = {
+    'EUR': 'de-DE',
+    'USD': 'en-US',
+    'GBP': 'en-GB'
+  }
+  
+  return new Intl.NumberFormat(localeMap[format] || 'en-US', {
     style: 'currency',
-    currency: 'EUR'
+    currency: format
   }).format(amount)
 }

@@ -359,7 +359,7 @@
                   <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <p class="text-xs text-gray-500">{{ formatDate(transaction.date) }}</p>
+                  <p class="text-xs text-gray-500">{{ formatTransactionDate(transaction.date) }}</p>
                 </div>
                 <p v-if="transaction.notes" class="text-xs text-gray-400 mt-1 line-clamp-1">{{ transaction.notes }}</p>
               </div>
@@ -385,8 +385,10 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { formatCurrency } from '~/utils/currency'
+import { formatCurrency as defaultFormatCurrency } from '~/utils/currency'
+import { formatDate } from '~/utils/date'
 import { useTransactions } from '~/composables/useTransactions'
+import { useAppSettings } from '~/composables/useAppSettings'
 
 // Local form error
 const error = ref('')
@@ -462,6 +464,14 @@ const transactionAmount = ref('')
 const transactionNotes = ref('')
 const transactionDate = ref(new Date().toISOString().split('T')[0])
 
+// Get app settings
+const { displaySettings } = useAppSettings()
+
+// Format currency with settings
+const formatCurrency = (amount) => {
+  return defaultFormatCurrency(amount, displaySettings.currencyFormat)
+}
+
 // Sort transactions in reverse order (newest first)
 const sortedTransactions = computed(() => {
   return [...transactions.value].sort((a, b) => {
@@ -520,11 +530,7 @@ const backspace = () => {
   transactionAmount.value = transactionAmount.value.slice(0, -1)
 }
 
-const formatDate = (date) => {
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+const formatTransactionDate = (date) => {
+  return formatDate(date, displaySettings.dateFormat)
 }
 </script>
