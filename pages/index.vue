@@ -121,7 +121,7 @@
       <div class="card-body">
         <div class="space-y-4">
           <!-- Transaction Item -->
-          <div v-for="transaction in transactions" :key="transaction.id" class="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors duration-150">
+          <div v-for="transaction in sortedTransactions" :key="transaction.id" class="flex items-center justify-between p-4 hover:bg-gray-50 rounded-lg transition-colors duration-150">
             <div class="flex items-center space-x-4">
               <div class="flex-shrink-0">
                 <div :class="[`w-10 h-10 rounded-full flex items-center justify-center`, transaction.amount < 0 ? 'bg-red-100' : 'bg-green-100']">
@@ -147,7 +147,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
@@ -170,6 +170,13 @@ const transactionDescription = ref('')
 const transactionAmount = ref('')
 const transactionNotes = ref('')
 const transactionDate = ref(new Date().toISOString().split('T')[0])
+
+// Sort transactions in reverse order (newest first)
+const sortedTransactions = computed(() => {
+  return [...transactions.value].sort((a, b) => {
+    return b.id - a.id // Sort by id (timestamp) descending
+  })
+})
 
 const handleAddTransaction = async (e) => {
   e.preventDefault()
