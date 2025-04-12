@@ -26,17 +26,17 @@ export default defineNuxtConfig({
       start_url: '/',
       icons: [
         {
-          src: 'icons/icon-72x72.png',
+          src: '/icons/icon-72x72.png',
           sizes: '72x72',
           type: 'image/png'
         },
         {
-          src: 'icons/icon-192x192.png',
+          src: '/icons/icon-192x192.png',
           sizes: '192x192',
           type: 'image/png'
         },
         {
-          src: 'icons/icon-512x512.png',
+          src: '/icons/icon-512x512.png',
           sizes: '512x512',
           type: 'image/png',
           purpose: 'any maskable'
@@ -48,27 +48,27 @@ export default defineNuxtConfig({
       globPatterns: ['**/*.{js,css,html,png,svg,ico,json}'],
       runtimeCaching: [
         {
-          urlPattern: ({ url }) => {
-            return url.pathname.includes('/api/')
-          },
+          urlPattern: /^https:\/\/pocket\.lasseharm\.space\/api\//,
           handler: 'NetworkFirst',
           options: {
             cacheName: 'api-cache',
             expiration: {
               maxEntries: 100,
               maxAgeSeconds: 60 * 60 * 24 // 1 day
+            },
+            cacheableResponse: {
+              statuses: [0, 200]
             }
           }
         }
       ]
     },
-    client: {
-      installPrompt: true,
-      periodicSyncForUpdates: 20 // check for updates every 20 minutes
-    },
+    registerWebManifestInRouteRules: true,
+    writePlugin: true,
     devOptions: {
       enabled: true,
-      type: 'module'
+      type: 'module',
+      navigateFallback: '/'
     }
   }
 })
