@@ -8,7 +8,8 @@ const apiError = ref('')
 
 export const useTransactions = () => {
   const config = useRuntimeConfig()
-  const API_ENDPOINT = config.public.apiBaseUrl
+  const API_BASE_URL = config.public.apiBaseUrl
+  const API_ENDPOINT = config.public.apiEndpoint
   const API_TOKEN = config.public.apiToken
 
   const earnings = computed(() => 
@@ -31,7 +32,8 @@ export const useTransactions = () => {
     apiError.value = ''
     
     try {
-      const response = await fetch(API_ENDPOINT, {
+      const fullUrl = `${API_BASE_URL}${API_ENDPOINT}`
+      const response = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

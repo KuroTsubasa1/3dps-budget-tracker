@@ -7,7 +7,8 @@ export default defineNuxtConfig({
   ],
   runtimeConfig: {
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'https://pocket.lasseharm.space/api/collections/budget_tracker_transactions/records',
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'https://pocket.lasseharm.space/api/',
+      apiEndpoint: process.env.NUXT_PUBLIC_API_ENDPOINT || 'collections/budget_tracker_transactions/records',
       apiToken: process.env.NUXT_PUBLIC_API_TOKEN || ''
     }
   }
