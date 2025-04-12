@@ -138,32 +138,32 @@
             <div class="flex gap-4 mb-6">
               <label class="flex-1">
                 <input type="radio" name="transactionType" value="income" v-model="transactionType" class="hidden">
-                <div class="p-4 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
+                <div class="p-3 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
                     :class="[transactionType === 'income' 
                       ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200 ring-2 ring-green-500 transform -translate-y-1' 
                       : 'bg-white/90 border-gray-100 hover:bg-green-50/50']">
-                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-100 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
                   </div>
                   <p class="text-sm font-medium" :class="[transactionType === 'income' ? 'text-green-700' : 'text-green-500']">Income</p>
-                  <p class="text-xs text-gray-400 mt-1">Add funds</p>
+                  <p class="text-xs text-gray-400">Add funds</p>
                 </div>
               </label>
               <label class="flex-1">
                 <input type="radio" name="transactionType" value="expense" v-model="transactionType" class="hidden">
-                <div class="p-4 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
+                <div class="p-3 rounded-xl text-center cursor-pointer transition-all duration-300 ease-in-out shadow-sm hover:shadow-md border" 
                     :class="[transactionType === 'expense' 
                       ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200 ring-2 ring-red-500 transform -translate-y-1' 
                       : 'bg-white/90 border-gray-100 hover:bg-red-50/50']">
-                  <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-red-100 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" />
                     </svg>
                   </div>
                   <p class="text-sm font-medium" :class="[transactionType === 'expense' ? 'text-red-700' : 'text-red-500']">Expense</p>
-                  <p class="text-xs text-gray-400 mt-1">Record spending</p>
+                  <p class="text-xs text-gray-400">Record spending</p>
                 </div>
               </label>
             </div>
@@ -228,8 +228,7 @@
               <div class="mt-6">
                 <button 
                   type="submit" 
-                  class="w-full px-6 py-4 text-base font-medium text-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 ease-in-out transform hover:-translate-y-0.5 flex items-center justify-center"
-                  :class="[isLoading ? 'bg-gray-500' : transactionType === 'income' ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700' : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700']"
+                  class="w-full px-6 py-4 text-base font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 ease-in-out transform hover:-translate-y-0.5 flex items-center justify-center"
                   :disabled="isLoading">
                   <span v-if="isLoading" class="inline-block mr-2">
                     <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -237,7 +236,7 @@
                       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                   </span>
-                  {{ isLoading ? 'Saving...' : (transactionType === 'income' ? 'Add Income' : 'Add Expense') }}
+                  {{ isLoading ? 'Saving...' : 'Add to Balance' }}
                 </button>
               </div>
               <!-- Numpad for touch input -->
