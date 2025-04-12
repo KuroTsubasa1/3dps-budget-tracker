@@ -1,13 +1,15 @@
 import { ref, computed, onMounted } from 'vue'
+import { useRuntimeConfig } from 'nuxt/app'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
-const API_ENDPOINT = 'https://pocket.lasseharm.space/api/collections/budget_tracker_transactions/records'
-const API_TOKEN = 'dcsadcsdqwre23i234523obeigvdo3'
 const transactions = ref([])
 const isLoading = ref(false)
 const apiError = ref('')
 
 export const useTransactions = () => {
+  const config = useRuntimeConfig()
+  const API_ENDPOINT = config.public.apiBaseUrl
+  const API_TOKEN = config.public.apiToken
 
   const earnings = computed(() => 
     transactions.value.reduce((sum, transaction) => sum + transaction.amount, 0)
