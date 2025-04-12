@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.13.1",
+    "@vite-pwa/nuxt": "^1.0.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17"

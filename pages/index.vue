@@ -1,5 +1,27 @@
 <template>
   <div class="px-4 py-6 sm:px-0">
+    <!-- Network Status -->
+    <div class="mb-3 flex justify-between items-center">
+      <div class="flex items-center">
+        <span class="inline-block w-3 h-3 rounded-full mr-2" :class="syncStatus.isOnline ? 'bg-green-500' : 'bg-red-500'"></span>
+        <span class="text-sm font-medium" :class="syncStatus.isOnline ? 'text-green-700' : 'text-red-700'">
+          {{ syncStatus.isOnline ? 'Online' : 'Offline' }}
+        </span>
+      </div>
+      <div v-if="pendingTransactions.length > 0" class="flex items-center">
+        <span class="text-sm text-amber-700 mr-2">{{ pendingTransactions.length }} pending</span>
+        <button 
+          v-if="syncStatus.isOnline && pendingTransactions.length > 0" 
+          @click="syncTransactionsQueue" 
+          class="text-xs bg-blue-50 text-blue-600 rounded-full px-2 py-1 hover:bg-blue-100 transition-colors"
+          :disabled="queueSyncStatus === 'syncing'"
+        >
+          <span v-if="queueSyncStatus === 'syncing'">Syncing...</span>
+          <span v-else>Sync now</span>
+        </button>
+      </div>
+    </div>
+    
     <!-- Budget Summary Card -->
     <div class="card mb-6 balance-card">
       <div class="card-header">
@@ -131,7 +153,17 @@ import { useTransactions } from '~/composables/useTransactions'
 
 const error = ref('')
 
-const { transactions, earnings, addTransaction: addTransactionToStore, isLoading, apiError } = useTransactions()
+const { 
+  transactions, 
+  earnings, 
+  addTransaction: addTransactionToStore, 
+  isLoading, 
+  apiError,
+  syncStatus,
+  syncTransactionsQueue,
+  queueSyncStatus,
+  pendingTransactions
+} = useTransactions()
 
 const transactionType = ref('income')
 const transactionDescription = ref('')
