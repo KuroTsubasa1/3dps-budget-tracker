@@ -25,17 +25,38 @@
     <!-- Budget Summary Card -->
     <div class="card mb-6 balance-card">
       <div class="card-header">
-        <h2 class="text-lg font-semibold text-gray-800">Current Balance</h2>
+        <h2 class="text-lg font-semibold text-gray-800">Balance Summary</h2>
       </div>
       <div class="card-body">
-        <div class="text-center space-y-4">
-          <div>
-            <p class="text-sm text-gray-500">Available Balance</p>
-            <p class="text-2xl font-bold" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings) }}</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- All-time Balance -->
+          <div class="border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">All-time Balance</h3>
+            <div class="space-y-4">
+              <div>
+                <p class="text-sm text-gray-500">Total Balance</p>
+                <p class="text-2xl font-bold" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings) }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-gray-500">Japan Balance (10%)</p>
+                <p class="text-lg font-bold" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings * 0.1) }}</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <p class="text-sm text-gray-500">Japan Balance (10%)</p>
-            <p class="text-2xl font-bold" :class="[earnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(earnings * 0.1) }}</p>
+          
+          <!-- Today's Balance -->
+          <div class="pt-4 md:pt-0 md:pl-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Today's Balance</h3>
+            <div class="space-y-4">
+              <div>
+                <p class="text-sm text-gray-500">Today's Total</p>
+                <p class="text-2xl font-bold" :class="[todayEarnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(todayEarnings) }}</p>
+              </div>
+              <div>
+                <p class="text-sm text-gray-500">Today's Japan (10%)</p>
+                <p class="text-lg font-bold" :class="[todayEarnings >= 0 ? 'text-green-600' : 'text-red-600']">{{ formatCurrency(todayEarnings * 0.1) }}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -172,6 +193,7 @@ const errorTimers = ref({
 const { 
   transactions, 
   earnings, 
+  todayEarnings,
   addTransaction: addTransactionToStore, 
   isLoading, 
   apiError,

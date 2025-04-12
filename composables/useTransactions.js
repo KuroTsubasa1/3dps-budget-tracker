@@ -40,9 +40,19 @@ export const useTransactions = () => {
     }
   }, { immediate: true })
 
+  // Calculate all-time earnings/balance
   const earnings = computed(() => 
     transactions.value.reduce((sum, transaction) => sum + transaction.amount, 0)
   )
+  
+  // Calculate today's earnings/balance
+  const todayEarnings = computed(() => {
+    const today = new Date().toISOString().split('T')[0] // Format: YYYY-MM-DD
+    
+    return transactions.value
+      .filter(transaction => transaction.date === today)
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+  })
 
   const loadTransactions = () => {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -192,6 +202,7 @@ export const useTransactions = () => {
   return {
     transactions,
     earnings,
+    todayEarnings,
     addTransaction,
     isLoading,
     apiError,
