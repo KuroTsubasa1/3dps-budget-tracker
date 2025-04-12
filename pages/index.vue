@@ -28,6 +28,9 @@
         <div v-if="error" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
           <p class="text-sm text-red-600">{{ error }}</p>
         </div>
+        <div v-if="apiError" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p class="text-sm text-yellow-700">{{ apiError }} - Transaction saved locally.</p>
+        </div>
         <form class="space-y-6" @submit.prevent="handleAddTransaction">
           <div class="space-y-6">
             <div class="flex gap-4 mb-4">
@@ -51,13 +54,25 @@
               <input type="text" :class="[`input w-full text-lg`, error && !transactionDescription ? 'border-red-300 focus:ring-red-500 focus:border-red-500' : '']" placeholder="Enter description" v-model="transactionDescription">
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
+              <textarea class="input w-full text-lg" placeholder="Additional notes" v-model="transactionNotes" rows="2"></textarea>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Amount</label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">€</span>
                 <input type="number" class="input w-full text-lg pl-8" placeholder="0.00" step="0.01" min="0" v-model="transactionAmount">
               </div>
               <div class="mt-4">
-                <button type="submit" class="w-full px-6 py-3 text-base font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg shadow-sm hover:shadow-lg transition-all duration-200 ease-in-out transform hover:-translate-y-0.5">Add Transaction</button>
+                <button type="submit" class="w-full px-6 py-3 text-base font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg shadow-sm hover:shadow-lg transition-all duration-200 ease-in-out transform hover:-translate-y-0.5" :disabled="isLoading">
+                  <span v-if="isLoading" class="inline-block align-middle mr-2">
+                    <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  </span>
+                  {{ isLoading ? 'Saving...' : 'Add Transaction' }}
+                </button>
               </div>
               <!-- Numpad for touch input -->
               <div class="mt-4 grid grid-cols-3 gap-2">
@@ -116,14 +131,15 @@ import { useTransactions } from '~/composables/useTransactions'
 
 const error = ref('')
 
-const { transactions, earnings, addTransaction: addTransactionToStore } = useTransactions()
+const { transactions, earnings, addTransaction: addTransactionToStore, isLoading, apiError } = useTransactions()
 
 const transactionType = ref('income')
 const transactionDescription = ref('')
 const transactionAmount = ref('')
+const transactionNotes = ref('')
 const transactionDate = ref(new Date().toISOString().split('T')[0])
 
-const handleAddTransaction = (e) => {
+const handleAddTransaction = async (e) => {
   e.preventDefault()
   error.value = ''
 
@@ -140,17 +156,24 @@ const handleAddTransaction = (e) => {
   const amount = parseFloat(transactionAmount.value)
   const finalAmount = transactionType.value === 'expense' ? -amount : amount
 
-  addTransactionToStore({
-    id: Date.now(),
-    description: transactionDescription.value.trim(),
-    amount: finalAmount,
-    date: transactionDate.value
-  })
+  try {
+    await addTransactionToStore({
+      id: Date.now(),
+      description: transactionDescription.value.trim(),
+      amount: finalAmount,
+      date: transactionDate.value,
+      notes: transactionNotes.value
+    })
 
-  // Reset form
-  transactionDescription.value = ''
-  transactionAmount.value = ''
-  error.value = ''
+    // Reset form
+    transactionDescription.value = ''
+    transactionAmount.value = ''
+    transactionNotes.value = ''
+    error.value = ''
+  } catch (err) {
+    // Error is handled in the composable
+    // and displayed via apiError
+  }
 }
 
 const appendNumber = (num) => {
