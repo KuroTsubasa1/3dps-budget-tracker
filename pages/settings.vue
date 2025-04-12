@@ -65,7 +65,7 @@
             </div>
           </div>
           <div class="card-body">
-            <form class="space-y-6" @submit.prevent="saveAccountSettings">
+            <form class="space-y-6" @submit.prevent="handleSaveAccountSettings">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
                   Display Name
@@ -133,7 +133,7 @@
             </div>
           </div>
           <div class="card-body">
-            <form class="space-y-6" @submit.prevent="saveApiSettings">
+            <form class="space-y-6" @submit.prevent="handleSaveApiSettings">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
                   API Base URL
@@ -217,7 +217,7 @@
             </div>
           </div>
           <div class="card-body">
-            <form class="space-y-6" @submit.prevent="saveDisplaySettings">
+            <form class="space-y-6" @submit.prevent="handleSaveDisplaySettings">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-3">Currency Format</label>
                 <div class="flex flex-wrap gap-4">
@@ -325,7 +325,7 @@
             </div>
           </div>
           <div class="card-body">
-            <form class="space-y-6" @submit.prevent="saveNotificationSettings">
+            <form class="space-y-6" @submit.prevent="handleSaveNotificationSettings">
               <div>
                 <label class="flex items-center justify-between mb-3">
                   <span class="text-sm font-medium text-gray-700">Push Notifications</span>
@@ -421,7 +421,7 @@
                 
                 <div class="flex gap-3">
                   <button 
-                    @click="exportData('json')"
+                    @click="handleExportData('json')"
                     class="btn btn-secondary flex items-center justify-center flex-1"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -431,7 +431,7 @@
                   </button>
                   
                   <button 
-                    @click="exportData('csv')"
+                    @click="handleExportData('csv')"
                     class="btn btn-secondary flex items-center justify-center flex-1"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -530,7 +530,7 @@
           </div>
           <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
             <button 
-              @click="clearAllData" 
+              @click="handleClearAllData" 
               type="button" 
               class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
             >
@@ -584,8 +584,26 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { useAppSettings } from '~/composables/useAppSettings'
+import { useOfflineQueue } from '~/composables/useOfflineQueue'
 
-const { syncStatus } = useTransactions()
+const { syncStatus, syncTransactionsQueue } = useTransactions()
+const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
+
+// Get app settings
+const { 
+  accountSettings, 
+  apiSettings, 
+  displaySettings, 
+  notificationSettings,
+  isSaving,
+  saveAccountSettings,
+  saveApiSettings,
+  saveDisplaySettings,
+  saveNotificationSettings,
+  exportData,
+  clearAllData
+} = useAppSettings()
 
 // Define settings categories
 const settingsCategories = [
@@ -673,100 +691,15 @@ const components = {
 // Track active settings category
 const activeCategory = ref('account')
 
-// Form data for each settings category
-const accountSettings = ref({
-  displayName: 'User',
-  email: 'user@example.com'
-})
-
-const apiSettings = ref({
-  baseUrl: 'https://pocket.lasseharm.space/api/',
-  endpoint: 'collections/budget_tracker_transactions/records',
-  token: 'example-token-12345'
-})
-
-const displaySettings = ref({
-  currencyFormat: 'EUR',
-  dateFormat: 'DD/MM/YYYY',
-  darkMode: false,
-  showHeaderBalance: true
-})
-
-const notificationSettings = ref({
-  pushEnabled: true,
-  newTransactions: true,
-  syncCompleted: true,
-  balanceUpdates: false
-})
-
 // Data management state
 const showClearDataConfirm = ref(false)
-const lastSyncTime = ref(null)
-const isSyncing = ref(false)
+const lastSyncTime = ref(syncStatus.value?.lastSync ? new Date(syncStatus.value.lastSync).toLocaleString() : null)
 const syncProgress = ref(0)
 const showToken = ref(false)
 
 // Notification handling
 const showNotification = ref(false)
 const notificationMessage = ref('')
-
-// Load saved settings
-onMounted(() => {
-  // Simulate loading saved settings (would use localStorage or API)
-  lastSyncTime.value = new Date().toLocaleString()
-})
-
-// Save handlers for each settings category
-const saveAccountSettings = () => {
-  // Would normally save to localStorage or API
-  showSuccessNotification('Account settings saved successfully')
-}
-
-const saveApiSettings = () => {
-  // Would normally save to localStorage or API
-  showSuccessNotification('API settings saved successfully')
-}
-
-const saveDisplaySettings = () => {
-  // Would normally save to localStorage or API
-  showSuccessNotification('Display settings saved successfully')
-}
-
-const saveNotificationSettings = () => {
-  // Would normally save to localStorage or API
-  showSuccessNotification('Notification settings saved successfully')
-}
-
-// Data management functions
-const exportData = (format) => {
-  // This would normally export the data in the requested format
-  // For now, just show a success notification
-  showSuccessNotification(`Data exported as ${format.toUpperCase()} successfully`)
-}
-
-const syncData = () => {
-  // Simulate a sync process
-  isSyncing.value = true
-  syncProgress.value = 0
-  
-  const interval = setInterval(() => {
-    syncProgress.value += 10
-    
-    if (syncProgress.value >= 100) {
-      clearInterval(interval)
-      isSyncing.value = false
-      lastSyncTime.value = new Date().toLocaleString()
-      showSuccessNotification('Data synced successfully')
-    }
-  }, 300)
-}
-
-const clearAllData = () => {
-  // This would normally clear all local data
-  // For now, just show a success notification and close the modal
-  showClearDataConfirm.value = false
-  showSuccessNotification('All data cleared successfully')
-}
 
 // Helper function to show success notification
 const showSuccessNotification = (message) => {
@@ -777,6 +710,76 @@ const showSuccessNotification = (message) => {
   setTimeout(() => {
     showNotification.value = false
   }, 3000)
+}
+
+// Sync data
+const syncData = async () => {
+  if (queueIsSyncing.value || !syncStatus.value.isOnline || !offlineQueue.value.length) {
+    return
+  }
+  
+  syncProgress.value = 0
+  const totalItems = offlineQueue.value.length
+  
+  // Start the sync process
+  const result = await syncTransactionsQueue()
+  
+  if (result) {
+    syncProgress.value = 100
+    lastSyncTime.value = new Date().toLocaleString()
+    showSuccessNotification(`Successfully synced ${result.processed} transactions.`)
+  }
+}
+
+// Handle form submissions with success notifications
+const handleSaveAccountSettings = async () => {
+  const result = await saveAccountSettings()
+  if (result) {
+    showSuccessNotification('Account settings saved successfully')
+  }
+}
+
+const handleSaveApiSettings = async () => {
+  const result = await saveApiSettings()
+  if (result) {
+    showSuccessNotification('API settings saved successfully')
+  }
+}
+
+const handleSaveDisplaySettings = async () => {
+  const result = await saveDisplaySettings()
+  if (result) {
+    showSuccessNotification('Display settings saved successfully')
+  }
+}
+
+const handleSaveNotificationSettings = async () => {
+  const result = await saveNotificationSettings()
+  if (result) {
+    showSuccessNotification('Notification settings saved successfully')
+  }
+}
+
+// Handle data export
+const handleExportData = async (format) => {
+  const result = await exportData(format)
+  if (result.success) {
+    showSuccessNotification(`Data exported as ${format.toUpperCase()} successfully`)
+  } else {
+    showSuccessNotification(`Failed to export data: ${result.error}`)
+  }
+}
+
+// Handle clearing all data
+const handleClearAllData = async () => {
+  const result = await clearAllData()
+  showClearDataConfirm.value = false
+  
+  if (result) {
+    showSuccessNotification('All data cleared successfully')
+  } else {
+    showSuccessNotification('Failed to clear data')
+  }
 }
 </script>
 
