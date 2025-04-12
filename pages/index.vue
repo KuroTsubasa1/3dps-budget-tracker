@@ -1,22 +1,34 @@
 <template>
   <div class="px-4 py-6 sm:px-0">
     <!-- Network Status Banner -->
-    <div class="mb-4 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-3 border border-gray-100">
+    <div class="mb-4 flex justify-between items-center bg-white/90 backdrop-blur-sm rounded-xl shadow-md py-3 px-4 border border-gray-100">
       <div class="flex items-center">
-        <div class="bg-gray-100 p-2 rounded-full mr-3">
-          <span class="inline-block w-3 h-3 rounded-full" :class="syncStatus.isOnline ? 'bg-green-500' : 'bg-red-500'"></span>
+        <!-- Status indicator -->
+        <div :class="[
+          'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mr-3', 
+          syncStatus.isOnline ? 'bg-green-50' : 'bg-red-50'
+        ]">
+          <span class="w-3 h-3 rounded-full" :class="syncStatus.isOnline ? 'bg-green-500' : 'bg-red-500'"></span>
         </div>
+        
+        <!-- Status text -->
         <div>
-          <span class="text-sm font-medium" :class="syncStatus.isOnline ? 'text-green-700' : 'text-red-700'">
+          <p class="text-sm font-medium" :class="syncStatus.isOnline ? 'text-green-700' : 'text-red-700'">
             {{ syncStatus.isOnline ? 'Online' : 'Offline' }}
-          </span>
-          <span class="text-xs text-gray-500 block leading-tight">{{ syncStatus.isOnline ? 'Connected to server' : 'Working in offline mode' }}</span>
+          </p>
+          <p class="text-xs text-gray-500">
+            {{ syncStatus.isOnline ? 'Connected to server' : 'Working in offline mode' }}
+          </p>
         </div>
       </div>
+      
+      <!-- Pending transactions -->
       <div v-if="pendingTransactions.length > 0" class="flex items-center">
-        <div class="bg-amber-50 rounded-lg px-3 py-1 mr-2 border border-amber-100">
-          <span class="text-xs text-amber-700">{{ pendingTransactions.length }} pending</span>
+        <div class="bg-amber-50 rounded-lg px-3 py-1.5 mr-2 border border-amber-100">
+          <span class="text-xs font-medium text-amber-700">{{ pendingTransactions.length }} pending</span>
         </div>
+        
+        <!-- Sync button -->
         <button 
           v-if="syncStatus.isOnline && pendingTransactions.length > 0" 
           @click="syncTransactionsQueue" 
