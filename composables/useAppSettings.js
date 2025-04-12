@@ -225,7 +225,7 @@ export const useAppSettings = () => {
   
   // Apply dark mode from settings
   const applyTheme = () => {
-    if (displaySettings.value.darkMode) {
+    if (displaySettings.darkMode) {
       document.documentElement.classList.add('dark')
     } else {
       document.documentElement.classList.remove('dark')
@@ -239,7 +239,7 @@ export const useAppSettings = () => {
   })
   
   // Watch for dark mode changes
-  watch(() => displaySettings.value.darkMode, (newVal) => {
+  watch(() => displaySettings.darkMode, (newVal) => {
     if (newVal) {
       document.documentElement.classList.add('dark')
     } else {
