@@ -6,8 +6,17 @@
   body {
     @apply bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen font-sans;
   }
+  .dark body {
+    @apply bg-gradient-to-br from-gray-900 to-gray-800;
+  }
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
+  }
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+    @apply text-white;
+  }
+  .dark p {
+    @apply text-gray-300;
   }
 }
 
@@ -24,11 +33,20 @@
   .input {
     @apply px-4 py-3 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent bg-white/80 shadow-sm transition-all duration-300 hover:border-gray-300 backdrop-blur-sm;
   }
+  .dark .input {
+    @apply border-gray-700 bg-gray-800/80 text-white focus:ring-blue-500/50;
+  }
   .card {
     @apply bg-white/90 rounded-2xl shadow-xl transition-all duration-300 hover:shadow-2xl border border-gray-100/50 backdrop-blur-sm hover:bg-white/95;
   }
+  .dark .card {
+    @apply bg-gray-800/90 border-gray-700/50 hover:bg-gray-800/95;
+  }
   .card-header {
     @apply p-6 border-b border-gray-100/50;
+  }
+  .dark .card-header {
+    @apply border-gray-700/50;
   }
   .card-body {
     @apply p-6;
@@ -36,8 +54,14 @@
   .nav-link {
     @apply transition-all duration-300 border-b-2 hover:text-gray-800;
   }
+  .dark .nav-link {
+    @apply hover:text-white;
+  }
   .transaction-item {
     @apply transition-all duration-300 hover:bg-gray-50/80 rounded-xl p-4;
+  }
+  .dark .transaction-item {
+    @apply hover:bg-gray-700/80;
   }
   .transaction-icon {
     @apply w-12 h-12 rounded-2xl flex items-center justify-center transition-transform duration-300 hover:scale-105;

@@ -469,7 +469,7 @@ const { displaySettings } = useAppSettings()
 
 // Format currency with settings
 const formatCurrency = (amount) => {
-  return defaultFormatCurrency(amount, displaySettings.currencyFormat)
+  return defaultFormatCurrency(amount, displaySettings.currencyFormat || 'EUR')
 }
 
 // Sort transactions in reverse order (newest first)
@@ -531,6 +531,6 @@ const backspace = () => {
 }
 
 const formatTransactionDate = (date) => {
-  return formatDate(date, displaySettings.dateFormat)
+  return formatDate(date, displaySettings.dateFormat || 'DD/MM/YYYY')
 }
 </script>

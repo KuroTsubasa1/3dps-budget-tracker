@@ -267,15 +267,26 @@ const {
   accountSettings,
   apiSettings,
   displaySettings,
-  notificationSettings
+  notificationSettings,
+  saveDisplaySettings
 } = useAppSettings()
+
+// Apply dark mode to the document
+const applyDarkMode = () => {
+  if (displaySettings.darkMode) {
+    document.documentElement.classList.add('dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+  }
+}
 
 const isBalanceHidden = ref(false)
 const isMobileMenuOpen = ref(false)
 
 // Format currency with settings
-const formatCurrency = (amount, format = displaySettings.value?.currencyFormat) => {
-  return defaultFormatCurrency(amount, format)
+const formatCurrency = (amount, format) => {
+  const currencyFormat = format || displaySettings.currencyFormat || 'EUR'
+  return defaultFormatCurrency(amount, currencyFormat)
 }
 
 // Toggle mobile menu
@@ -328,7 +339,15 @@ watch(() => window.location.pathname, () => {
   }
 })
 
+// Watch for dark mode setting changes
+watch(() => displaySettings.darkMode, (newVal) => {
+  applyDarkMode()
+}, { immediate: true })
+
 onMounted(() => {
+  // Apply dark mode based on current settings
+  applyDarkMode()
+  
   // Balance visibility observer
   const observer = new IntersectionObserver(
     ([entry]) => {

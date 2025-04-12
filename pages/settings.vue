@@ -749,6 +749,12 @@ const handleSaveApiSettings = async () => {
 const handleSaveDisplaySettings = async () => {
   const result = await saveDisplaySettings()
   if (result) {
+    // Apply dark mode immediately
+    if (displaySettings.darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
     showSuccessNotification('Display settings saved successfully')
   }
 }
