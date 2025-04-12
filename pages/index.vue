@@ -47,11 +47,21 @@
         <h2 class="text-lg font-semibold text-gray-800">Add Transaction</h2>
       </div>
       <div class="card-body">
-        <div v-if="error" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-          <p class="text-sm text-red-600">{{ error }}</p>
+        <div v-if="error" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg relative">
+          <button @click="clearError" class="absolute top-1 right-1 text-red-400 hover:text-red-600 rounded-full p-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+          </button>
+          <p class="text-sm text-red-600 pr-6">{{ error }}</p>
         </div>
-        <div v-if="apiError" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p class="text-sm text-yellow-700">{{ apiError }} - Transaction saved locally.</p>
+        <div v-if="apiError" class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg relative">
+          <button @click="clearApiError" class="absolute top-1 right-1 text-yellow-400 hover:text-yellow-600 rounded-full p-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+          </button>
+          <p class="text-sm text-yellow-700 pr-6">{{ apiError }} - Transaction saved locally.</p>
         </div>
         <form class="space-y-6" @submit.prevent="handleAddTransaction">
           <div class="space-y-6">
@@ -147,11 +157,17 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
+// Local form error
 const error = ref('')
+// Error timer references
+const errorTimers = ref({
+  form: null,
+  api: null
+})
 
 const { 
   transactions, 
@@ -159,11 +175,58 @@ const {
   addTransaction: addTransactionToStore, 
   isLoading, 
   apiError,
+  clearApiError: clearApiErrorFromStore,
   syncStatus,
   syncTransactionsQueue,
   queueSyncStatus,
   pendingTransactions
 } = useTransactions()
+
+// Clear local form error
+const clearError = () => {
+  error.value = ''
+  if (errorTimers.value.form) {
+    clearTimeout(errorTimers.value.form)
+    errorTimers.value.form = null
+  }
+}
+
+// Clear API error
+const clearApiError = () => {
+  clearApiErrorFromStore()
+  if (errorTimers.value.api) {
+    clearTimeout(errorTimers.value.api)
+    errorTimers.value.api = null
+  }
+}
+
+// Auto-dismiss errors after delay
+watch(error, (newValue) => {
+  if (newValue) {
+    // Clear any existing timer
+    if (errorTimers.value.form) {
+      clearTimeout(errorTimers.value.form)
+    }
+    // Set new timer to clear the error after 5 seconds
+    errorTimers.value.form = setTimeout(() => {
+      clearError()
+    }, 5000)
+  }
+})
+
+// Auto-dismiss API errors after delay
+watch(() => apiError.value, (newValue) => {
+  if (newValue) {
+    // Clear any existing timer
+    if (errorTimers.value.api) {
+      clearTimeout(errorTimers.value.api)
+    }
+    // Set new timer to clear the API error after 5 seconds
+    errorTimers.value.api = setTimeout(() => {
+      clearApiError()
+    }, 5000)
+  }
+})
 
 const transactionType = ref('income')
 const transactionDescription = ref('')

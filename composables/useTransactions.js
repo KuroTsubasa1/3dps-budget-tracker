@@ -185,12 +185,17 @@ export const useTransactions = () => {
     setupAutoSync()
   })
 
+  const clearApiError = () => {
+    apiError.value = ''
+  }
+
   return {
     transactions,
     earnings,
     addTransaction,
     isLoading,
     apiError,
+    clearApiError,
     syncStatus,
     syncTransactionsQueue,
     queueSyncStatus,
