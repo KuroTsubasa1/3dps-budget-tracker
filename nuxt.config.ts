@@ -6,6 +6,10 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@vite-pwa/nuxt'
   ],
+  build: {
+    // qrcode-vue3 ships a UMD "main" under "type": "module", which breaks SSR imports
+    transpile: ['qrcode-vue3']
+  },
   tailwindcss: {
     config: {
       darkMode: 'class'

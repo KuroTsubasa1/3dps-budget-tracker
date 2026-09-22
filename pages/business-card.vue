@@ -39,11 +39,13 @@
         <div class="text-center">
           <h3 class="text-lg font-semibold text-gray-800 mb-4">Scan QR Code</h3>
           <div class="inline-block p-4 bg-white rounded-lg shadow-md">
-            <QRCode
-              :value="websiteUrl"
-              v-bind="qrcodeOptions"
-              class="mx-auto"
-            />
+            <ClientOnly>
+              <QRCode
+                :value="websiteUrl"
+                v-bind="qrcodeOptions"
+                class="mx-auto"
+              />
+            </ClientOnly>
           </div>
           <p class="mt-4 text-sm text-gray-600">Scan this QR code to visit our website</p>
         </div>

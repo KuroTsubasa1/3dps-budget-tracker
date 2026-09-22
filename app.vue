@@ -342,7 +342,7 @@ watch(() => window.location.pathname, () => {
 // Watch for dark mode setting changes
 watch(() => displaySettings.darkMode, (newVal) => {
   applyDarkMode()
-}, { immediate: true })
+})
 
 onMounted(() => {
   // Apply dark mode based on current settings
