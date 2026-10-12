@@ -152,3 +152,20 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Thanks to all contributors who have helped shape this project
 - Inspired by the need for a comprehensive budget tracking solution for 3D printing businesses
+
+## PocketBase setup: categories, stock and owner login
+
+The app needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads an admin token from your local `.env`:
+
+```bash
+npm run pb:migrate                  # dry run: prints the plan, writes scripts/category-mapping.json
+npm run pb:migrate -- --apply       # create collections, seed categories, assign article categories
+npm run pb:migrate -- --apply-rules # switch to owner-only writes (after deploying the new app)
+```
+
+Order matters:
+1. Run `--apply`. The deployed app keeps working.
+2. Deploy the new app.
+3. Run `--apply-rules`. The old shared API token then stops working.
+
+Each run writes the resulting schema to `pocketbase/schema.json`.
