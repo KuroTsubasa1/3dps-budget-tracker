@@ -94,4 +94,53 @@ test.describe('product catalog', () => {
     const second = await card(page, 'Dragon Figure').boundingBox()
     expect(Math.abs(first.y - second.y)).toBeLessThan(2)
   })
+
+  test('category chips filter the grid', async ({ page, api }) => {
+    api.seed({
+      articles: [
+        { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain' },
+        { id: 'f1', name: 'Glurak Figure', category: 'cat-figure' }
+      ]
+    })
+    await gotoReady(page, '/catalog')
+    const chips = page.getByRole('group', { name: 'Categories' })
+    await chips.getByRole('button', { name: 'Keychain' }).click()
+    await expect(page.getByRole('heading', { name: 'Pikachu Keychain' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Glurak Figure' })).toHaveCount(0)
+    await chips.getByRole('button', { name: 'All' }).click()
+    await expect(page.getByRole('heading', { name: 'Glurak Figure' })).toBeVisible()
+  })
+
+  test('articles without their own price use the category price', async ({ page, api }) => {
+    api.seed({
+      articles: [
+        { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', price: 0 },
+        { id: 'k2', name: 'Golden Keychain', category: 'cat-keychain', price: 6 }
+      ]
+    })
+    await gotoReady(page, '/catalog')
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('4,00')
+    await expect(page.locator('article', { hasText: 'Golden Keychain' })).toContainText('6,00')
+  })
+
+  test('cards show stock badges', async ({ page, api }) => {
+    api.seed({
+      articles: [
+        { id: 'a1', name: 'Empty One', stock: 0 },
+        { id: 'a2', name: 'Low One', stock: 1, low_stock_threshold: 2 },
+        { id: 'a3', name: 'Plenty One', stock: 5 }
+      ]
+    })
+    await gotoReady(page, '/catalog')
+    await expect(page.locator('article', { hasText: 'Empty One' })).toContainText('Out of stock')
+    await expect(page.locator('article', { hasText: 'Low One' })).toContainText('Low · 1 left')
+    await expect(page.locator('article', { hasText: 'Plenty One' })).toContainText('5 left')
+  })
+
+  test('soft-deleted articles are not listed', async ({ page, api }) => {
+    api.seed({ articles: [{ id: 'a1', name: 'Hidden One', active: false }, { id: 'a2', name: 'Visible One' }] })
+    await gotoReady(page, '/catalog')
+    await expect(page.getByRole('heading', { name: 'Visible One' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Hidden One' })).toHaveCount(0)
+  })
 })

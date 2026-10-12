@@ -41,6 +41,16 @@ test.describe('logged out', () => {
     await page.waitForURL(url => url.pathname === '/')
     expect(page.url()).not.toContain('evil.example')
   })
+
+  test('the catalog can be browsed but not sold from', async ({ page, api }) => {
+    await api.mockCatalog()
+    await gotoReady(page, '/catalog')
+    await expect(page.getByRole('heading', { name: 'Dragon Figure' })).toBeVisible()
+    await page.locator('h3', { hasText: 'Dragon Figure' }).click()
+    await expect(page.getByRole('button', { name: /to cart/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /View cart/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add to Balance' })).toHaveCount(0)
+  })
 })
 
 test('logging out from Settings returns to login and stays logged out', async ({ page }) => {

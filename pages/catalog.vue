@@ -1,6 +1,6 @@
 <template>
-  <div :class="{ 'pb-20': !isDesktop && selectedProducts.length }">
-    <div class="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-6">
+  <div :class="{ 'pb-20': showCartBar }">
+    <div class="lg:grid lg:items-start lg:gap-6" :class="{ 'lg:grid-cols-[minmax(0,1fr)_20rem]': isOwner }">
       <div class="min-w-0">
         <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products" />
 
@@ -26,6 +26,28 @@
               {{ sortDirection === 'asc' ? 'A to Z' : 'Z to A' }}
             </button>
           </div>
+          <div v-if="categories.length" class="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Categories">
+            <button
+              type="button"
+              class="chip"
+              :class="selectedCategory === 'all' ? 'chip-active' : 'chip-idle'"
+              :aria-pressed="selectedCategory === 'all'"
+              @click="selectedCategory = 'all'"
+            >
+              All
+            </button>
+            <button
+              v-for="category in categories"
+              :key="category.id"
+              type="button"
+              class="chip"
+              :class="selectedCategory === category.id ? 'chip-active' : 'chip-idle'"
+              :aria-pressed="selectedCategory === category.id"
+              @click="selectedCategory = category.id"
+            >
+              {{ category.name }}
+            </button>
+          </div>
         </div>
 
         <div v-if="loading" class="card flex h-48 flex-col items-center justify-center gap-3">
@@ -42,16 +64,16 @@
         <div v-else-if="filteredProducts.length === 0" class="card px-4 py-8 text-center">
           <p class="text-sm font-medium text-ink">No products match your search</p>
           <p class="mb-4 mt-1 text-sm text-ink-muted">Try adjusting your search criteria</p>
-          <BaseButton variant="secondary" icon="x" @click="searchQuery = ''">Clear Search</BaseButton>
+          <BaseButton variant="secondary" icon="x" @click="clearFilters">Clear Search</BaseButton>
         </div>
 
         <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4 xl:grid-cols-4">
           <article
             v-for="product in filteredProducts"
             :key="product.id"
-            class="card flex cursor-pointer flex-col overflow-hidden transition-shadow"
-            :class="{ 'ring-2 ring-accent': isSelected(product) }"
-            @click="incrementQuantity(product)"
+            class="card flex flex-col overflow-hidden transition-shadow"
+            :class="{ 'cursor-pointer': isOwner, 'ring-2 ring-accent': isSelected(product) }"
+            @click="onCardClick(product)"
           >
             <div class="relative aspect-square bg-muted">
               <img
@@ -73,38 +95,44 @@
             </div>
             <div class="flex flex-1 flex-col gap-2 p-3">
               <h3 class="line-clamp-2 break-words text-sm font-semibold text-ink">{{ product.name }}</h3>
+              <span class="self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="STOCK_BADGE[stockStatus(product.stock, product.low_stock_threshold)]">
+                {{ stockLabel(product) }}
+              </span>
               <div class="hidden sm:block">
                 <p class="line-clamp-2 text-xs text-ink-muted">{{ product.description }}</p>
               </div>
               <div class="mt-auto flex flex-wrap items-center justify-between gap-2">
-                <p class="text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(product.price) }}</p>
-                <QuantityStepper
-                  v-if="isSelected(product)"
-                  :quantity="product.quantity"
-                  :name="product.name"
-                  @increment="incrementQuantity(product)"
-                  @decrement="decrementQuantity(product)"
-                />
-                <button
-                  v-else
-                  type="button"
-                  class="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/10 text-accent hover:bg-accent/20"
-                  :aria-label="`Add ${product.name} to cart`"
-                  @click.stop="incrementQuantity(product)"
-                >
-                  <AppIcon name="plus" class="h-5 w-5" />
-                </button>
+                <p class="text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(priceOf(product)) }}</p>
+                <template v-if="isOwner">
+                  <QuantityStepper
+                    v-if="isSelected(product)"
+                    :quantity="product.quantity"
+                    :name="product.name"
+                    @increment="incrementQuantity(product)"
+                    @decrement="decrementQuantity(product)"
+                  />
+                  <button
+                    v-else
+                    type="button"
+                    class="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/10 text-accent hover:bg-accent/20"
+                    :aria-label="`Add ${product.name} to cart`"
+                    @click.stop="incrementQuantity(product)"
+                  >
+                    <AppIcon name="plus" class="h-5 w-5" />
+                  </button>
+                </template>
               </div>
             </div>
           </article>
         </div>
       </div>
 
-      <aside v-if="isDesktop" class="lg:sticky lg:top-20">
+      <aside v-if="isOwner && isDesktop" class="lg:sticky lg:top-20">
         <BaseCard title="Cart" subtitle="Selected products for purchase" icon="cart">
           <CartPanel
             :items="selectedProducts"
             :total="totalAmount"
+            :price-of="priceOf"
             @increment="incrementQuantity"
             @decrement="decrementQuantity"
             @remove="removeProduct"
@@ -114,9 +142,9 @@
       </aside>
     </div>
 
-    <template v-if="!isDesktop">
+    <template v-if="isOwner && !isDesktop">
       <button
-        v-if="selectedProducts.length && !isCartOpen"
+        v-if="showCartBar"
         type="button"
         class="fixed inset-x-4 z-30 flex min-h-[52px] items-center justify-between gap-3 rounded-xl bg-accent px-4 text-white shadow-lg bottom-above-nav md:bottom-6 md:left-auto md:right-6 md:w-80"
         @click="isCartOpen = true"
@@ -133,6 +161,7 @@
         <CartPanel
           :items="selectedProducts"
           :total="totalAmount"
+          :price-of="priceOf"
           @increment="incrementQuantity"
           @decrement="decrementQuantity"
           @remove="removeProduct"
@@ -146,11 +175,27 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { useArticles } from '~/composables/useArticles'
+import { useCategories } from '~/composables/useCategories'
+import { useAuth } from '~/composables/useAuth'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
+import { effectivePrice } from '~/utils/pricing'
+import { stockStatus } from '~/utils/inventory'
+
+const STOCK_BADGE = {
+  out: 'bg-expense/10 text-expense',
+  low: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  ok: 'bg-muted text-ink-muted'
+}
+
+const { listActive, imageUrl } = useArticles()
+const { listCategories } = useCategories()
+const { isOwner } = useAuth()
 
 const products = ref([])
+const categories = ref([])
 const loading = ref(false)
 const error = ref(null)
 
@@ -165,70 +210,66 @@ const fetchProducts = async () => {
   loading.value = true
   error.value = null
   try {
-    const response = await fetch('https://pocket.lasseharm.space/api/collections/budget_tracket_catalog/records')
-    if (!response.ok) throw new Error('Failed to fetch products')
-    const data = await response.json()
-    products.value = data.items.map(item => ({
-      ...item,
-      quantity: 0
-    }))
+    const [articles, categoryList] = await Promise.all([listActive(), listCategories()])
+    products.value = articles.map(item => ({ ...item, quantity: 0 }))
+    categories.value = categoryList
   } catch (err) {
-    error.value = err.message
+    error.value = 'Could not load products. Check your connection and try again.'
   } finally {
     loading.value = false
   }
 }
 
-const imageUrl = product =>
-  `https://pocket.lasseharm.space/api/files/${product.collectionId}/${product.id}/${product.images[0]}?thumb=300x300`
+const priceOf = product => effectivePrice(product, product.expand?.category)
+
+const stockLabel = (product) => {
+  const status = stockStatus(product.stock, product.low_stock_threshold)
+  if (status === 'out') return 'Out of stock'
+  return status === 'low' ? `Low · ${product.stock} left` : `${product.stock} left`
+}
 
 const sortOption = ref('name') // 'name', 'price'
 const sortDirection = ref('asc') // 'asc', 'desc'
-const favorites = ref([])
+const searchQuery = ref('')
+const selectedCategory = ref('all')
 
-const toggleFavorite = (product) => {
-  const index = favorites.value.findIndex(fav => fav.id === product.id)
-  if (index === -1) {
-    favorites.value.push(product)
-  } else {
-    favorites.value.splice(index, 1)
-  }
-  localStorage.setItem('favorites', JSON.stringify(favorites.value))
-}
-
-const isFavorite = (product) => {
-  return favorites.value.some(fav => fav.id === product.id)
-}
-
-const sortProducts = (products) => {
-  return [...products].sort((a, b) => {
+const sortProducts = (list) => {
+  return [...list].sort((a, b) => {
     const modifier = sortDirection.value === 'asc' ? 1 : -1
     if (sortOption.value === 'price') {
-      return (a.price - b.price) * modifier
+      return (priceOf(a) - priceOf(b)) * modifier
     }
     return a.name.localeCompare(b.name) * modifier
   })
 }
 
-const searchQuery = ref('')
-
 const filteredProducts = computed(() => {
   let result = products.value
+  if (selectedCategory.value !== 'all') {
+    result = result.filter(product => product.category === selectedCategory.value)
+  }
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(product =>
       product.name.toLowerCase().includes(query) ||
-      product.description.toLowerCase().includes(query)
+      (product.description || '').toLowerCase().includes(query)
     )
   }
   return sortProducts(result)
 })
 
+const clearFilters = () => {
+  searchQuery.value = ''
+  selectedCategory.value = 'all'
+}
+
 const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
 
 const totalAmount = computed(() => {
-  return products.value.reduce((sum, product) => sum + (product.price * product.quantity), 0)
+  return products.value.reduce((sum, product) => sum + (priceOf(product) * product.quantity), 0)
 })
+
+const showCartBar = computed(() => isOwner.value && !isDesktop.value && selectedProducts.value.length > 0 && !isCartOpen.value)
 
 const isSelected = product => product.quantity > 0
 
@@ -246,6 +287,11 @@ const removeProduct = (product) => {
   product.quantity = 0
 }
 
+// Only the owner sells; visitors just browse
+const onCardClick = (product) => {
+  if (isOwner.value) incrementQuantity(product)
+}
+
 const { addTransaction } = useTransactions()
 const { toast } = useToast()
 
@@ -254,7 +300,7 @@ const submitToBalance = () => {
 
   const total = totalAmount.value
   const productNames = selectedProducts.value
-    .map(product => `${product.name} (${formatCurrency(product.price)} × ${product.quantity})`)
+    .map(product => `${product.name} (${formatCurrency(priceOf(product))} × ${product.quantity})`)
     .join('\n')
 
   addTransaction({
@@ -283,10 +329,6 @@ const handleKeyboardShortcuts = (event) => {
 
 onMounted(() => {
   fetchProducts()
-  const savedFavorites = localStorage.getItem('favorites')
-  if (savedFavorites) {
-    favorites.value = JSON.parse(savedFavorites)
-  }
   window.addEventListener('keydown', handleKeyboardShortcuts)
 })
 
