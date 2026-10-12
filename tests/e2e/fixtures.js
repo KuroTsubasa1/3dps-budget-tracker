@@ -13,6 +13,18 @@ export const sampleProducts = [
 // production data. Tests opt in to specific responses via the `api` fixture.
 // `auto` makes the block apply even to tests that don't ask for `api`.
 export const test = base.extend({
+  // Against `nuxt dev` the devtools launcher floats over the bottom tab bar and swallows taps
+  hideDevtools: [async ({ context }, use) => {
+    await context.addInitScript(() => {
+      document.addEventListener('DOMContentLoaded', () => {
+        const style = document.createElement('style')
+        style.textContent = '#nuxt-devtools-container { display: none !important; }'
+        document.head.appendChild(style)
+      })
+    })
+    await use()
+  }, { auto: true }],
+
   api: [async ({ page, context }, use) => {
     const posted = []
     const handled = new Set()
@@ -45,5 +57,12 @@ export const test = base.extend({
     expect(leaked, 'requests escaped the API mocks').toEqual([])
   }, { auto: true }]
 })
+
+// Layouts switch (sheet vs inline, tab bar vs rail) once the client has mounted;
+// app.vue marks <html data-hydrated> in its onMounted, which runs after every child
+export async function gotoReady (page, path) {
+  await page.goto(path)
+  await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+}
 
 export { expect }

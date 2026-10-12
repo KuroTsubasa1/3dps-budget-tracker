@@ -1,27 +1,17 @@
 <template>
-  <div>
-    <div v-if="updateAvailable" class="fixed bottom-4 right-4 z-50">
-      <div class="bg-amber-50 border border-amber-200 shadow-lg rounded-lg p-4 w-64">
-        <h3 class="font-medium text-amber-800">Update Available</h3>
-        <p class="text-amber-600 text-sm mb-3">A new version of the app is available.</p>
-        <button @click="updateApp" class="bg-amber-500 hover:bg-amber-600 text-white text-sm py-1 px-3 rounded-lg transition-colors">
-          Update Now
-        </button>
-      </div>
+  <div v-if="updateAvailable || (isInstallable && !isInstalled)" class="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
+    <div v-if="updateAvailable" class="rounded-xl border border-line bg-card p-4 shadow-lg">
+      <h3 class="text-sm font-semibold text-ink">Update Available</h3>
+      <p class="mb-3 text-sm text-ink-muted">A new version of the app is available.</p>
+      <button type="button" class="btn btn-primary" @click="updateApp">Update Now</button>
     </div>
-    
-    <div v-if="isInstallable && !isInstalled" class="fixed bottom-4 left-4 z-50">
-      <div class="bg-blue-50 border border-blue-200 shadow-lg rounded-lg p-4 w-64">
-        <h3 class="font-medium text-blue-800">Install App</h3>
-        <p class="text-blue-600 text-sm mb-3">Install this app on your device for a better experience.</p>
-        <div class="flex space-x-2">
-          <button @click="installApp" class="bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 px-3 rounded-lg transition-colors">
-            Install
-          </button>
-          <button @click="dismissInstall" class="bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm py-1 px-3 rounded-lg transition-colors">
-            Not Now
-          </button>
-        </div>
+
+    <div v-if="isInstallable && !isInstalled" class="rounded-xl border border-line bg-card p-4 shadow-lg">
+      <h3 class="text-sm font-semibold text-ink">Install App</h3>
+      <p class="mb-3 text-sm text-ink-muted">Install this app on your device for a better experience.</p>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-primary" @click="installApp">Install</button>
+        <button type="button" class="btn btn-ghost" @click="dismissInstall">Not Now</button>
       </div>
     </div>
   </div>
