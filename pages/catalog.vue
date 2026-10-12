@@ -2,7 +2,13 @@
   <div :class="{ 'pb-20': showCartBar }">
     <div class="lg:grid lg:items-start lg:gap-6" :class="{ 'lg:grid-cols-[minmax(0,1fr)_20rem]': isOwner }">
       <div class="min-w-0">
-        <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products" />
+        <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products">
+          <template v-if="isOwner" #actions>
+            <BaseButton :variant="managing ? 'primary' : 'secondary'" icon="cog" :aria-pressed="managing" @click="managing = !managing">
+              {{ managing ? 'Done' : 'Manage' }}
+            </BaseButton>
+          </template>
+        </PageHeader>
 
         <div class="mb-4 space-y-3">
           <div class="relative">
@@ -49,6 +55,8 @@
             </button>
           </div>
         </div>
+
+        <BaseButton v-if="managing" class="mb-4" block icon="plus" @click="openEditor(null)">+ New article</BaseButton>
 
         <div v-if="loading" class="card flex h-48 flex-col items-center justify-center gap-3">
           <span class="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-accent" aria-hidden="true" />
@@ -103,7 +111,7 @@
               </div>
               <div class="mt-auto flex flex-wrap items-center justify-between gap-2">
                 <p class="text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(priceOf(product)) }}</p>
-                <template v-if="isOwner">
+                <template v-if="isOwner && !managing">
                   <QuantityStepper
                     v-if="isSelected(product)"
                     :quantity="product.quantity"
@@ -169,6 +177,15 @@
         />
       </BottomSheet>
     </template>
+
+    <ArticleSheet
+      v-model:open="isEditorOpen"
+      :article="editingArticle"
+      :categories="categories"
+      @saved="onArticleSaved"
+      @deleted="onArticleDeleted"
+      @stock-changed="onStockChanged"
+    />
   </div>
 </template>
 
@@ -287,9 +304,34 @@ const removeProduct = (product) => {
   product.quantity = 0
 }
 
-// Only the owner sells; visitors just browse
+const managing = ref(false)
+const isEditorOpen = ref(false)
+const editingArticle = ref(null)
+
+const openEditor = (article) => {
+  editingArticle.value = article
+  isEditorOpen.value = true
+}
+
+// In manage mode a tap edits the article; otherwise only the owner sells and visitors browse
 const onCardClick = (product) => {
-  if (isOwner.value) incrementQuantity(product)
+  if (managing.value) openEditor(product)
+  else if (isOwner.value) incrementQuantity(product)
+}
+
+const onArticleSaved = (article) => {
+  const index = products.value.findIndex(product => product.id === article.id)
+  if (index === -1) products.value.push({ ...article, quantity: 0 })
+  else products.value[index] = { ...article, quantity: products.value[index].quantity }
+}
+
+const onArticleDeleted = (id) => {
+  products.value = products.value.filter(product => product.id !== id)
+}
+
+const onStockChanged = (id, stock) => {
+  const product = products.value.find(item => item.id === id)
+  if (product) product.stock = stock
 }
 
 const { addTransaction } = useTransactions()
