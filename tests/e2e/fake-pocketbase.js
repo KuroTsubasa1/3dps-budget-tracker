@@ -89,6 +89,9 @@ export function createFakePocketBase () {
   const failures = {}
   const requests = []
   const state = { enabled: false }
+  // Seeded stock counts as history that predates the movement log, so deriving stock from
+  // movements keeps it without adding rows that tests assert on
+  const openingStock = {}
 
   const withExpand = (record, expand) =>
     expand?.includes('category') && record.category
@@ -129,7 +132,10 @@ export function createFakePocketBase () {
         const record = records.find(item => item.id === id)
         return record ? reply(200, withExpand(record, expand)) : reply(404, { code: 404, message: 'Not found.', data: {} })
       }
-      const items = sortRecords(records.filter(record => matchesFilter(record, url.searchParams.get('filter'))), url.searchParams.get('sort'))
+      const filter = url.searchParams.get('filter')
+      let items = sortRecords(records.filter(record => matchesFilter(record, filter)), url.searchParams.get('sort'))
+      const opening = name === 'stock_movements' && openingStock[parseValue(filter?.split('=')[1] ?? '')]
+      if (opening) items = [...items, { id: 'opening', change: opening }]
       // perPage must echo the request: getFullList keeps paging while items.length === perPage
       return reply(200, { page: 1, perPage, totalItems: items.length, totalPages: 1, items: items.slice(0, perPage).map(record => withExpand(record, expand)) })
     }
@@ -159,5 +165,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, requests, state, handle }
+  return { db, failures, requests, state, openingStock, handle }
 }

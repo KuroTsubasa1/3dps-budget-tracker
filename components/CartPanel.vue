@@ -12,6 +12,9 @@
           <p class="truncate text-xs tabular-nums text-ink-muted">
             {{ formatCurrency(priceOf(item)) }} each · {{ formatCurrency(priceOf(item) * item.quantity) }}
           </p>
+          <p v-if="item.quantity > item.stock" class="text-xs font-medium text-amber-700 dark:text-amber-300">
+            only {{ Math.max(0, item.stock) }} in stock
+          </p>
         </div>
         <QuantityStepper
           :quantity="item.quantity"

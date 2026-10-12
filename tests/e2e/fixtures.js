@@ -75,6 +75,7 @@ export const test = base.extend({
           category: 'cat-figure',
           ...article
         })))
+        for (const article of fake.db.budget_tracket_catalog) fake.openingStock[article.id] ??= article.stock
       },
       async mockCatalog (items = sampleProducts) { api.seed({ articles: items }) },
       async mockTransactions ({ status = 200 } = {}) {
@@ -96,6 +97,9 @@ export const test = base.extend({
 export async function gotoReady (page, path) {
   await page.goto(path)
   await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+  // NuxtLink prefetches route modules once idle; against `nuxt dev` a prefetch that lands after a
+  // test goes offline poisons that module for the rest of the page's life
+  await page.waitForLoadState('networkidle')
 }
 
 // Below lg the add-transaction form lives in a bottom sheet behind the floating + button

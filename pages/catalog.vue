@@ -182,7 +182,7 @@ import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
-import { stockStatus } from '~/utils/inventory'
+import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
 
 const STOCK_BADGE = {
   out: 'bg-expense/10 text-expense',
@@ -302,15 +302,24 @@ const submitToBalance = () => {
   const productNames = selectedProducts.value
     .map(product => `${product.name} (${formatCurrency(priceOf(product))} × ${product.quantity})`)
     .join('\n')
+  // Overselling is allowed: the movement deducts what is left and notes the rest
+  const stockMovements = selectedProducts.value.map(product => ({
+    id: newRecordId(),
+    article: product.id,
+    ...saleMovement(product.stock, product.quantity)
+  }))
 
   addTransaction({
     description: `3D Printing Products:\n${productNames}`,
     amount: total,
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    stockMovements
   })
 
-  // Reset all product quantities to 0
-  products.value.forEach(product => { product.quantity = 0 })
+  products.value.forEach((product) => {
+    if (product.quantity) product.stock = Math.max(0, product.stock - product.quantity)
+    product.quantity = 0
+  })
   isCartOpen.value = false
   toast(`Added ${formatCurrency(total)} to balance`)
 }
