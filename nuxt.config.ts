@@ -2,6 +2,11 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
+  app: {
+    head: {
+      viewport: 'width=device-width, initial-scale=1, viewport-fit=cover'
+    }
+  },
   modules: [
     '@nuxtjs/tailwindcss',
     '@vite-pwa/nuxt'
@@ -11,6 +16,8 @@ export default defineNuxtConfig({
     transpile: ['qrcode-vue3']
   },
   tailwindcss: {
+    // Without this the module injects its bundled default and assets/css/main.css never loads
+    cssPath: '~/assets/css/main.css',
     config: {
       darkMode: 'class'
     }

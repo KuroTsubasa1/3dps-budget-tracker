@@ -13,7 +13,13 @@ export default defineConfig({
     serviceWorkers: 'block'
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } }
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'mobile',
+      use: { ...devices['Pixel 7'] },
+      // Widened task by task as pages are rebuilt mobile-first; the last task removes this filter
+      testMatch: /(theme)\.spec\.js$/
+    }
   ],
   webServer: {
     command: 'npm run build && npm run preview',
