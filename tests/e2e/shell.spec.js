@@ -61,4 +61,40 @@ test.describe('app shell', () => {
     await gotoReady(page, '/business-card')
     await expect(page.locator('html')).toHaveClass(/dark/)
   })
+
+  test('dark mode stays on while moving between tabs', async ({ page, api }) => {
+    await api.mockCatalog()
+    await page.addInitScript(key => {
+      localStorage.setItem(key, JSON.stringify({ display: { darkMode: true } }))
+    }, SETTINGS_KEY)
+    await gotoReady(page, '/catalog')
+    const nav = page.getByRole('navigation', { name: 'Primary' })
+    const html = page.locator('html')
+
+    for (const item of NAV_ITEMS) {
+      await nav.getByRole('link', { name: item.label, exact: true }).click()
+      await page.waitForURL(url => url.pathname === item.to)
+      await expect(html).toHaveClass(/dark/)
+    }
+  })
+
+  test('install card can be dismissed with Not Now', async ({ page }) => {
+    await gotoReady(page, '/business-card')
+    await page.evaluate(() => {
+      const event = new Event('beforeinstallprompt')
+      event.prompt = () => {}
+      event.userChoice = Promise.resolve({ outcome: 'dismissed' })
+      window.dispatchEvent(event)
+    })
+    await expect(page.getByText('Install App')).toBeVisible()
+    await page.getByRole('button', { name: 'Not Now' }).click()
+    await expect(page.getByText('Install App')).toHaveCount(0)
+  })
+
+  test('first service worker install does not claim an update', async ({ page }) => {
+    await gotoReady(page, '/business-card')
+    // No controller at load (first visit), then the new worker takes control
+    await page.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')))
+    await expect(page.getByText('Update Available')).toHaveCount(0)
+  })
 })

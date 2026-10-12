@@ -59,6 +59,17 @@ test.describe('dashboard on phones', () => {
     await expect(page.getByRole('button', { name: 'Add to Balance' })).toHaveCount(1)
     await expect.poll(() => bodyOverflow(page)).toBe('')
   })
+
+  test('shrinking back after a breakpoint swap does not reopen the sheet', async ({ page }) => {
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await page.setViewportSize({ width: 412, height: 915 })
+    await expect(page.getByRole('button', { name: 'Add transaction', exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
 })
 
 test('desktop shows the form inline without a floating button', async ({ page, isMobile }) => {

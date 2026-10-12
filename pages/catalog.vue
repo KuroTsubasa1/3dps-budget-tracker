@@ -144,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
@@ -156,6 +156,8 @@ const error = ref(null)
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const isCartOpen = ref(false)
+// The sheet is dropped at lg+; don't let it reappear (unlocked) when the screen shrinks again
+watch(isDesktop, (desktop) => { if (desktop) isCartOpen.value = false })
 const searchInput = ref(null)
 const sortSelect = ref(null)
 

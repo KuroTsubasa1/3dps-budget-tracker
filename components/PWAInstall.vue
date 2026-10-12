@@ -1,12 +1,12 @@
 <template>
-  <div v-if="updateAvailable || (isInstallable && !isInstalled)" class="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
+  <div v-if="updateAvailable || (isInstallable && !isInstalled && showInstallPrompt)" class="pointer-events-auto flex w-full max-w-sm flex-col gap-2">
     <div v-if="updateAvailable" class="rounded-xl border border-line bg-card p-4 shadow-lg">
       <h3 class="text-sm font-semibold text-ink">Update Available</h3>
       <p class="mb-3 text-sm text-ink-muted">A new version of the app is available.</p>
       <button type="button" class="btn btn-primary" @click="updateApp">Update Now</button>
     </div>
 
-    <div v-if="isInstallable && !isInstalled" class="rounded-xl border border-line bg-card p-4 shadow-lg">
+    <div v-if="isInstallable && !isInstalled && showInstallPrompt" class="rounded-xl border border-line bg-card p-4 shadow-lg">
       <h3 class="text-sm font-semibold text-ink">Install App</h3>
       <p class="mb-3 text-sm text-ink-muted">Install this app on your device for a better experience.</p>
       <div class="flex gap-2">
@@ -81,8 +81,10 @@ onMounted(() => {
   // Check for service worker support
   if ('serviceWorker' in navigator) {
     // Listen for service worker updates
+    // The first install also fires controllerchange; only a replaced worker is an update
+    const hadController = !!navigator.serviceWorker.controller
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      updateAvailable.value = true
+      if (hadController) updateAvailable.value = true
     })
   }
 

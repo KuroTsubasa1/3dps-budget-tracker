@@ -89,6 +89,8 @@ const { toast } = useToast()
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const isFormOpen = ref(false)
+// The sheet is dropped at lg+; don't let it reappear (unlocked) when the screen shrinks again
+watch(isDesktop, (desktop) => { if (desktop) isFormOpen.value = false })
 
 const formatMoney = amount => formatCurrency(amount, displaySettings.value.currencyFormat || 'EUR')
 const moneyClass = amount => (amount < 0 ? 'text-expense' : 'text-income')
