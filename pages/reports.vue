@@ -1,359 +1,168 @@
 <template>
-  <div class="px-4 py-6 sm:px-0">
-    <!-- Reports Header -->
-    <div class="mb-6">
-      <div class="flex items-center mb-2">
-        <div class="flex-shrink-0 w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mr-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        </div>
-        <div>
-          <h1 class="text-xl font-bold text-gray-800">Financial Reports</h1>
-          <p class="text-sm text-gray-500">Analyze your income and expense trends</p>
-        </div>
+  <div>
+    <PageHeader title="Financial Reports" subtitle="Analyze your income and expense trends">
+      <template #actions>
+        <BaseButton variant="secondary" icon="refresh" aria-label="Refresh Data" @click="refreshData">
+          <span class="hidden sm:inline">Refresh Data</span>
+        </BaseButton>
+      </template>
+    </PageHeader>
+
+    <div class="no-scrollbar -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Time period">
+      <button
+        v-for="period in timePeriods"
+        :key="period.value"
+        type="button"
+        class="chip"
+        :class="selectedPeriod === period.value ? 'chip-active' : 'chip-idle'"
+        :aria-pressed="selectedPeriod === period.value"
+        @click="selectedPeriod = period.value"
+      >
+        {{ period.label }}
+      </button>
+    </div>
+
+    <div v-if="selectedPeriod === 'custom'" class="mb-4 grid gap-3 md:grid-cols-2">
+      <div>
+        <label for="report-start" class="label">Start Date</label>
+        <input id="report-start" v-model="customDateRange.start" type="date" class="input">
+      </div>
+      <div>
+        <label for="report-end" class="label">End Date</label>
+        <input id="report-end" v-model="customDateRange.end" type="date" class="input">
       </div>
     </div>
 
-    <!-- Date Range Selector -->
-    <div class="card mb-6">
-      <div class="card-header flex items-center justify-between">
-        <div class="flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Time Period</h2>
-            <p class="text-xs text-gray-500">Select date range for report</p>
-          </div>
-        </div>
-        <button 
-          class="btn btn-primary flex items-center justify-center" 
-          @click="refreshData"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh Data
-        </button>
+    <div class="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+      <div v-for="kpi in kpis" :key="kpi.label" class="card min-w-0 p-4" :class="{ 'col-span-2 md:col-span-1': kpi.wide }">
+        <p class="text-xs font-medium text-ink-muted">{{ kpi.label }}</p>
+        <p class="mt-1 truncate text-xl font-semibold tabular-nums md:text-2xl" :class="kpi.valueClass">{{ formatCurrency(kpi.value) }}</p>
+        <p class="mt-1 text-xs text-ink-muted">
+          <span class="font-medium" :class="(kpi.change >= 0) === kpi.goodWhenUp ? 'text-income' : 'text-expense'">
+            {{ kpi.change >= 0 ? '+' : '' }}{{ kpi.change }}%
+          </span>
+          from previous period
+        </p>
       </div>
-      <div class="card-body">
-        <div class="flex flex-wrap gap-4">
-          <button
-            v-for="(period, index) in timePeriods"
-            :key="index"
-            @click="selectedPeriod = period.value"
-            :class="[
-              'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-              selectedPeriod === period.value
-                ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
-                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-            ]"
-          >
-            {{ period.label }}
-          </button>
-          
-          <div v-if="selectedPeriod === 'custom'" class="mt-4 w-full">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                <input type="date" v-model="customDateRange.start" class="input w-full" />
+    </div>
+
+    <div class="mb-4 grid gap-4 lg:grid-cols-2">
+      <BaseCard v-for="chart in TREND_CHARTS" :key="chart.title" :title="chart.title" :subtitle="chart.subtitle" :icon="chart.icon">
+        <div class="flex h-56 items-center justify-center rounded-lg border border-dashed border-line px-4 text-center text-sm text-ink-muted md:h-72">
+          Chart would be displayed here
+        </div>
+      </BaseCard>
+    </div>
+
+    <div class="mb-4 grid gap-4 lg:grid-cols-3">
+      <BaseCard title="Expenses by Category" subtitle="Where you spend money" icon="chart">
+        <div class="flex h-56 items-center justify-center rounded-lg border border-dashed border-line px-4 text-center text-sm text-ink-muted md:h-72">
+          Chart would be displayed here
+        </div>
+      </BaseCard>
+
+      <BaseCard title="Top Expense Categories" subtitle="Your biggest spending areas" icon="cash" flush class="lg:col-span-2">
+        <ul class="divide-y divide-line md:hidden">
+          <li v-for="category in topExpenseCategories" :key="category.name" class="px-4 py-3">
+            <div class="flex items-center gap-3">
+              <span class="h-3 w-3 shrink-0 rounded-full" :class="category.bgColor" />
+              <p class="min-w-0 flex-1 truncate text-sm font-medium text-ink">{{ category.name }}</p>
+              <p class="text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(Math.abs(category.amount)) }}</p>
+            </div>
+            <div class="mt-2 flex items-center gap-3 pl-6">
+              <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div class="h-full rounded-full" :class="category.barColor" :style="{ width: `${category.percentage}%` }" />
               </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                <input type="date" v-model="customDateRange.end" class="input w-full" />
-              </div>
+              <span class="w-10 text-right text-xs tabular-nums text-ink-muted">{{ category.percentage }}%</span>
+              <span class="w-14 text-right text-xs font-medium tabular-nums" :class="category.change >= 0 ? 'text-expense' : 'text-income'">
+                {{ category.change >= 0 ? '+' : '' }}{{ category.change }}%
+              </span>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Summary Cards Row -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-      <!-- Total Income Card -->
-      <div class="card">
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex-shrink-0 w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
-            <span class="text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-600">Income</span>
-          </div>
-          <h3 class="text-sm font-medium text-gray-500 mb-1">Total Income</h3>
-          <p class="text-3xl font-bold text-gray-900">{{ formatCurrency(summaryData.income) }}</p>
-          <div class="mt-2 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-            <span class="text-xs font-medium text-green-600">+{{ summaryData.incomePercentChange }}% from previous period</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Total Expenses Card -->
-      <div class="card">
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex-shrink-0 w-10 h-10 bg-red-50 rounded-full flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" />
-              </svg>
-            </div>
-            <span class="text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-600">Expense</span>
-          </div>
-          <h3 class="text-sm font-medium text-gray-500 mb-1">Total Expenses</h3>
-          <p class="text-3xl font-bold text-gray-900">{{ formatCurrency(Math.abs(summaryData.expenses)) }}</p>
-          <div class="mt-2 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-            </svg>
-            <span class="text-xs font-medium text-red-600">+{{ summaryData.expensesPercentChange }}% from previous period</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Net Balance Card -->
-      <div class="card">
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex-shrink-0 w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <span class="text-xs font-medium px-2 py-1 rounded-full bg-blue-50 text-blue-600">Balance</span>
-          </div>
-          <h3 class="text-sm font-medium text-gray-500 mb-1">Net Balance</h3>
-          <p class="text-3xl font-bold" :class="summaryData.netBalance >= 0 ? 'text-green-600' : 'text-red-600'">
-            {{ formatCurrency(summaryData.netBalance) }}
-          </p>
-          <div class="mt-2 flex items-center">
-            <svg v-if="summaryData.netBalancePercentChange >= 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-            <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-500 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-            </svg>
-            <span class="text-xs font-medium" :class="summaryData.netBalancePercentChange >= 0 ? 'text-green-600' : 'text-red-600'">
-              {{ summaryData.netBalancePercentChange >= 0 ? '+' : '' }}{{ summaryData.netBalancePercentChange }}% from previous period
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Charts Row -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <!-- Income vs Expenses Bar Chart -->
-      <div class="card">
-        <div class="card-header flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-indigo-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Income vs Expenses</h2>
-            <p class="text-xs text-gray-500">Monthly comparison</p>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="h-64 flex items-center justify-center text-gray-500 text-sm">
-            Chart would be displayed here 
-            (Monthly income/expense comparison bar chart)
-          </div>
-        </div>
-      </div>
-      
-      <!-- Balance Trend Line Chart -->
-      <div class="card">
-        <div class="card-header flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-green-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Balance Trend</h2>
-            <p class="text-xs text-gray-500">Over time analysis</p>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="h-64 flex items-center justify-center text-gray-500 text-sm">
-            Chart would be displayed here 
-            (Balance trend line chart)
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Expense Breakdown -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-      <!-- Expense by Category Pie Chart -->
-      <div class="card md:col-span-1">
-        <div class="card-header flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-red-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Expenses by Category</h2>
-            <p class="text-xs text-gray-500">Where you spend money</p>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="h-64 flex items-center justify-center text-gray-500 text-sm">
-            Chart would be displayed here 
-            (Expense by category pie chart)
-          </div>
-        </div>
-      </div>
-      
-      <!-- Top Expense Categories Table -->
-      <div class="card md:col-span-2">
-        <div class="card-header flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-amber-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Top Expense Categories</h2>
-            <p class="text-xs text-gray-500">Your biggest spending areas</p>
-          </div>
-        </div>
-        <div class="card-body overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead>
-              <tr>
-                <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
-                </th>
-                <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  % of Total
-                </th>
-                <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Change
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr v-for="(category, index) in topExpenseCategories" :key="index">
-                <td class="px-4 py-3">
-                  <div class="flex items-center">
-                    <div class="flex-shrink-0 w-8 h-8 rounded-full" :class="category.bgColor"></div>
-                    <div class="ml-3">
-                      <p class="text-sm font-medium text-gray-900">{{ category.name }}</p>
-                    </div>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <p class="text-sm text-gray-900">{{ formatCurrency(Math.abs(category.amount)) }}</p>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center">
-                    <div class="w-full bg-gray-200 rounded-full h-2.5">
-                      <div class="h-2.5 rounded-full" :class="category.barColor" :style="{ width: category.percentage + '%' }"></div>
-                    </div>
-                    <span class="ml-2 text-sm text-gray-500">{{ category.percentage }}%</span>
-                  </div>
-                </td>
-                <td class="px-4 py-3">
-                  <div class="flex items-center" :class="category.change >= 0 ? 'text-red-600' : 'text-green-600'">
-                    <svg v-if="category.change >= 0" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6" />
-                    </svg>
-                    <span class="text-sm font-medium">{{ category.change >= 0 ? '+' : '' }}{{ category.change }}%</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Recent Transactions -->
-    <div class="card">
-      <div class="card-header flex items-center justify-between">
-        <div class="flex items-center">
-          <div class="flex-shrink-0 w-8 h-8 bg-purple-50 rounded-full flex items-center justify-center mr-3">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-gray-800">Recent Transactions</h2>
-            <p class="text-xs text-gray-500">For the selected period</p>
-          </div>
-        </div>
-        <button class="btn btn-primary flex items-center text-sm">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0l-4 4m4-4v12" />
-          </svg>
-          Export
-        </button>
-      </div>
-      <div class="card-body overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
+          </li>
+        </ul>
+        <table class="hidden w-full text-sm md:table">
           <thead>
-            <tr>
-              <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Date
-              </th>
-              <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Description
-              </th>
-              <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category
-              </th>
-              <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Amount
-              </th>
+            <tr class="border-b border-line text-left text-xs font-medium uppercase tracking-wide text-ink-muted">
+              <th class="px-5 py-2 font-medium">Category</th>
+              <th class="px-5 py-2 font-medium">Amount</th>
+              <th class="px-5 py-2 font-medium">% of Total</th>
+              <th class="px-5 py-2 font-medium">Change</th>
             </tr>
           </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="(transaction, index) in recentTransactions" :key="index">
-              <td class="px-4 py-3 whitespace-nowrap">
-                <p class="text-sm text-gray-900">{{ formatDate(transaction.date) }}</p>
+          <tbody class="divide-y divide-line">
+            <tr v-for="category in topExpenseCategories" :key="category.name">
+              <td class="px-5 py-3">
+                <div class="flex items-center gap-3">
+                  <span class="h-3 w-3 shrink-0 rounded-full" :class="category.bgColor" />
+                  <span class="font-medium text-ink">{{ category.name }}</span>
+                </div>
               </td>
-              <td class="px-4 py-3">
-                <p class="text-sm text-gray-900">{{ transaction.description }}</p>
+              <td class="px-5 py-3 tabular-nums text-ink">{{ formatCurrency(Math.abs(category.amount)) }}</td>
+              <td class="px-5 py-3">
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+                    <div class="h-full rounded-full" :class="category.barColor" :style="{ width: `${category.percentage}%` }" />
+                  </div>
+                  <span class="tabular-nums text-ink-muted">{{ category.percentage }}%</span>
+                </div>
               </td>
-              <td class="px-4 py-3 whitespace-nowrap">
-                <span 
-                  class="px-2 py-1 text-xs font-medium rounded-full"
-                  :class="[transaction.amount >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800']"
-                >
-                  {{ transaction.amount >= 0 ? 'Income' : 'Expense' }}
-                </span>
-              </td>
-              <td class="px-4 py-3 whitespace-nowrap">
-                <p 
-                  class="text-sm font-medium"
-                  :class="[transaction.amount >= 0 ? 'text-green-600' : 'text-red-600']"
-                >
-                  {{ transaction.amount >= 0 ? '+' : '' }}{{ formatCurrency(transaction.amount) }}
-                </p>
+              <td class="px-5 py-3 font-medium tabular-nums" :class="category.change >= 0 ? 'text-expense' : 'text-income'">
+                {{ category.change >= 0 ? '+' : '' }}{{ category.change }}%
               </td>
             </tr>
           </tbody>
         </table>
-      </div>
+      </BaseCard>
     </div>
+
+    <BaseCard title="Recent Transactions" subtitle="For the selected period" icon="clipboard" flush>
+      <template #actions>
+        <BaseButton variant="ghost" icon="download">Export</BaseButton>
+      </template>
+      <div class="divide-y divide-line md:hidden">
+        <ListRow
+          v-for="(transaction, index) in recentTransactions"
+          :key="index"
+          :title="transaction.description"
+          :subtitle="`${formatDate(transaction.date)} · ${transaction.amount >= 0 ? 'Income' : 'Expense'}`"
+          :icon="transaction.amount >= 0 ? 'plus' : 'minus'"
+          :icon-class="transaction.amount >= 0 ? 'bg-income/10 text-income' : 'bg-expense/10 text-expense'"
+        >
+          <template #trailing>
+            <span class="shrink-0 text-sm font-semibold tabular-nums" :class="transaction.amount >= 0 ? 'text-income' : 'text-expense'">
+              {{ transaction.amount >= 0 ? '+' : '' }}{{ formatCurrency(transaction.amount) }}
+            </span>
+          </template>
+        </ListRow>
+      </div>
+      <table class="hidden w-full text-sm md:table">
+        <thead>
+          <tr class="border-b border-line text-left text-xs font-medium uppercase tracking-wide text-ink-muted">
+            <th class="px-5 py-2 font-medium">Date</th>
+            <th class="px-5 py-2 font-medium">Description</th>
+            <th class="px-5 py-2 font-medium">Category</th>
+            <th class="px-5 py-2 text-right font-medium">Amount</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-line">
+          <tr v-for="(transaction, index) in recentTransactions" :key="index">
+            <td class="whitespace-nowrap px-5 py-3 text-ink-muted">{{ formatDate(transaction.date) }}</td>
+            <td class="px-5 py-3 text-ink">{{ transaction.description }}</td>
+            <td class="whitespace-nowrap px-5 py-3">
+              <span
+                class="rounded-full px-2 py-1 text-xs font-medium"
+                :class="transaction.amount >= 0 ? 'bg-income/10 text-income' : 'bg-expense/10 text-expense'"
+              >
+                {{ transaction.amount >= 0 ? 'Income' : 'Expense' }}
+              </span>
+            </td>
+            <td class="whitespace-nowrap px-5 py-3 text-right font-semibold tabular-nums" :class="transaction.amount >= 0 ? 'text-income' : 'text-expense'">
+              {{ transaction.amount >= 0 ? '+' : '' }}{{ formatCurrency(transaction.amount) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </BaseCard>
   </div>
 </template>
 
@@ -390,6 +199,26 @@ const summaryData = ref({
   netBalance: 808.45,
   netBalancePercentChange: 24.7
 })
+
+// KPI tiles; an expense increase is bad news, so its change colours the other way round
+const kpis = computed(() => [
+  { label: 'Total Income', value: summaryData.value.income, change: summaryData.value.incomePercentChange, goodWhenUp: true, valueClass: 'text-income' },
+  { label: 'Total Expenses', value: Math.abs(summaryData.value.expenses), change: summaryData.value.expensesPercentChange, goodWhenUp: false, valueClass: 'text-expense' },
+  {
+    label: 'Net Balance',
+    value: summaryData.value.netBalance,
+    change: summaryData.value.netBalancePercentChange,
+    goodWhenUp: true,
+    valueClass: summaryData.value.netBalance >= 0 ? 'text-income' : 'text-expense',
+    wide: true
+  }
+])
+
+// Placeholders until real charts are built (out of scope for the UI overhaul)
+const TREND_CHARTS = [
+  { title: 'Income vs Expenses', subtitle: 'Monthly comparison', icon: 'chart' },
+  { title: 'Balance Trend', subtitle: 'Over time analysis', icon: 'chart' }
+]
 
 // Top expense categories
 const topExpenseCategories = ref([
@@ -500,34 +329,3 @@ const refreshData = () => {
   // We would update summaryData and other metrics here
 }
 </script>
-
-<style scoped>
-/* Card styling */
-.card {
-  @apply bg-white/90 backdrop-blur-sm rounded-xl shadow-md border border-gray-100 overflow-hidden;
-}
-
-.card-header {
-  @apply p-4 border-b border-gray-100;
-}
-
-.card-body {
-  @apply p-4;
-}
-
-.input {
-  @apply rounded-lg border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50;
-}
-
-.btn {
-  @apply px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 shadow-sm;
-}
-
-.btn-primary {
-  @apply bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white;
-}
-
-.btn-secondary {
-  @apply bg-white border border-gray-300 text-gray-700 hover:bg-gray-50;
-}
-</style>
