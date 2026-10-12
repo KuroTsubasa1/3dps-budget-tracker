@@ -10,7 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Code Style Guidelines
 - Vue 3 Composition API with `<script setup>` syntax
-- Use Tailwind utility classes and component classes (defined in assets/css/main.css)
+- Use Tailwind utility classes and component classes (defined in assets/css/main.css). Colours come from the semantic tokens (`surface`, `card`, `muted`, `line`, `ink`, `ink-muted`, `accent`, `income`, `expense`), which switch automatically in dark mode. Don't use raw gray/blue classes or `darkMode` ternaries.
+- Mobile-first: phones get the bottom tab bar and bottom sheets (`BottomSheet`), and `lg+` renders panels inline (`useMediaQuery`). Keep tap targets ≥ 44px. `npx playwright test --project=mobile` runs the suite on a Pixel 7.
 - Format currency values using the `formatCurrency()` utility (Euro/€)
 - Use composables pattern for reusable logic (located in `/composables` directory)
 - Component naming: PascalCase for SFCs
