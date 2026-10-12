@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures.js'
+import { test, expect, gotoReady, openTransactionForm } from './fixtures.js'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
 
@@ -7,7 +7,8 @@ const storedTransactions = page =>
 
 test.describe('home page transactions', () => {
   test('shows validation errors for missing description and amount', async ({ page, api }) => {
-    await page.goto('/')
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
     const submit = page.getByRole('button', { name: 'Add to Balance' })
 
     await submit.click()
@@ -23,7 +24,8 @@ test.describe('home page transactions', () => {
 
   test('adds an income transaction and syncs it to the API', async ({ page, api }) => {
     await api.mockTransactions()
-    await page.goto('/')
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
 
     await page.getByPlaceholder('What is this transaction for?').fill('Market sale')
     await page.getByPlaceholder('0.00').fill('25')
@@ -37,6 +39,7 @@ test.describe('home page transactions', () => {
     expect(stored).toHaveLength(1)
     expect(stored[0]).toMatchObject({ description: 'Market sale', amount: 25 })
 
+    await openTransactionForm(page)
     // Form resets after a successful add
     await expect(page.getByPlaceholder('What is this transaction for?')).toHaveValue('')
     await expect(page.getByPlaceholder('0.00')).toHaveValue('')
@@ -44,7 +47,8 @@ test.describe('home page transactions', () => {
 
   test('records expenses as negative amounts', async ({ page, api }) => {
     await api.mockTransactions()
-    await page.goto('/')
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
 
     await page.getByText('Expense', { exact: true }).click()
     await page.getByPlaceholder('What is this transaction for?').fill('Resin')
@@ -58,7 +62,8 @@ test.describe('home page transactions', () => {
 
   test('keeps the transaction locally and queues it when the API fails', async ({ page, api }) => {
     await api.mockTransactions({ status: 500 })
-    await page.goto('/')
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
 
     await page.getByPlaceholder('What is this transaction for?').fill('Commission')
     await page.getByPlaceholder('0.00').fill('40')
@@ -71,7 +76,8 @@ test.describe('home page transactions', () => {
 
   test('restores saved transactions after a reload', async ({ page, api }) => {
     await api.mockTransactions()
-    await page.goto('/')
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
 
     await page.getByPlaceholder('What is this transaction for?').fill('Keychain order')
     await page.getByPlaceholder('0.00').fill('3')

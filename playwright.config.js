@@ -18,7 +18,7 @@ export default defineConfig({
       name: 'mobile',
       use: { ...devices['Pixel 7'] },
       // Widened task by task as pages are rebuilt mobile-first; the last task removes this filter
-      testMatch: /(theme|shell|navigation)\.spec\.js$/
+      testMatch: /(theme|shell|navigation|transactions|dashboard)\.spec\.js$/
     }
   ],
   webServer: {

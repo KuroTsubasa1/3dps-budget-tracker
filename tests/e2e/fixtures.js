@@ -65,4 +65,11 @@ export async function gotoReady (page, path) {
   await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
 }
 
+// Below lg the add-transaction form lives in a bottom sheet behind the floating + button
+export async function openTransactionForm (page) {
+  if (page.viewportSize().width < 1024) {
+    await page.getByRole('button', { name: 'Add transaction', exact: true }).click()
+  }
+}
+
 export { expect }
