@@ -1,6 +1,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRuntimeConfig } from 'nuxt/app'
 import { useOfflineQueue } from './useOfflineQueue'
+import { usePocketBase } from './usePocketBase'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
 const transactions = ref([])
@@ -16,7 +17,7 @@ export const useTransactions = () => {
   const config = useRuntimeConfig()
   const API_BASE_URL = config.public.apiBaseUrl
   const API_ENDPOINT = config.public.apiEndpoint
-  const API_TOKEN = config.public.apiToken
+  const pb = usePocketBase()
   
   const { 
     offlineQueue, 
@@ -65,6 +66,24 @@ export const useTransactions = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions.value))
   }
 
+  // The owner's session token replaces the shared x-token; PocketBase rules check @request.auth.
+  // txSynced survives in the offline queue so a retry never posts the same transaction twice.
+  const postTransaction = async (data) => {
+    if (data.txSynced) return null
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: pb.authStore.token },
+      body: JSON.stringify({ description: data.description, amount: data.amount, notes: data.notes || '' })
+    })
+    if (!response.ok) {
+      const error = new Error(`API error: ${response.status}`)
+      error.status = response.status
+      throw error
+    }
+    data.txSynced = true
+    return response.json()
+  }
+
   const sendToPocketbase = async (transactionData) => {
     isLoading.value = true
     apiError.value = ''
@@ -75,33 +94,17 @@ export const useTransactions = () => {
         throw new Error('You are offline. Transaction saved locally and will sync when online.')
       }
       
-      const fullUrl = `${API_BASE_URL}${API_ENDPOINT}`
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-token': API_TOKEN
-        },
-        body: JSON.stringify({
-          description: transactionData.description,
-          amount: transactionData.amount,
-          notes: transactionData.notes || '',
-          token: API_TOKEN
-        })
-      })
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
-      }
-      
+      const record = await postTransaction(transactionData)
       syncStatus.value.lastSync = new Date().toISOString()
-      return await response.json()
+      return record
     } catch (error) {
       console.error('Failed to send transaction to API:', error)
       
       // Different message for offline vs other errors
       if (!isOnline()) {
         apiError.value = 'You are offline. Transaction saved locally and will sync when online.'
+      } else if (error.status === 401 || error.status === 403) {
+        apiError.value = 'Your session has expired. Log in again to sync - Transaction saved locally.'
       } else {
         apiError.value = 'Failed to save transaction to server'
       }
@@ -117,28 +120,7 @@ export const useTransactions = () => {
       return
     }
     
-    return await processQueue(async (item) => {
-      const fullUrl = `${API_BASE_URL}${API_ENDPOINT}`
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-token': API_TOKEN
-        },
-        body: JSON.stringify({
-          description: item.description,
-          amount: item.amount,
-          notes: item.notes || '',
-          token: API_TOKEN
-        })
-      })
-      
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
-      }
-      
-      return await response.json()
-    })
+    return await processQueue(item => postTransaction(item))
   }
 
   const addTransaction = async (transaction) => {

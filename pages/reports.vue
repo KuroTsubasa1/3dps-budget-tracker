@@ -171,6 +171,8 @@ import { ref, computed } from 'vue'
 import { formatCurrency } from '~/utils/currency'
 import { useTransactions } from '~/composables/useTransactions'
 
+definePageMeta({ middleware: 'owner' })
+
 const { transactions } = useTransactions()
 
 // Time period options

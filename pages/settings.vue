@@ -53,35 +53,18 @@
           </form>
         </BaseCard>
 
-        <BaseCard v-if="activeCategory === 'api'" title="API Configuration" subtitle="Set up Pocketbase API integration" icon="code">
-          <form class="space-y-4" @submit.prevent="handleSaveApiSettings">
+        <BaseCard v-if="activeCategory === 'api'" title="API Configuration" subtitle="Server and owner login" icon="code">
+          <dl class="space-y-3 text-sm">
             <div>
-              <label for="api-base" class="label">API Base URL</label>
-              <input id="api-base" v-model="apiSettings.baseUrl" type="text" class="input" placeholder="https://example.com/api/">
-              <p class="hint">The base URL for your Pocketbase API</p>
+              <dt class="text-ink-muted">PocketBase server</dt>
+              <dd class="break-all font-medium text-ink">{{ pocketbaseUrl }}</dd>
             </div>
             <div>
-              <label for="api-endpoint" class="label">API Endpoint</label>
-              <input id="api-endpoint" v-model="apiSettings.endpoint" type="text" class="input" placeholder="collections/budget_tracker_transactions/records">
-              <p class="hint">The specific endpoint for transactions</p>
+              <dt class="text-ink-muted">Logged in as</dt>
+              <dd class="font-medium text-ink">{{ user?.email || 'Not logged in' }}</dd>
             </div>
-            <div>
-              <label for="api-token" class="label">API Token</label>
-              <div class="relative">
-                <input id="api-token" v-model="apiSettings.token" :type="showToken ? 'text' : 'password'" class="input pr-12" placeholder="Enter your API token">
-                <button
-                  type="button"
-                  class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-ink-muted hover:text-ink"
-                  :aria-label="showToken ? 'Hide token' : 'Show token'"
-                  @click="showToken = !showToken"
-                >
-                  <AppIcon :name="showToken ? 'eye-off' : 'eye'" class="h-5 w-5" />
-                </button>
-              </div>
-              <p class="hint">Your authentication token for API access</p>
-            </div>
-            <BaseButton type="submit" block icon="check">Save API Configuration</BaseButton>
-          </form>
+          </dl>
+          <BaseButton class="mt-4" variant="secondary" block icon="x" @click="handleLogout">Log out</BaseButton>
         </BaseCard>
 
         <BaseCard v-if="activeCategory === 'display'" title="Display Settings" subtitle="Customize the application appearance" icon="desktop">
@@ -178,29 +161,37 @@
 import { ref, computed, onMounted } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
+import { useAuth } from '~/composables/useAuth'
 import { useOfflineQueue } from '~/composables/useOfflineQueue'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
+
+definePageMeta({ middleware: 'owner' })
 
 const { syncStatus, syncTransactionsQueue } = useTransactions()
 const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
   accountSettings,
-  apiSettings,
   displaySettings,
   notificationSettings,
   saveAccountSettings,
-  saveApiSettings,
   saveDisplaySettings,
   saveNotificationSettings,
   exportData,
   clearAllData
 } = useAppSettings()
 const { toast } = useToast()
+const { user, logout } = useAuth()
+const pocketbaseUrl = useRuntimeConfig().public.pocketbaseUrl
+
+const handleLogout = () => {
+  logout()
+  navigateTo('/login')
+}
 
 const SETTINGS_CATEGORIES = [
   { id: 'account', name: 'Account Settings', description: 'Manage your personal details', icon: 'user' },
-  { id: 'api', name: 'API Configuration', description: 'Set up Pocketbase integration', icon: 'code' },
+  { id: 'api', name: 'API Configuration', description: 'Server and owner login', icon: 'code' },
   { id: 'display', name: 'Display Settings', description: 'Customize appearance', icon: 'desktop' },
   { id: 'notifications', name: 'Notifications', description: 'Configure alerts and reminders', icon: 'bell' },
   { id: 'data', name: 'Data Management', description: 'Export, backup or clear data', icon: 'database' }
@@ -238,7 +229,6 @@ const backToList = () => router.replace({ hash: '' })
 const showClearDataConfirm = ref(false)
 const lastSyncTime = ref(syncStatus.value?.lastSync ? new Date(syncStatus.value.lastSync).toLocaleString() : null)
 const syncProgress = ref(0)
-const showToken = ref(false)
 
 const syncData = async () => {
   if (queueIsSyncing.value || !syncStatus.value.isOnline || !offlineQueue.value.length) {
@@ -257,10 +247,6 @@ const syncData = async () => {
 
 const handleSaveAccountSettings = async () => {
   if (await saveAccountSettings()) toast('Account settings saved successfully')
-}
-
-const handleSaveApiSettings = async () => {
-  if (await saveApiSettings()) toast('API settings saved successfully')
 }
 
 // app.vue watches displaySettings.darkMode and applies html.dark, so saving only persists

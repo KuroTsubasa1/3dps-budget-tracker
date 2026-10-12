@@ -83,6 +83,8 @@ import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
+definePageMeta({ middleware: 'owner' })
+
 const { transactions, earnings, todayEarnings, apiError, clearApiError } = useTransactions()
 const { displaySettings } = useAppSettings()
 const { toast } = useToast()

@@ -26,7 +26,8 @@ export default defineNuxtConfig({
     public: {
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'https://pocket.lasseharm.space/api/',
       apiEndpoint: process.env.NUXT_PUBLIC_API_ENDPOINT || 'collections/budget_tracker_transactions/records',
-      apiToken: process.env.NUXT_PUBLIC_API_TOKEN || ''
+      apiToken: process.env.NUXT_PUBLIC_API_TOKEN || '',
+      pocketbaseUrl: process.env.NUXT_PUBLIC_POCKETBASE_URL || 'https://pocket.lasseharm.space'
     }
   },
   pwa: {
