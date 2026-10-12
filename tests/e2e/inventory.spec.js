@@ -1,5 +1,7 @@
 import { test, expect, gotoReady } from './fixtures.js'
 
+const loggedMovements = api => api.db.stock_movements.filter(m => m.note !== 'opening stock')
+
 const keychain = overrides => ({ id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', price: 0, stock: 5, ...overrides })
 const card = (page, name) => page.locator('h3', { hasText: name })
 const isCompact = page => page.viewportSize().width < 1024
@@ -19,8 +21,8 @@ test('checkout logs a sale and lowers stock', async ({ page, api }) => {
   await openCart(page)
   await page.getByRole('button', { name: 'Add to Balance' }).click()
 
-  await expect.poll(() => api.db.stock_movements.length).toBe(1)
-  expect(api.db.stock_movements[0]).toMatchObject({ article: 'k1', change: -2, reason: 'sale', note: '' })
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
+  expect(loggedMovements(api)[0]).toMatchObject({ article: 'k1', change: -2, reason: 'sale', note: '' })
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(3)
   expect(api.posted[0].amount).toBe(8)
   await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('3 left')
@@ -34,8 +36,8 @@ test('overselling warns, sells, and stops stock at 0', async ({ page, api }) => 
   await expect(page.getByText('only 1 in stock')).toBeVisible()
   await page.getByRole('button', { name: 'Add to Balance' }).click()
 
-  await expect.poll(() => api.db.stock_movements.length).toBe(1)
-  expect(api.db.stock_movements[0]).toMatchObject({ change: -1, reason: 'sale', note: 'oversold by 2' })
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
+  expect(loggedMovements(api)[0]).toMatchObject({ change: -1, reason: 'sale', note: 'oversold by 2' })
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(0)
   expect(api.posted[0].amount).toBe(12)
   await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('Out of stock')
@@ -48,8 +50,8 @@ test('selling from empty stock logs the oversell', async ({ page, api }) => {
   await openCart(page)
   await page.getByRole('button', { name: 'Add to Balance' }).click()
 
-  await expect.poll(() => api.db.stock_movements.length).toBe(1)
-  expect(api.db.stock_movements[0]).toMatchObject({ change: 0, reason: 'sale', note: 'oversold by 1' })
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
+  expect(loggedMovements(api)[0]).toMatchObject({ change: 0, reason: 'sale', note: 'oversold by 1' })
   expect(api.db.budget_tracket_catalog[0].stock).toBe(0)
   expect(api.posted).toHaveLength(1)
 })
@@ -61,13 +63,13 @@ test('an offline checkout syncs its stock changes later', async ({ page, api, co
   await addToCart(page, 'Pikachu Keychain', 1)
   await openCart(page)
   await page.getByRole('button', { name: 'Add to Balance' }).click()
-  expect(api.db.stock_movements).toHaveLength(0)
+  expect(loggedMovements(api)).toHaveLength(0)
 
   await context.setOffline(false)
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
   await page.getByRole('button', { name: /Sync now/ }).click()
 
-  await expect.poll(() => api.db.stock_movements.length).toBe(1)
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(4)
   expect(api.posted).toHaveLength(1)
 })
@@ -80,7 +82,7 @@ test('a retried sync does not duplicate the sale', async ({ page, api }) => {
   await addToCart(page, 'Pikachu Keychain', 2)
   await openCart(page)
   await page.getByRole('button', { name: 'Add to Balance' }).click()
-  await expect.poll(() => api.db.stock_movements.length).toBe(1)
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
 
   api.fail('budget_tracket_catalog', 0)
   await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
@@ -88,5 +90,5 @@ test('a retried sync does not duplicate the sale', async ({ page, api }) => {
 
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(3)
   expect(api.posted).toHaveLength(1)
-  expect(api.db.stock_movements).toHaveLength(1)
+  expect(loggedMovements(api)).toHaveLength(1)
 })

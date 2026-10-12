@@ -75,7 +75,20 @@ export const test = base.extend({
           category: 'cat-figure',
           ...article
         })))
-        for (const article of fake.db.budget_tracket_catalog) fake.openingStock[article.id] ??= article.stock
+        // Stock is derived from the movement log, so seeded stock needs a real opening movement
+        for (const article of fake.db.budget_tracket_catalog) {
+          if (article.stock > 0 && !fake.db.stock_movements.some(m => m.id === `open-${article.id}`)) {
+            fake.db.stock_movements.push({
+              id: `open-${article.id}`,
+              collectionName: 'stock_movements',
+              article: article.id,
+              change: article.stock,
+              reason: 'correction',
+              note: 'opening stock',
+              created: '2020-01-01 00:00:00.000Z'
+            })
+          }
+        }
       },
       async mockCatalog (items = sampleProducts) { api.seed({ articles: items }) },
       async mockTransactions ({ status = 200 } = {}) {
