@@ -26,6 +26,22 @@ test.describe('managing articles', () => {
     expect(loggedMovements(api)).toEqual([expect.objectContaining({ article: record.id, change: 3, reason: 'correction', note: 'starting stock' })])
   })
 
+  test('a failed starting stock still keeps the new article', async ({ page, api }) => {
+    api.fail('stock_movements', 500)
+    await page.getByRole('button', { name: '+ New article' }).click()
+    await sheet(page).getByLabel('Name').fill('Evoli Keychain')
+    await sheet(page).getByLabel('Category').selectOption({ label: 'Keychain' })
+    await sheet(page).getByLabel('Starting stock').fill('3')
+    await sheet(page).getByRole('button', { name: 'Create article' }).click()
+
+    await expect(sheet(page)).toHaveCount(0)
+    const created = page.locator('article', { hasText: 'Evoli Keychain' })
+    await expect(created).toBeVisible()
+    await expect(created).toContainText('Out of stock')
+    await expect(page.getByText(/starting stock could not be saved/)).toBeVisible()
+    expect(api.db.budget_tracket_catalog.filter(article => article.name === 'Evoli Keychain')).toHaveLength(1)
+  })
+
   test('validation names the missing field', async ({ page }) => {
     await page.getByRole('button', { name: '+ New article' }).click()
     await sheet(page).getByRole('button', { name: 'Create article' }).click()

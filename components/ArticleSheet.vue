@@ -88,6 +88,7 @@
 import { ref, computed, watch } from 'vue'
 import { useArticles } from '~/composables/useArticles'
 import { useInventory } from '~/composables/useInventory'
+import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { correctionMovement, newRecordId } from '~/utils/inventory'
 
@@ -100,6 +101,7 @@ const emit = defineEmits(['update:open', 'saved', 'deleted', 'stock-changed'])
 
 const { createArticle, updateArticle, deleteArticle } = useArticles()
 const { applyMovements } = useInventory()
+const { toast } = useToast()
 
 const emptyForm = () => ({ name: '', category: '', price: '', lowStockThreshold: '2', startingStock: '', description: '' })
 
@@ -182,8 +184,16 @@ const save = async () => {
       const startingStock = isBlank(form.value.startingStock) ? 0 : parseNumber(form.value.startingStock)
       const movement = correctionMovement(0, startingStock, 'starting stock')
       if (movement) {
-        const stocks = await applyMovements([{ id: newRecordId(), article: article.id, ...movement }])
-        article = { ...article, stock: stocks[article.id] }
+        // The article exists now, so a failed stock step must not hide it (a retry would duplicate it)
+        try {
+          const stocks = await applyMovements([{ id: newRecordId(), article: article.id, ...movement }])
+          article = { ...article, stock: stocks[article.id] }
+        } catch (stockError) {
+          emit('saved', article)
+          emit('update:open', false)
+          toast('Article created, but its starting stock could not be saved. Set it with Correct count.', { tone: 'warning', duration: 6000 })
+          return
+        }
       }
     }
     emit('saved', article)
