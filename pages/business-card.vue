@@ -1,62 +1,59 @@
 <template>
-  <div class="px-4 py-6 sm:px-0">
-    <div class="card mb-6">
-      <div class="card-header">
-        <h2 class="text-lg font-semibold text-gray-800">Digital Business Card</h2>
-      </div>
-      <div class="card-body">
-        <div class="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden md:max-w-2xl mb-6">
-          <div class="p-8">
-            <div class="text-center mb-6">
-              <h3 class="text-2xl font-bold text-gray-900">3D PRINT SHOP HARM</h3>
-              <p class="text-gray-600 mt-2"></p>
-            </div>
-            <div class="space-y-4">
-              <div class="flex items-center">
-                <svg class="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span class="ml-3 text-gray-700">service@3dps.space</span>
-              </div>
-              <div class="flex items-center">
-                <svg class="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span class="ml-3 text-gray-700">Krete 8, 23701 Eutin</span>
-              </div>
-              <div class="flex items-center">
-                <svg class="h-6 w-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                <span class="ml-3 text-gray-700">Geschäftsführer: Lasse Harm</span>
-              </div>
-            </div>
-          </div>
-        </div>
+  <div>
+    <PageHeader title="Digital Business Card" />
 
-        <!-- QR Code Section -->
-        <div class="text-center">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">Scan QR Code</h3>
-          <div class="inline-block p-4 bg-white rounded-lg shadow-md">
+    <div class="mx-auto max-w-sm space-y-4">
+      <div class="card p-5 text-center">
+        <h2 class="text-xl font-semibold tracking-tight text-ink">3D PRINT SHOP HARM</h2>
+
+        <ul class="mt-4 divide-y divide-line text-left">
+          <li>
+            <a href="mailto:service@3dps.space" class="flex min-h-[44px] items-center gap-3 text-sm text-ink hover:text-accent">
+              <AppIcon name="mail" class="h-5 w-5 shrink-0 text-ink-muted" />
+              service@3dps.space
+            </a>
+          </li>
+          <li class="flex min-h-[44px] items-center gap-3 text-sm text-ink">
+            <AppIcon name="map-pin" class="h-5 w-5 shrink-0 text-ink-muted" />
+            Krete 8, 23701 Eutin
+          </li>
+          <li class="flex min-h-[44px] items-center gap-3 text-sm text-ink">
+            <AppIcon name="user" class="h-5 w-5 shrink-0 text-ink-muted" />
+            Geschäftsführer: Lasse Harm
+          </li>
+        </ul>
+
+        <div class="mt-5 border-t border-line pt-5">
+          <h3 class="mb-3 text-sm font-semibold text-ink">Scan QR Code</h3>
+          <!-- The QR library renders a fixed 300px canvas; let it shrink on narrow phones -->
+          <div class="inline-block max-w-full rounded-lg bg-white p-3 [&_canvas]:!h-auto [&_canvas]:max-w-full [&_img]:h-auto [&_img]:max-w-full">
             <ClientOnly>
-              <QRCode
-                :value="websiteUrl"
-                v-bind="qrcodeOptions"
-                class="mx-auto"
-              />
+              <QRCode :value="websiteUrl" v-bind="qrcodeOptions" class="mx-auto" />
             </ClientOnly>
           </div>
-          <p class="mt-4 text-sm text-gray-600">Scan this QR code to visit our website</p>
+          <p class="mt-3 text-sm text-ink-muted">Scan this QR code to visit our website</p>
         </div>
+      </div>
+
+      <div class="grid gap-2 print:hidden" :class="canShare ? 'grid-cols-2' : 'grid-cols-1'">
+        <BaseButton v-if="canShare" variant="secondary" icon="share" @click="share">Share</BaseButton>
+        <BaseButton variant="secondary" icon="printer" @click="print">Print</BaseButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
 import QRCode from 'qrcode-vue3'
 import qrcodeOptions from '@/assets/options.json'
 
 const websiteUrl = 'https://3dps.space/'
+
+const canShare = ref(false)
+onMounted(() => { canShare.value = typeof navigator.share === 'function' })
+
+// Dismissing the share sheet rejects the promise; that is not an error
+const share = () => navigator.share({ title: '3D PRINT SHOP HARM', url: websiteUrl }).catch(() => {})
+const print = () => window.print()
 </script>
