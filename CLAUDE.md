@@ -20,5 +20,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - TypeScript: Leverage Vue 3's runtime type checking, extending Nuxt's tsconfig
 - Formatting: 2 space indentation, single quotes for strings
 - Imports ordering: Vue core libraries first, then composables, then utilities
+- Data access goes through the PocketBase SDK (`usePocketBase`, pinned `pocketbase@0.21.5` for server 0.22). Stock changes are `stock_movements` records written via `useInventory`; never patch an article's `stock` directly. Schema changes go through `scripts/pb-migrate.mjs`.
 
 Always follow existing patterns when adding new code to maintain consistency.

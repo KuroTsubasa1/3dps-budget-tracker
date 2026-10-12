@@ -5,10 +5,12 @@ const PAGES = [
   '/catalog',
   '/business-card',
   '/reports',
+  '/login',
   '/settings',
   '/settings#account',
   '/settings#api',
   '/settings#display',
+  '/settings#categories',
   '/settings#notifications',
   '/settings#data'
 ]
@@ -81,4 +83,16 @@ test.describe('phone layout sweep', () => {
       expect(small).toEqual([])
     })
   }
+
+  test('the article editor fits at 375px', async ({ page, api }) => {
+    await api.mockCatalog(longProducts)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3').first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
+    const clipped = await page.getByRole('dialog').evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)
+    expect(clipped).toBe(false)
+  })
 })
