@@ -155,13 +155,16 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## PocketBase setup: categories, stock and owner login
 
-The app needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads an admin token from your local `.env`:
+The app needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads your PocketBase admin login from your local `.env`. Set `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` there (`POCKETBASE_ADMIN_TOKEN` is an optional alternative). Never prefix these with `NUXT_PUBLIC_`.
 
 ```bash
 npm run pb:migrate                  # dry run: prints the plan, writes scripts/category-mapping.json
 npm run pb:migrate -- --apply       # create collections, seed categories, assign article categories
-npm run pb:migrate -- --apply-rules # switch to owner-only writes (after deploying the new app)
+npm run pb:migrate -- --apply-rules # pin owner-only writes and close public sign-up on users
+npm run pb:migrate -- --apply-rules --owner you@example.com  # if users has more than one account
 ```
+
+`--apply-rules` picks the owner from `users`: the only account, or the one named with `--owner`. Public sign-up on `users` is closed by the same step.
 
 Order matters:
 1. Run `--apply`. The deployed app keeps working.

@@ -1,7 +1,7 @@
 // PocketBase 0.22 migration for categories, stock and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
 //   npm run pb:migrate -- --apply      schema + seed + category mapping (old rules stay; deployed app keeps working)
-//   npm run pb:migrate -- --apply-rules  owner-only rules (run after the new app is deployed)
+//   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import {
@@ -12,6 +12,7 @@ import {
   planRequireCategory,
   planRules,
   resolveField,
+  resolveOwner,
   guessCategory,
   describeOp
 } from './lib/pb-plan.mjs'
@@ -19,7 +20,7 @@ import {
 try { process.loadEnvFile('.env') } catch { /* no .env: rely on the environment */ }
 
 const BASE = (process.env.POCKETBASE_URL || 'https://pocket.lasseharm.space').replace(/\/$/, '')
-const TOKEN = process.env.POCKETBASE_ADMIN_TOKEN
+let ADMIN_TOKEN
 const MAPPING_FILE = 'scripts/category-mapping.json'
 const SNAPSHOT_FILE = 'pocketbase/schema.json'
 const MODE = process.argv.includes('--apply-rules') ? 'rules' : process.argv.includes('--apply') ? 'apply' : 'dry-run'
@@ -27,7 +28,7 @@ const MODE = process.argv.includes('--apply-rules') ? 'rules' : process.argv.inc
 async function api (method, path, body) {
   const response = await fetch(`${BASE}/api${path}`, {
     method,
-    headers: { Authorization: TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Authorization: ADMIN_TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined
   })
   const text = await response.text()
@@ -38,6 +39,25 @@ async function api (method, path, body) {
 const listCollections = async () => (await api('GET', '/collections?perPage=500')).items
 const listRecords = async (collection) => (await api('GET', `/collections/${collection}/records?perPage=500`)).items
 const byName = (collections, name) => collections.find(collection => collection.name === name)
+const argValue = flag => { const index = process.argv.indexOf(flag); return index > -1 ? process.argv[index + 1] : undefined }
+
+// Admin token from .env wins; otherwise log in once with the admin email and password (PocketBase 0.22)
+async function adminToken () {
+  if (process.env.POCKETBASE_ADMIN_TOKEN) return process.env.POCKETBASE_ADMIN_TOKEN
+  const identity = process.env.POCKETBASE_ADMIN_EMAIL
+  const password = process.env.POCKETBASE_ADMIN_PASSWORD
+  if (!identity || !password) {
+    console.error('Set POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD in .env (your PocketBase admin login). Never prefix them with NUXT_PUBLIC_.')
+    process.exit(1)
+  }
+  const response = await fetch(`${BASE}/api/admins/auth-with-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identity, password })
+  })
+  if (!response.ok) throw new Error(`Admin login failed (${response.status}). Check POCKETBASE_ADMIN_EMAIL and POCKETBASE_ADMIN_PASSWORD.`)
+  return (await response.json()).token
+}
 
 async function applyOp (op) {
   const collections = await listCollections()
@@ -68,7 +88,7 @@ async function writeSnapshot () {
   console.log(`Wrote ${SNAPSHOT_FILE}`)
 }
 
-async function ownerCount () {
+async function accountCount () {
   return (await api('GET', '/collections/users/records?perPage=1')).totalItems
 }
 
@@ -90,10 +110,7 @@ async function migrateSchema () {
   console.log(`Article → category (edit ${MAPPING_FILE} to change):`)
   for (const entry of Object.values(mapping)) console.log(`  - ${entry.name} → ${entry.category ?? 'UNMAPPED'}`)
 
-  const owners = await ownerCount()
-  console.log(owners > 0
-    ? `Owner accounts in "users": ${owners}`
-    : 'WARNING: no record in "users". Create your owner account in the PocketBase admin before --apply-rules.')
+  console.log(`Accounts in "users": ${await accountCount()} (the owner is chosen with --owner when running --apply-rules)`)
 
   if (MODE === 'dry-run') {
     console.log('\nDry run only. Fix any UNMAPPED entries, then run: npm run pb:migrate -- --apply')
@@ -111,8 +128,9 @@ async function migrateSchema () {
   for (const article of articles) {
     const target = categories.find(category => category.name === mapping[article.id].category)
     if (article.category === target.id) continue
-    // First assignment also sets the default threshold; later runs leave the owner's value alone
-    const patch = article.category ? { category: target.id } : { category: target.id, low_stock_threshold: 2 }
+    // First assignment also sets the default threshold and active: the catalog and rules filter on active = true,
+    // and articles created before the migration may have active unset. Later runs leave both alone.
+    const patch = article.category ? { category: target.id } : { category: target.id, low_stock_threshold: 2, active: true }
     await api('PATCH', `/collections/${ARTICLES}/records/${article.id}`, patch)
   }
   for (const op of planRequireCategory(await listCollections())) await applyOp(op)
@@ -121,9 +139,12 @@ async function migrateSchema () {
 }
 
 async function migrateRules () {
-  const ops = planRules(await listCollections())
+  const users = (await api('GET', '/collections/users/records?perPage=200&fields=id,email')).items
+  const owner = resolveOwner(users, argValue('--owner'))
+  console.log(`Owner: ${owner.email} (${owner.id})`)
+  // users comes first, so sign-up is closed before the other collections are pinned
+  const ops = planRules(await listCollections(), owner.id)
   if (!ops.length) return console.log('Rules: up to date')
-  if ((await ownerCount()) === 0) throw new Error('No owner account in "users"; the new rules would lock everyone out')
   for (const op of ops) {
     console.log(`  - ${describeOp(op)}`)
     await applyOp(op)
@@ -132,8 +153,10 @@ async function migrateRules () {
   console.log('Rules applied. Only the logged-in owner can write now.')
 }
 
-if (!TOKEN) {
-  console.error('Set POCKETBASE_ADMIN_TOKEN in .env (PocketBase admin UI → your admin → API token). Never prefix it with NUXT_PUBLIC_.')
+try {
+  ADMIN_TOKEN = await adminToken()
+} catch (error) {
+  console.error(error.message)
   process.exit(1)
 }
 

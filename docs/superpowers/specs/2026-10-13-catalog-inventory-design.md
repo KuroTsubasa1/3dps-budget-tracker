@@ -107,7 +107,9 @@ The unused legacy fields `created_at` and `updated_at` are left alone, because r
 | `stock_movements` | owner only | owner only (no update; corrections are new movements) |
 | `budget_tracker_transactions` (existing) | owner only | owner only |
 
-"Owner only" means `@request.auth.id != "" && @request.auth.collectionName = "users"`. The commissions collection and its public create rule arrive in sub-project 3.
+"Owner only" means `@request.auth.id = "<owner record id>"`, where the owner is a record in `users`. `--apply-rules` pins that id and disables public sign-up on `users` (`createRule: null`), so no self-registered account can write. The commissions collection and its public create rule arrive in sub-project 3.
+
+New collections are created with all write rules locked (admin only) and get their owner rules only from `--apply-rules`.
 
 ## App changes
 
@@ -151,16 +153,16 @@ The unused legacy fields `created_at` and `updated_at` are left alone, because r
 ## Migration and rollout
 
 **Script:** `scripts/pb-migrate.mjs` (Node, run locally)
-- **Credentials:** `POCKETBASE_URL` and `POCKETBASE_ADMIN_TOKEN` from `.env`, which is gitignored. The token is never used by the app or committed.
+- **Credentials:** `POCKETBASE_URL` and the admin login from `.env`, which is gitignored: `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` (PocketBase 0.22 superuser login, exchanged once for a token). `POCKETBASE_ADMIN_TOKEN` is an optional alternative that skips the login. Credentials are never used by the app, never logged and never committed.
 - **`--dry-run` (default):** prints the server version, the planned collection and field changes, the nine categories to seed, and the proposed article → category mapping.
 - **`--apply`:**
   - creates or extends the collections;
   - seeds the categories;
   - applies the mapping from `scripts/category-mapping.json`, which the dry run writes and the owner edits;
-  - verifies that the owner user exists;
+  - reports how many accounts exist in `users` (informational; no owner is needed yet);
   - writes `pocketbase/schema.json`.
   - It is idempotent: running it twice changes nothing.
-- **`--apply-rules`:** switches the access rules. It is a separate step because of the rollout order below.
+- **`--apply-rules [--owner <email>]`:** switches the access rules to the owner record and closes public sign-up on `users`. It lists `users` and picks the owner: the single account, or the one given by `--owner <email>` when there are several. It is a separate step because of the rollout order below.
 
 **Rollout order**
 1. Run `--apply`. The old rules stay in place, so the deployed app keeps working.

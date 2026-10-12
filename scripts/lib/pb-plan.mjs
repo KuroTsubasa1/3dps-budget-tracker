@@ -1,7 +1,11 @@
 // Pure planning for the PocketBase 0.22 schema migration (no network); see scripts/pb-migrate.mjs
 export const ARTICLES = 'budget_tracket_catalog'
 export const TRANSACTIONS = 'budget_tracker_transactions'
-export const OWNER_RULE = '@request.auth.id != "" && @request.auth.collectionName = "users"'
+// Pins writes to one record in "users". The id is validated because it is spliced into the rule text.
+export const ownerRule = (ownerId) => {
+  if (!/^[a-z0-9]{15}$/.test(ownerId)) throw new Error(`Invalid owner id: ${ownerId}`)
+  return `@request.auth.id = "${ownerId}"`
+}
 
 export const CATEGORY_SEED = [
   ['GatchaPon', 4], ['Keychain', 4], ['Mini Figure', 8], ['Big Figure', 30], ['Pokeball', 30],
@@ -21,18 +25,20 @@ const select = (name, values, required = false) =>
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const findField = (collection, name) => collection?.schema.find(field => field.name === name)
 
-const RULES = {
-  categories: { listRule: '', viewRule: '', createRule: OWNER_RULE, updateRule: OWNER_RULE, deleteRule: OWNER_RULE },
-  stock_movements: { listRule: OWNER_RULE, viewRule: OWNER_RULE, createRule: OWNER_RULE, updateRule: null, deleteRule: null },
-  [ARTICLES]: {
-    listRule: `active = true || (${OWNER_RULE})`,
-    viewRule: `active = true || (${OWNER_RULE})`,
-    createRule: OWNER_RULE,
-    updateRule: OWNER_RULE,
-    deleteRule: OWNER_RULE
-  },
-  [TRANSACTIONS]: { listRule: OWNER_RULE, viewRule: OWNER_RULE, createRule: OWNER_RULE, updateRule: OWNER_RULE, deleteRule: OWNER_RULE }
+// Key order matters: sign-up on "users" is closed before anything else is pinned to the owner
+const rulesFor = (ownerId) => {
+  const O = ownerRule(ownerId)
+  return {
+    users: { createRule: null },
+    categories: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
+    stock_movements: { listRule: O, viewRule: O, createRule: O, updateRule: null, deleteRule: null },
+    [ARTICLES]: { listRule: `active = true || (${O})`, viewRule: `active = true || (${O})`, createRule: O, updateRule: O, deleteRule: O },
+    [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
+  }
 }
+
+// New collections exist before the owner is known, so they start admin-only (null); --apply-rules opens them to the owner
+const LOCKED = { listRule: null, viewRule: null, createRule: null, updateRule: null, deleteRule: null }
 
 export function planSchema (collections) {
   const articles = byName(collections, ARTICLES)
@@ -49,7 +55,9 @@ export function planSchema (collections) {
         type: 'base',
         schema: [text('name', true), number('base_price', { required: true, min: 0 }), number('sort_order', { noDecimal: true })],
         indexes: ['CREATE UNIQUE INDEX `idx_categories_name` ON `categories` (`name`)'],
-        ...RULES.categories
+        ...LOCKED,
+        listRule: '',
+        viewRule: ''
       }
     })
   }
@@ -63,7 +71,7 @@ export function planSchema (collections) {
         // change is not "required": in 0.22 that would reject the 0 an empty-stock oversell records
         schema: [relation('article', articles.id, true), number('change', { noDecimal: true }), select('reason', ['sale', 'printed', 'correction'], true), text('note')],
         indexes: ['CREATE INDEX `idx_stock_movements_article` ON `stock_movements` (`article`)'],
-        ...RULES.stock_movements
+        ...LOCKED
       }
     })
   }
@@ -88,11 +96,24 @@ export function planRequireCategory (collections) {
     : []
 }
 
-export function planRules (collections) {
-  return Object.entries(RULES)
+export function planRules (collections, ownerId) {
+  return Object.entries(rulesFor(ownerId))
     .filter(([name]) => byName(collections, name))
     .filter(([name, rules]) => Object.entries(rules).some(([key, value]) => byName(collections, name)[key] !== value))
     .map(([name, rules]) => ({ op: 'setRules', collection: name, rules }))
+}
+
+// users: [{ id, email }]. Several accounts need an explicit --owner email; a single account is taken as the owner.
+export function resolveOwner (users, email) {
+  if (email) {
+    const wanted = email.toLowerCase()
+    const match = users.find(user => String(user.email).toLowerCase() === wanted)
+    if (!match) throw new Error(`No user with email ${email} in "users"`)
+    return match
+  }
+  if (users.length === 0) throw new Error('No owner account in "users". Create it in the PocketBase admin first.')
+  if (users.length === 1) return users[0]
+  throw new Error(`Several accounts in "users": ${users.map(user => user.email).join(', ')}. Pass --owner <email> to choose the owner account.`)
 }
 
 export function resolveField (field, collections) {
