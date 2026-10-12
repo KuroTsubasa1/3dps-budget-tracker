@@ -73,3 +73,53 @@ test.describe('categories', () => {
     await expect(editor(page).getByRole('alert')).toHaveText('A category with this name already exists')
   })
 })
+
+test.describe('category order', () => {
+  const GAPPED = [
+    { id: 'c-a', name: 'Alpha', base_price: 1, sort_order: 0 },
+    { id: 'c-b', name: 'Beta', base_price: 1, sort_order: 5 },
+    { id: 'c-c', name: 'Gamma', base_price: 1, sort_order: 9 }
+  ]
+
+  test('moving works when positions have gaps', async ({ page, api }) => {
+    api.seed({ categories: GAPPED, articles: [] })
+    await gotoReady(page, '/settings#categories')
+    await page.getByRole('button', { name: 'Move Gamma up' }).click()
+    await expect(rows(page).nth(0)).toContainText('Alpha')
+    await expect(rows(page).nth(1)).toContainText('Gamma')
+    await expect(rows(page).nth(2)).toContainText('Beta')
+    const order = [...api.db.categories].sort((a, b) => a.sort_order - b.sort_order).map(c => c.name)
+    expect(order).toEqual(['Alpha', 'Gamma', 'Beta'])
+  })
+
+  test('a failed move keeps the list and resyncs', async ({ page, api }) => {
+    api.seed({ categories: GAPPED, articles: [] })
+    await gotoReady(page, '/settings#categories')
+    api.fail('categories', 500)
+    await page.getByRole('button', { name: 'Move Gamma up' }).click()
+    await expect(page.getByText(/Could not reorder categories/)).toBeVisible()
+    await expect(rows(page)).toHaveCount(3)
+    await expect(rows(page).nth(0)).toContainText('Alpha')
+    await expect(rows(page).nth(1)).toContainText('Beta')
+    await expect(rows(page).nth(2)).toContainText('Gamma')
+  })
+
+  // Stale positions: an index-only swap leaves Zed and Ant both at 1, and the next load tie-breaks by name
+  test('a reorder keeps the chosen order when positions are stale', async ({ page, api }) => {
+    api.seed({
+      categories: [
+        { id: 'c-z', name: 'Zed', base_price: 1, sort_order: 1 },
+        { id: 'c-y', name: 'Yak', base_price: 1, sort_order: 2 },
+        { id: 'c-a', name: 'Ant', base_price: 1, sort_order: 3 }
+      ],
+      articles: []
+    })
+    await gotoReady(page, '/settings#categories')
+    await page.getByRole('button', { name: 'Move Ant up' }).click()
+    await expect(rows(page).nth(0)).toContainText('Zed')
+    await expect(rows(page).nth(1)).toContainText('Ant')
+    await expect(rows(page).nth(2)).toContainText('Yak')
+    // Stored positions must be unique and match the new order, or the next load sorts Ant before Zed
+    expect(Object.fromEntries(api.db.categories.map(c => [c.name, c.sort_order]))).toEqual({ Zed: 0, Ant: 1, Yak: 2 })
+  })
+})

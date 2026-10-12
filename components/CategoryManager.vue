@@ -69,9 +69,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useCategories } from '~/composables/useCategories'
+import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 
 const { listCategories, createCategory, updateCategory, deleteCategory } = useCategories()
+const { toast } = useToast()
 
 const categories = ref([])
 const loadError = ref('')
@@ -156,20 +158,21 @@ const remove = async () => {
   }
 }
 
-// Writes the new positions of both swapped categories so equal sort_orders can't stall the move
+// Renumbers every row to its index and writes only the rows whose stored position differs.
+// Writes run one at a time; on any failure the list is reloaded so the UI matches the server.
 const move = async (index, direction) => {
   const target = index + direction
   const reordered = [...categories.value]
   ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
   moving.value = true
   try {
-    await Promise.all([
-      updateCategory(reordered[index].id, { sort_order: index }),
-      updateCategory(reordered[target].id, { sort_order: target })
-    ])
+    for (const [position, category] of reordered.entries()) {
+      if (category.sort_order !== position) await updateCategory(category.id, { sort_order: position })
+    }
     categories.value = reordered.map((category, position) => ({ ...category, sort_order: position }))
   } catch (err) {
-    loadError.value = 'Could not reorder categories. Check your connection and try again.'
+    await load()
+    toast('Could not reorder categories. Check your connection and try again.', { tone: 'error' })
   } finally {
     moving.value = false
   }
