@@ -88,11 +88,11 @@
           <form class="space-y-5" @submit.prevent="handleSaveDisplaySettings">
             <div>
               <p class="label">Currency Format</p>
-              <SegmentedControl v-model="displaySettings.currencyFormat" label="Currency Format" :options="CURRENCY_OPTIONS" />
+              <SegmentedControl v-model="displaySettings.currencyFormat" label="Currency Format" dense :options="CURRENCY_OPTIONS" />
             </div>
             <div>
               <p class="label">Date Format</p>
-              <SegmentedControl v-model="displaySettings.dateFormat" label="Date Format" :options="DATE_FORMAT_OPTIONS" />
+              <SegmentedControl v-model="displaySettings.dateFormat" label="Date Format" dense :options="DATE_FORMAT_OPTIONS" />
             </div>
             <div class="divide-y divide-line border-y border-line">
               <ToggleSwitch v-model="displaySettings.darkMode" label="Dark Mode" />

@@ -55,6 +55,14 @@ test.describe('phone layout sweep', () => {
     }
   }
 
+  test('segmented options show their full label at 375px', async ({ page }) => {
+    await gotoReady(page, '/settings#display')
+    const clipped = await page.getByRole('radio').evaluateAll(radios =>
+      radios.filter(radio => radio.scrollWidth > radio.clientWidth).map(radio => radio.textContent.trim())
+    )
+    expect(clipped).toEqual([])
+  })
+
   for (const path of PAGES) {
     test(`${path} tap targets are at least 44px`, async ({ page, api }) => {
       await api.mockCatalog()

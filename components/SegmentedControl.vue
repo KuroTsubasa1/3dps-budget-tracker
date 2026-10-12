@@ -11,8 +11,11 @@
       type="button"
       role="radio"
       :aria-checked="modelValue === option.value"
-      class="min-h-[44px] truncate rounded-md px-2 text-sm font-medium transition-colors"
-      :class="modelValue === option.value ? ['bg-card shadow-sm', option.activeClass || 'text-ink'] : 'text-ink-muted hover:text-ink'"
+      class="min-h-[44px] truncate rounded-md font-medium transition-colors"
+      :class="[
+        dense ? 'px-1 text-xs sm:px-2 sm:text-sm' : 'px-2 text-sm',
+        modelValue === option.value ? ['bg-card shadow-sm', option.activeClass || 'text-ink'] : 'text-ink-muted hover:text-ink'
+      ]"
       @click="$emit('update:modelValue', option.value)"
     >
       {{ option.label }}
@@ -24,7 +27,9 @@
 defineProps({
   modelValue: { type: [String, Number], required: true },
   label: { type: String, required: true },
-  options: { type: Array, required: true }
+  options: { type: Array, required: true },
+  // Smaller type on phones for long labels such as date formats
+  dense: { type: Boolean, default: false }
 })
 defineEmits(['update:modelValue'])
 </script>
