@@ -1,0 +1,51 @@
+<template>
+  <div class="flex flex-col gap-4">
+    <div class="flex items-baseline justify-between gap-3">
+      <p class="text-sm text-ink-muted">{{ items.length }} items</p>
+      <p class="text-2xl font-semibold tabular-nums text-ink">{{ formatCurrency(total) }}</p>
+    </div>
+
+    <ul v-if="items.length" class="divide-y divide-line rounded-lg border border-line">
+      <li v-for="item in items" :key="item.id" class="flex items-center gap-2 py-2 pl-3 pr-1">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-ink">{{ item.name }}</p>
+          <p class="truncate text-xs tabular-nums text-ink-muted">
+            {{ formatCurrency(item.price) }} each · {{ formatCurrency(item.price * item.quantity) }}
+          </p>
+        </div>
+        <QuantityStepper
+          :quantity="item.quantity"
+          :name="item.name"
+          @increment="$emit('increment', item)"
+          @decrement="$emit('decrement', item)"
+        />
+        <button
+          type="button"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted hover:text-expense"
+          :aria-label="`Remove ${item.name}`"
+          @click="$emit('remove', item)"
+        >
+          <AppIcon name="trash" class="h-4 w-4" />
+        </button>
+      </li>
+    </ul>
+    <div v-else class="rounded-lg border border-dashed border-line px-4 py-6 text-center">
+      <p class="text-sm font-medium text-ink">Your cart is empty</p>
+      <p class="mt-1 text-sm text-ink-muted">Select products from the catalog</p>
+    </div>
+
+    <BaseButton size="lg" block icon="cash" :disabled="!items.length" @click="$emit('submit')">
+      Add to Balance
+    </BaseButton>
+  </div>
+</template>
+
+<script setup>
+import { formatCurrency } from '~/utils/currency'
+
+defineProps({
+  items: { type: Array, required: true },
+  total: { type: Number, required: true }
+})
+defineEmits(['increment', 'decrement', 'remove', 'submit'])
+</script>

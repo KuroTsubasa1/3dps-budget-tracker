@@ -1,12 +1,12 @@
-import { test, expect } from './fixtures.js'
+import { test, expect, gotoReady } from './fixtures.js'
 
-// The cart sidebar repeats product names, so target the catalog card heading
+// The cart repeats product names, so target the catalog card heading
 const card = (page, name) => page.locator('h3', { hasText: name })
 
 test.describe('product catalog', () => {
   test('lists products from the API', async ({ page, api }) => {
     await api.mockCatalog()
-    await page.goto('/catalog')
+    await gotoReady(page, '/catalog')
 
     for (const name of ['Dragon Figure', 'Phone Stand', 'Cable Clip']) {
       await expect(page.getByRole('heading', { name })).toBeVisible()
@@ -14,13 +14,13 @@ test.describe('product catalog', () => {
   })
 
   test('shows an error with retry when the catalog fails to load', async ({ page }) => {
-    await page.goto('/catalog')
+    await gotoReady(page, '/catalog')
     await expect(page.getByRole('button', { name: 'Try Again' })).toBeVisible()
   })
 
   test('filters products by search query', async ({ page, api }) => {
     await api.mockCatalog()
-    await page.goto('/catalog')
+    await gotoReady(page, '/catalog')
 
     await page.getByPlaceholder('Search products...').fill('stand')
     await expect(page.getByRole('heading', { name: 'Phone Stand' })).toBeVisible()
@@ -32,10 +32,11 @@ test.describe('product catalog', () => {
     await expect(page.getByRole('heading', { name: 'Cable Clip' })).toBeVisible()
   })
 
-  test('adds selected products to the balance as one transaction', async ({ page, api }) => {
+  test('adds selected products to the balance as one transaction', async ({ page, api, isMobile }) => {
+    test.skip(isMobile, 'Phones check out through the cart sheet (next test)')
     await api.mockCatalog()
     await api.mockTransactions()
-    await page.goto('/catalog')
+    await gotoReady(page, '/catalog')
 
     const submit = page.getByRole('button', { name: 'Add to Balance' })
     await expect(submit).toBeDisabled()
@@ -56,5 +57,41 @@ test.describe('product catalog', () => {
     // Cart is cleared afterwards
     await expect(page.getByText('0 items')).toBeVisible()
     await expect(submit).toBeDisabled()
+  })
+
+  test('checks out from the cart sheet on phones', async ({ page, api, isMobile }) => {
+    test.skip(!isMobile, 'Phone layout only')
+    await api.mockCatalog()
+    await api.mockTransactions()
+    await gotoReady(page, '/catalog')
+
+    const cartBar = page.getByRole('button', { name: /View cart/ })
+    await expect(cartBar).toHaveCount(0)
+
+    await card(page, 'Dragon Figure').click()
+    await card(page, 'Dragon Figure').click()
+    await card(page, 'Phone Stand').click()
+    await expect(cartBar).toContainText('2 items')
+    await expect(cartBar).toContainText('29,00')
+
+    await cartBar.click()
+    const sheet = page.getByRole('dialog', { name: 'Cart' })
+    await expect(sheet.getByText('Dragon Figure')).toBeVisible()
+    await sheet.getByRole('button', { name: 'Add to Balance' }).click()
+
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0].amount).toBe(29)
+    await expect(sheet).toHaveCount(0)
+    await expect(cartBar).toHaveCount(0)
+    await expect(page.getByText(/Added 29,00/)).toBeVisible()
+  })
+
+  test('product cards fit two per row on phones', async ({ page, api, isMobile }) => {
+    test.skip(!isMobile, 'Phone layout only')
+    await api.mockCatalog()
+    await gotoReady(page, '/catalog')
+    const first = await card(page, 'Cable Clip').boundingBox()
+    const second = await card(page, 'Dragon Figure').boundingBox()
+    expect(Math.abs(first.y - second.y)).toBeLessThan(2)
   })
 })
