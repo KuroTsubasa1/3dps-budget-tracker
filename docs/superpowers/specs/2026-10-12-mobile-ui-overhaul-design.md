@@ -25,7 +25,7 @@ Make every page of the budget tracker work as well on a phone as on desktop, and
 3. Primary actions on mobile sit in the bottom half of the screen: the tab bar, add-transaction button, cart bar and sheet actions.
 4. Notched phones are handled: the top bar and tab bar respect `env(safe-area-inset-*)`.
 5. Every existing Playwright spec passes on Desktop Chrome. Mobile coverage runs on a new `Pixel 7` project (see Testing).
-6. Dark mode is styled only through Tailwind `dark:` variants. Templates contain no `displaySettings.darkMode ? … : …` class ternaries.
+6. Dark mode comes from semantic colour tokens (CSS variables redefined under `html.dark`), with `dark:` variants only where a token doesn't fit. Templates contain no `displaySettings.darkMode ? … : …` class ternaries.
 
 ## Visual system
 
@@ -37,8 +37,8 @@ Make every page of the budget tracker work as well on a phone as on desktop, and
 - **Type:** system font stack. Page title `text-xl font-semibold`, section title `text-base font-semibold`, body `text-sm`/`text-base`. Money figures use `tabular-nums`.
 - **Shape and spacing:** `rounded-xl` on cards, `rounded-lg` on controls. Mobile page gutter is 16px (`px-4`), with `gap-4` between cards.
 - **Motion:** remove the hover-scale and translate effects. Keep short (150–200ms) opacity and transform transitions, used only for sheets and toasts. Respect `prefers-reduced-motion`.
-- **Tokens:** colours go in `tailwind.config.js` under semantic names: `surface`, `surface-muted`, `border`, `accent`, `income`, `expense`. Component classes in `assets/css/main.css` (`.card`, `.btn`, `.input`, …) are rewritten to use these tokens so pages stay short.
-- **PWA manifest:** `theme_color` becomes the light surface colour. Add `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` and `theme-color` meta tags for light and dark mode via `app.head`.
+- **Tokens:** colours are CSS variables in `assets/css/main.css` (`:root` for light, `html.dark` for dark), exposed in `tailwind.config.js` as `surface`, `card`, `muted`, `line`, `ink`, `ink-muted`, `accent`, `income` and `expense`. One class such as `bg-card` therefore covers both themes. Component classes in `main.css` (`.card`, `.btn`, `.input`, …) are rewritten to use these tokens so pages stay short.
+- **Viewport and browser chrome:** the viewport becomes `width=device-width, initial-scale=1, viewport-fit=cover` (via `app.head.viewport`). The `theme-color` meta follows the app's dark-mode setting through `useHead` in `app.vue`, because dark mode is an app setting, not the system preference.
 
 ## App shell
 
@@ -50,14 +50,14 @@ NetworkBanner    under top bar; offline / pending / sync state (moved out of ind
 <main>           NuxtPage; bottom padding = tab bar height + safe area on mobile
 AppBottomNav     md:hidden; fixed bottom; 5 tabs, icon + label, active = accent
 AppSideNav       hidden md:flex; fixed left rail (lg: icons + labels, md: icons only)
-ToastHost        stacks toasts above the tab bar (bottom-center on mobile, bottom-right on desktop)
-PWAInstall       rendered through ToastHost position rules instead of its own corners
+ToastHost        toast stack: top of the screen under the top bar on phones (clear of the add button and cart bar), bottom-right on md+
+PWAInstall       rendered inside the ToastHost stack instead of its own fixed corners
 ```
 
 - Navigation items live in one array, `NAV_ITEMS` (`to`, `label`, `icon`) in `utils/navigation.js`, shared by both nav components. This removes the five copies of each link that `app.vue` has today.
 - Icons move to an `AppIcon` component (`name` prop → inline SVG path map) so the SVG path strings appear once.
 - The hamburger menu, outside-click handling, resize listener and `IntersectionObserver` balance-hiding logic are removed.
-- `NetworkBanner` stays on the Dashboard only, as it does today. The existing "1 pending" text and sync button are kept.
+- `NetworkBanner` stays on the Dashboard only, as it does today. It now shows only when the app is offline or has pending transactions, to save space on phones. The existing "1 pending" text and sync button are kept.
 
 ## Shared components (`components/`)
 
@@ -71,6 +71,8 @@ PWAInstall       rendered through ToastHost position rules instead of its own co
 | `BottomSheet` | `v-model:open` and `title`. On mobile it slides up from the bottom with a handle, backdrop and safe-area padding, and closes on backdrop tap or Esc. From `md` up it renders as a centred dialog. It traps focus and locks body scroll. |
 | `ToastHost` + `useToast()` | Replaces the ad-hoc success notification in Settings. `useToast` lives in `composables/useToast.js`. |
 | `ListRow` | Leading icon, title/subtitle, and trailing value/chevron. Used for transactions, report tables and the settings list. |
+| `ToggleSwitch`, `QuantityStepper` | On/off switch row for Settings; −/qty/+ stepper with 44px buttons for the catalog and cart |
+| `useMediaQuery()` | Reactive `matchMedia` (`composables/useMediaQuery.js`). It is `false` during SSR and updated on mount. Pages use it to render either the bottom sheet or the inline panel, never both. |
 
 ## Pages
 
@@ -101,14 +103,14 @@ PWAInstall       rendered through ToastHost position rules instead of its own co
 
 - The period selector keeps its six options (This Week, This Month, Last Month, This Quarter, This Year, Custom Range). They become a horizontally scrolling chip row on mobile and wrap on `md+`; six options are too many for a segmented control at 375px. Custom Range shows two date inputs stacked on mobile and side by side on `md`. The refresh button moves into the `PageHeader` actions.
 - **KPI cards:** income, expenses and net in a 2-column grid on mobile, with net spanning both columns; 3 columns on `md`.
-- **Charts:** stack full-width on mobile and sit 2-up on `lg`. Chart.js runs with `maintainAspectRatio: false` inside fixed-height containers (`h-56` on mobile, `h-72` on desktop). Chart colours come from the money tokens and are re-applied when dark mode toggles.
+- **Charts:** the page has no real charts today, only "Chart would be displayed here" placeholders over sample data. They stay placeholders: restyled as dashed fixed-height boxes (`h-56` on mobile, `h-72` on desktop), stacked full-width on mobile and 2-up on `lg`. Wiring up Chart.js is a separate feature and out of scope.
 - **Tables:** "Top Expense Categories" and "Recent Transactions" render as `ListRow` lists on mobile and keep a `<table>` from `md`.
 
 ### Settings (`pages/settings.vue`)
 
 - **Mobile:** a grouped list of the five sections (Account, API, Display, Notifications, Data). Tapping one shows that section with a back button, held in local state with the URL hash synced (`/settings#display`). Each section fits in one column.
 - **Desktop (`md+`):** two-pane layout with the section list on the left and content on the right, as today but restyled.
-- Toggles become proper switch controls with 44px rows.
+- Toggles use a shared `ToggleSwitch` (`role="switch"`, 44px row). The notification checkboxes become switches too, and the currency and date-format radio groups become `SegmentedControl`s.
 - The "Clear All Data" confirmation moves to `BottomSheet`. The success notification moves to `useToast`.
 - **Danger zone:** kept visually separate with the expense colour.
 
@@ -120,20 +122,24 @@ PWAInstall       rendered through ToastHost position rules instead of its own co
 
 ## Existing-code cleanup in scope
 
-- Remove the `displaySettings.darkMode` class ternaries from `app.vue` and the pages. Dark mode is still applied by toggling `html.dark` (existing plugin and watcher).
+- Remove the `displaySettings.darkMode` class ternaries from `app.vue` and the pages. Dark mode is still applied by toggling `html.dark`: the existing plugin on load, plus a watcher in `app.vue`.
+- Fix the bugs this work depends on:
+  - In script code, `displaySettings` is a ref but is read as `displaySettings.darkMode` (always `undefined`). As a result, `app.vue`'s mount hook and the Settings save handler strip `html.dark`.
+  - Settings' sync button reads an undefined `isSyncing`.
+  - The keypad's `.` key throws once the amount input holds a number. The amount becomes a text input with `inputmode="decimal"`, and a comma is accepted as the decimal separator.
 - Delete the `.nav-link`, `.transaction-item` and `.transaction-icon` classes and any other `main.css` classes that become unused.
 - Unrelated refactors are out of scope.
 
 ## Testing
 
 - **`playwright.config.js`:** add a `mobile` project using `devices['Pixel 7']` alongside `chromium`.
-- **Existing specs:** unchanged on desktop. On mobile, the transaction and catalog specs reach the form or cart through a small fixture helper, `openTransactionForm(page)` / `openCart(page)`, which taps the floating button or cart bar on mobile and is a no-op on desktop. User-visible labels and placeholders are kept stable so assertions do not change.
+- **Existing specs:** unchanged on desktop. On mobile, the transaction specs reach the form through a fixture helper, `openTransactionForm(page)`, which taps the floating button below `lg` and does nothing on desktop. The catalog checkout spec stays desktop-only, and a phone variant drives the cart bar and cart sheet. User-visible labels and placeholders are kept stable so assertions do not change.
 - **New `tests/e2e/mobile.spec.js`** (mobile project only):
   - tapping each bottom tab navigates to the matching page and marks it active (`aria-current="page"`);
   - the add-transaction sheet opens, submits and closes, and the new transaction appears in the list;
   - the cart bar appears after adding a product, and the cart sheet shows items and total;
   - for every page, in light and dark mode, `document.documentElement.scrollWidth <= window.innerWidth`.
-- **Desktop:** a side-nav navigation test is added to `navigation.spec.js`.
+- **Shell:** `shell.spec.js` checks primary navigation on both projects (side rail on desktop, tab bar on phones).
 - **Manual check before completion:** screenshots of every page at 375×812 and 1280×800, in light and dark mode.
 
 ## Delivery order
