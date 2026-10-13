@@ -61,10 +61,11 @@ export const test = base.extend({
       requests: fake.requests,
       get posted () { return fake.db.budget_tracker_transactions },
       enable () { fake.state.enabled = true },
-      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [] } = {}) {
+      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [], commissions = [] } = {}) {
         api.enable()
         fake.db.categories.push(...structuredClone(categories))
         fake.db.deals.push(...structuredClone(deals))
+        fake.db.commissions.push(...structuredClone(commissions))
         fake.db.budget_tracket_catalog.push(...articles.map(article => ({
           collectionId: 'articles0000001',
           active: true,

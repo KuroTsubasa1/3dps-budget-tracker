@@ -10,14 +10,15 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals']
-const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions'])
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions']
+const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
   budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, images: [], price: 0, description: '' },
   stock_movements: { note: '' },
   budget_tracker_transactions: { notes: '' },
-  deals: {}
+  deals: {},
+  commissions: { notes: '', address: '', delivered_at: '', cancelled_at: '', anonymised_at: '' }
 }
 
 let counter = 0
@@ -92,10 +93,13 @@ export function createFakePocketBase () {
   const requests = []
   const state = { enabled: false }
 
-  const withExpand = (record, expand) =>
-    expand?.includes('category') && record.category
-      ? { ...record, expand: { category: db.categories.find(category => category.id === record.category) } }
-      : record
+  // Expand only the relations the app asks for: category (articles) and article (commissions)
+  const EXPANDABLE = { category: 'categories', article: 'budget_tracket_catalog' }
+  const withExpand = (record, expand) => {
+    const fields = String(expand || '').split(',').map(field => field.trim()).filter(field => EXPANDABLE[field] && record[field])
+    if (!fields.length) return record
+    return { ...record, expand: Object.fromEntries(fields.map(field => [field, db[EXPANDABLE[field]].find(item => item.id === record[field])])) }
+  }
 
   async function handle (route) {
     const request = route.request()
