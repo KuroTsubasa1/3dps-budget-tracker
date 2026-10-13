@@ -84,7 +84,7 @@ async function loadMapping (articles) {
 }
 
 async function writeSnapshot () {
-  const ours = new Set(['categories', 'deals', 'stock_movements', ARTICLES, TRANSACTIONS])
+  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', ARTICLES, TRANSACTIONS])
   const snapshot = (await listCollections()).filter(collection => ours.has(collection.name))
   await mkdir('pocketbase', { recursive: true })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)

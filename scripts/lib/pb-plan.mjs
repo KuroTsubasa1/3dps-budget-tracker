@@ -50,6 +50,10 @@ const relation = (name, collectionId, required = false, maxSelect = 1) =>
   ({ name, type: 'relation', required, presentable: false, options: { collectionId, cascadeDelete: false, minSelect: null, maxSelect, displayFields: null } })
 const select = (name, values, required = false) =>
   ({ name, type: 'select', required, presentable: false, options: { maxSelect: 1, values } })
+const email = (name, required = false) =>
+  ({ name, type: 'email', required, presentable: false, options: { exceptDomains: null, onlyDomains: null } })
+const date = name =>
+  ({ name, type: 'date', required: false, presentable: false, options: { min: '', max: '' } })
 
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const findField = (collection, name) => collection?.schema.find(field => field.name === name)
@@ -63,7 +67,8 @@ const rulesFor = (ownerId) => {
     deals: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
     stock_movements: { listRule: O, viewRule: O, createRule: O, updateRule: null, deleteRule: null },
     [ARTICLES]: { listRule: `active = true || (${O})`, viewRule: `active = true || (${O})`, createRule: O, updateRule: O, deleteRule: O },
-    [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
+    [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
+    commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
   }
 }
 
@@ -125,6 +130,34 @@ export function planSchema (collections) {
         ...LOCKED,
         listRule: '',
         viewRule: ''
+      }
+    })
+  }
+
+  if (!byName(collections, 'commissions')) {
+    ops.push({
+      op: 'createCollection',
+      name: 'commissions',
+      body: {
+        name: 'commissions',
+        type: 'base',
+        // Customer data is personal: owner-only from the start (rules pinned by --apply-rules)
+        schema: [
+          text('customer_name', true),
+          email('customer_email'),
+          select('fulfilment', ['pickup', 'shipping'], true),
+          text('address'),
+          relation('article', articles.id, true),
+          number('quantity', { required: true, min: 1, noDecimal: true }),
+          number('agreed_price', { required: true, min: 0 }),
+          text('notes'),
+          select('status', ['open', 'printing', 'ready', 'delivered', 'cancelled'], true),
+          date('delivered_at'),
+          date('cancelled_at'),
+          date('anonymised_at')
+        ],
+        indexes: [],
+        ...LOCKED
       }
     })
   }

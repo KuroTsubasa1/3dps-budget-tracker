@@ -27,10 +27,11 @@ test('plans the new collections, article fields and optional price', () => {
     'createCollection:categories',
     'createCollection:stock_movements',
     'createCollection:deals',
+    'createCollection:commissions',
     `addFields:${ARTICLES}`,
     `updateField:${ARTICLES}.price`
   ])
-  assert.deepEqual(ops[3].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold'])
+  assert.deepEqual(ops[4].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -75,7 +76,8 @@ test('rules pin the owner record id, close sign-up first, and apply only once', 
     'setRules:deals',
     'setRules:stock_movements',
     `setRules:${ARTICLES}`,
-    'setRules:budget_tracker_transactions'
+    'setRules:budget_tracker_transactions',
+    'setRules:commissions'
   ])
   assert.deepEqual(planRules(simulate(afterSchema, ops), OWNER_ID), [])
 })
@@ -197,4 +199,27 @@ test('seeding skips a deal whose category does not exist', () => {
   const { create, skipped } = planDealSeed([], CATEGORY_RECORDS.filter(category => category.name !== 'Bookmark'))
   assert.equal(create.length, 4)
   assert.deepEqual(skipped, [{ name: 'Bookmark 2 for 9', reason: 'category Bookmark not found' }])
+})
+
+test('commissions are created locked and reference the articles', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const commissions = afterSchema.find(c => c.name === 'commissions')
+  const field = name => commissions.schema.find(f => f.name === name)
+  assert.equal(field('article').options.collectionId, 'i1f9o7q6bnjx6k8')
+  assert.equal(field('article').options.maxSelect, 1)
+  assert.equal(field('customer_email').type, 'email')
+  assert.deepEqual(field('fulfilment').options.values, ['pickup', 'shipping'])
+  assert.deepEqual(field('status').options.values, ['open', 'printing', 'ready', 'delivered', 'cancelled'])
+  assert.equal(field('quantity').options.min, 1)
+  for (const name of ['delivered_at', 'cancelled_at', 'anonymised_at']) assert.equal(field(name).type, 'date', name)
+  assert.deepEqual(
+    [commissions.listRule, commissions.viewRule, commissions.createRule, commissions.updateRule, commissions.deleteRule],
+    [null, null, null, null, null]
+  )
+})
+
+test('owner rules give the owner, and only the owner, every commission permission', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const commissions = planRules(afterSchema, OWNER_ID).find(op => op.collection === 'commissions')
+  assert.deepEqual(commissions.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
 })
