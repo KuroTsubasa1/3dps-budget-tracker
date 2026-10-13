@@ -87,6 +87,7 @@ const applyChanges = (record, body) => {
 export function createFakePocketBase () {
   const db = Object.fromEntries(COLLECTIONS.map(name => [name, []]))
   const failures = {}
+  const delays = {}
   const requests = []
   const state = { enabled: false }
 
@@ -144,7 +145,11 @@ export function createFakePocketBase () {
     // 'drop' is one-shot: the write happens, then the reply is lost (the connection aborts)
     const drop = failures[name] === 'drop'
     if (failures[name] && !drop) return reply(failures[name], { code: failures[name], message: 'Forced failure.', data: {} })
-    const done = (status, json) => {
+    // One-shot slow write: the write happens now, its reply arrives after the delay
+    const delay = delays[name]
+    delays[name] = 0
+    const done = async (status, json) => {
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       if (!drop) return reply(status, json)
       failures[name] = 0
       return route.abort()
@@ -172,5 +177,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, requests, state, handle }
+  return { db, failures, delays, requests, state, handle }
 }

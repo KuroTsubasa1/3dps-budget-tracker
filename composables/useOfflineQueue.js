@@ -5,6 +5,9 @@ const offlineQueue = ref([])
 const isSyncing = ref(false)
 const syncStatus = ref('idle') // 'idle', 'syncing', 'success', 'error'
 
+// Identifies a queued item across copies (loadQueue re-parses the queue from storage)
+const queueKey = item => `${item.id}:${item.queuedAt}`
+
 export const useOfflineQueue = () => {
   
   // Load saved queue from local storage
@@ -47,25 +50,30 @@ export const useOfflineQueue = () => {
       syncStatus.value = 'syncing'
       
       let processed = 0
-      const newQueue = [...offlineQueue.value]
-      
-      for (let i = 0; i < newQueue.length; i++) {
-        const item = newQueue[i]
-        
+      // Outcome per item: true when synced, otherwise the error message
+      const outcomes = new Map()
+
+      for (const item of [...offlineQueue.value]) {
         // A failed item is retried on every sync until it succeeds; lastError keeps the latest reason
         if (item.status === 'pending' || item.status === 'failed') {
           try {
             await apiHandler(item)
-            newQueue[i] = { ...item, status: 'synced', syncedAt: new Date().toISOString() }
+            outcomes.set(queueKey(item), true)
             processed++
           } catch (error) {
             console.error('Failed to sync item:', error)
-            newQueue[i] = { ...item, status: 'failed', lastError: error.message }
+            outcomes.set(queueKey(item), error.message)
           }
         }
       }
-      
-      offlineQueue.value = newQueue.filter(item => item.status !== 'synced')
+
+      // Merge into the live queue rather than replacing it: sales queued while this sync
+      // was running are not in the snapshot above and must survive untouched
+      offlineQueue.value = offlineQueue.value.flatMap((item) => {
+        const outcome = outcomes.get(queueKey(item))
+        if (outcome === true) return []
+        return outcome === undefined ? [item] : [{ ...item, status: 'failed', lastError: outcome }]
+      })
       saveQueue()
       
       syncStatus.value = 'success'

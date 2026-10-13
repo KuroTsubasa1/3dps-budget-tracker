@@ -95,7 +95,9 @@ export const test = base.extend({
         api.enable()
         if (status !== 200) fake.failures.budget_tracker_transactions = status
       },
-      fail (collection, status) { fake.failures[collection] = status }
+      fail (collection, status) { fake.failures[collection] = status },
+      // The next write to the collection succeeds but answers only after `ms`
+      delayNext (collection, ms) { fake.delays[collection] = ms }
     }
     await use(api)
 
