@@ -88,3 +88,38 @@ test.describe('home page transactions', () => {
     await expect(page.getByText('Keychain order').first()).toBeVisible()
   })
 })
+
+test('a sale queued while a sync is running is not dropped', async ({ page, api }) => {
+  const addSale = async (description) => {
+    await openTransactionForm(page)
+    await page.getByPlaceholder('What is this transaction for?').fill(description)
+    await page.getByPlaceholder('0.00').fill('5')
+    await page.getByRole('button', { name: 'Add to Balance' }).click()
+  }
+
+  await api.mockTransactions({ status: 500 })
+  await gotoReady(page, '/')
+  await addSale('Sale A')
+  await expect(page.getByText('1 pending')).toBeVisible()
+
+  // Sale A's sync is slow; Sale B fails and gets queued while it is still in flight
+  api.fail('budget_tracker_transactions', 0)
+  api.delayNext('budget_tracker_transactions', 3000)
+  await page.getByRole('button', { name: /Sync now/ }).click()
+  await expect(page.getByRole('button', { name: /Syncing/ })).toBeVisible()
+  api.fail('budget_tracker_transactions', 500)
+  // Sale A's warning toast sits over the desktop form's submit button; clear it first
+  await page.getByRole('button', { name: 'Dismiss' }).first().click()
+  await addSale('Sale B')
+  // Proves the overlap: B is in the queue while A's sync is still running
+  await expect(page.getByText('2 pending')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Syncing/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Syncing/ })).toHaveCount(0, { timeout: 15000 })
+
+  await expect(page.getByText('1 pending')).toBeVisible()
+
+  api.fail('budget_tracker_transactions', 0)
+  await page.getByRole('button', { name: /Sync now/ }).click()
+  await expect.poll(() => api.posted.map(record => record.description).sort()).toEqual(['Sale A', 'Sale B'])
+  await expect(page.getByText(/\d+ pending/)).toHaveCount(0)
+})

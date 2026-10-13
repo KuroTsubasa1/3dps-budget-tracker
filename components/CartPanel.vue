@@ -10,7 +10,10 @@
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-ink">{{ item.name }}</p>
           <p class="truncate text-xs tabular-nums text-ink-muted">
-            {{ formatCurrency(item.price) }} each · {{ formatCurrency(item.price * item.quantity) }}
+            {{ formatCurrency(priceOf(item)) }} each · {{ formatCurrency(priceOf(item) * item.quantity) }}
+          </p>
+          <p v-if="item.quantity > item.stock" class="text-xs font-medium text-amber-700 dark:text-amber-300">
+            only {{ Math.max(0, item.stock) }} in stock
           </p>
         </div>
         <QuantityStepper
@@ -45,7 +48,8 @@ import { formatCurrency } from '~/utils/currency'
 
 defineProps({
   items: { type: Array, required: true },
-  total: { type: Number, required: true }
+  total: { type: Number, required: true },
+  priceOf: { type: Function, default: item => item.price }
 })
 defineEmits(['increment', 'decrement', 'remove', 'submit'])
 </script>

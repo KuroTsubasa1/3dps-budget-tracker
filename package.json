@@ -8,12 +8,15 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "pb:migrate": "node scripts/pb-migrate.mjs"
   },
   "dependencies": {
     "@tailwindcss/forms": "^0.5.11",
     "chart.js": "^4.5.1",
     "nuxt": "^3.21.11",
+    "pocketbase": "0.21.5",
     "qrcode-vue3": "^1.7.1",
     "vue": "^3.5.43",
     "vue-router": "^4.6.4"

@@ -152,3 +152,26 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - Thanks to all contributors who have helped shape this project
 - Inspired by the need for a comprehensive budget tracking solution for 3D printing businesses
+
+## PocketBase setup: categories, stock and owner login
+
+The app needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads your PocketBase admin login from your local `.env`. Set `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` there (`POCKETBASE_ADMIN_TOKEN` is an optional alternative). Never prefix these with `NUXT_PUBLIC_`.
+
+```bash
+npm run pb:migrate                  # dry run: prints the plan, writes scripts/category-mapping.json
+npm run pb:migrate -- --apply       # create collections, seed categories, assign article categories
+npm run pb:migrate -- --apply-rules # pin owner-only writes and close public sign-up on users
+npm run pb:migrate -- --apply-rules --owner you@example.com  # if users has more than one account
+```
+
+`--apply-rules` picks the owner from `users`: the only account, or the one named with `--owner`. Public sign-up on `users` is closed by the same step.
+
+Order matters:
+1. Run `--apply`. The deployed app keeps working.
+2. Deploy the new app.
+3. Run `--apply-rules` (add `--owner <email>` if `users` has more than one account). The old shared API token then stops working.
+
+Run `--apply-rules` right after the new app is live, before selling or editing anything. Until then the new app cannot save sales, stock or categories.
+Afterwards, make one test sale and check it appears in PocketBase.
+
+Each run writes the resulting schema to `pocketbase/schema.json`.

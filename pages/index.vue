@@ -79,13 +79,13 @@ import { ref, computed, watch } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useMediaQuery } from '~/composables/useMediaQuery'
-import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
-const { transactions, earnings, todayEarnings, apiError, clearApiError } = useTransactions()
+definePageMeta({ middleware: 'owner' })
+
+const { transactions, earnings, todayEarnings } = useTransactions()
 const { displaySettings } = useAppSettings()
-const { toast } = useToast()
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const isFormOpen = ref(false)
@@ -102,11 +102,4 @@ const transactionSubtitle = transaction =>
   [formatDate(transaction.date, displaySettings.value.dateFormat || 'DD/MM/YYYY'), transaction.notes]
     .filter(Boolean)
     .join(' · ')
-
-// The form may already be closed (phones), so API problems are reported as a toast
-watch(apiError, (message) => {
-  if (!message) return
-  toast(message.includes('saved locally') ? message : `${message} - Transaction saved locally.`, { tone: 'warning', duration: 6000 })
-  clearApiError()
-})
 </script>

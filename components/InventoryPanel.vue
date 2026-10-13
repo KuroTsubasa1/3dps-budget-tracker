@@ -1,0 +1,131 @@
+<template>
+  <div class="space-y-4">
+    <div class="flex items-baseline justify-between gap-3">
+      <h3 class="text-sm font-semibold text-ink">Inventory</h3>
+      <p class="text-sm text-ink-muted">
+        In stock:
+        <span class="text-lg font-semibold tabular-nums text-ink" data-testid="article-stock">{{ stock }}</span>
+      </p>
+    </div>
+
+    <p v-if="error" role="alert" class="rounded-lg bg-expense/10 px-3 py-2 text-sm text-expense">{{ error }}</p>
+
+    <form class="flex items-end gap-2" novalidate @submit.prevent="addPrinted">
+      <div class="min-w-0 flex-1">
+        <label for="inventory-printed" class="label">Add printed</label>
+        <input id="inventory-printed" v-model="printedCount" type="text" inputmode="numeric" class="input" placeholder="0">
+      </div>
+      <BaseButton type="submit" variant="secondary" icon="plus" :loading="busy === 'printed'">Add</BaseButton>
+    </form>
+
+    <form class="space-y-2" novalidate @submit.prevent="correct">
+      <div class="flex items-end gap-2">
+        <div class="min-w-0 flex-1">
+          <label for="inventory-count" class="label">Correct count</label>
+          <input id="inventory-count" v-model="correctTo" type="text" inputmode="numeric" class="input" placeholder="0">
+        </div>
+        <BaseButton type="submit" variant="secondary" :loading="busy === 'correction'">Set</BaseButton>
+      </div>
+      <input v-model="correctionNote" type="text" class="input" placeholder="Note (optional)" aria-label="Correction note">
+    </form>
+
+    <div>
+      <h4 class="mb-1 text-xs font-medium uppercase tracking-wide text-ink-muted">Recent changes</h4>
+      <p v-if="!movements.length" class="text-sm text-ink-muted">No stock changes yet</p>
+      <ul v-else class="divide-y divide-line rounded-lg border border-line">
+        <li v-for="movement in movements" :key="movement.id" class="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <div class="min-w-0">
+            <p class="font-medium text-ink">{{ REASON_LABEL[movement.reason] }}</p>
+            <p class="truncate text-xs text-ink-muted">
+              {{ formatDateTime(movement.created) }}<template v-if="movement.note"> · {{ movement.note }}</template>
+            </p>
+          </div>
+          <span class="shrink-0 font-semibold tabular-nums" :class="movement.change < 0 ? 'text-expense' : 'text-income'">
+            {{ movement.change > 0 ? '+' : '' }}{{ movement.change }}
+          </span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useInventory } from '~/composables/useInventory'
+import { printedMovement, correctionMovement, newRecordId } from '~/utils/inventory'
+import { formatDateTime } from '~/utils/date'
+
+const props = defineProps({
+  article: { type: Object, required: true }
+})
+const emit = defineEmits(['changed'])
+
+const REASON_LABEL = { sale: 'Sold', printed: 'Printed', correction: 'Correction' }
+
+const { applyMovements, listMovements } = useInventory()
+
+const stock = ref(props.article.stock ?? 0)
+const movements = ref([])
+const printedCount = ref('')
+const correctTo = ref('')
+const correctionNote = ref('')
+const busy = ref('')
+const error = ref('')
+
+const loadMovements = async () => {
+  movements.value = await listMovements(props.article.id)
+}
+
+onMounted(() => {
+  loadMovements().catch(() => { error.value = 'Could not load stock history' })
+})
+
+const parseCount = value => (String(value).trim() === '' ? NaN : Number(value))
+
+// Stock changes need the server: they are owner actions in the sheet, not part of offline selling
+const record = async (kind, movement) => {
+  busy.value = kind
+  error.value = ''
+  try {
+    const stocks = await applyMovements([{ id: newRecordId(), article: props.article.id, ...movement }])
+    stock.value = stocks[props.article.id]
+    emit('changed', stock.value)
+    await loadMovements()
+    return true
+  } catch (err) {
+    error.value = 'Could not save the stock change. Check your connection and try again.'
+    return false
+  } finally {
+    busy.value = ''
+  }
+}
+
+const addPrinted = async () => {
+  let movement
+  try {
+    movement = printedMovement(parseCount(printedCount.value))
+  } catch (err) {
+    error.value = err.message
+    return
+  }
+  if (await record('printed', movement)) printedCount.value = ''
+}
+
+const correct = async () => {
+  let movement
+  try {
+    movement = correctionMovement(stock.value, parseCount(correctTo.value), correctionNote.value.trim())
+  } catch (err) {
+    error.value = err.message
+    return
+  }
+  if (!movement) {
+    error.value = `Stock is already ${stock.value}`
+    return
+  }
+  if (await record('correction', movement)) {
+    correctTo.value = ''
+    correctionNote.value = ''
+  }
+}
+</script>
