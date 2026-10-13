@@ -1,0 +1,207 @@
+import { test, expect, gotoReady } from './fixtures.js'
+
+const BOARD_ARTICLES = [
+  { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', stock: 2, low_stock_threshold: 5 },
+  { id: 'f1', name: 'Glurak Figure', category: 'cat-figure', stock: 10, low_stock_threshold: 2 }
+]
+const job = overrides => ({
+  id: 'job000000000001',
+  collectionName: 'print_jobs',
+  article: 'k1',
+  quantity: 8,
+  status: 'printing',
+  done_at: '',
+  created: '2026-10-13 08:00:00.000Z',
+  ...overrides
+})
+const commission = overrides => ({
+  id: 'c1',
+  customer_name: 'Ash Ketchum',
+  customer_email: 'ash@example.com',
+  fulfilment: 'pickup',
+  address: '',
+  article: 'f1',
+  quantity: 1,
+  agreed_price: 30,
+  notes: 'Shiny colours',
+  status: 'open',
+  created: '2026-10-01 10:00:00.000Z',
+  delivered_at: '',
+  cancelled_at: '',
+  anonymised_at: '',
+  ready_at: '',
+  ...overrides
+})
+const COMMISSION_CARD = 'Commission · Ash Ketchum'
+
+const seedBoard = (api, { articles = BOARD_ARTICLES, printJobs = [], commissions = [] } = {}) =>
+  api.seed({ articles, printJobs, commissions })
+const stockOf = (api, id) => api.db.budget_tracket_catalog.find(article => article.id === id).stock
+const loggedMovements = api => api.db.stock_movements.filter(movement => movement.note !== 'opening stock')
+
+// Phones show one column at a time behind chips; lg+ shows all three
+const openColumn = async (page, name) => {
+  const chips = page.getByRole('group', { name: 'Print board columns' })
+  if (await chips.isVisible()) await chips.getByRole('button', { name: new RegExp(`^${name}`) }).click()
+  return page.getByRole('region', { name })
+}
+
+test.describe('the print board', () => {
+  test('a low-stock article is printed and topped up once', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    const toPrint = await openColumn(page, 'To print')
+    const card = toPrint.getByRole('article', { name: 'Pikachu Keychain' })
+    await expect(card).toContainText('2 left · target 10')
+    await expect(toPrint.getByRole('article', { name: 'Glurak Figure' })).toHaveCount(0)
+    await card.getByRole('button', { name: 'Print 8' }).click()
+
+    await expect.poll(() => api.db.print_jobs.length).toBe(1)
+    expect(api.db.print_jobs[0]).toMatchObject({ article: 'k1', quantity: 8, status: 'printing' })
+    await expect(toPrint.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
+
+    const printing = await openColumn(page, 'Printing')
+    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true }).click()
+    await expect.poll(() => api.db.print_jobs[0].status).toBe('done')
+    expect(api.db.print_jobs[0].done_at).toBeTruthy()
+    expect(stockOf(api, 'k1')).toBe(10)
+    expect(loggedMovements(api)).toEqual([
+      expect.objectContaining({ id: api.db.print_jobs[0].id, article: 'k1', change: 8, reason: 'printed' })
+    ])
+
+    const doneToday = await openColumn(page, 'Done today')
+    await expect(doneToday.getByRole('article', { name: 'Pikachu Keychain' })).toContainText('+8 to stock')
+  })
+
+  test('a changed stepper quantity is used', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    const card = (await openColumn(page, 'To print')).getByRole('article', { name: 'Pikachu Keychain' })
+    await card.getByRole('button', { name: 'Add one Pikachu Keychain' }).click()
+    await card.getByRole('button', { name: 'Add one Pikachu Keychain' }).click()
+    await card.getByRole('button', { name: 'Remove one Pikachu Keychain' }).click()
+    await card.getByRole('button', { name: 'Print 9' }).click()
+    await expect.poll(() => api.db.print_jobs[0]?.quantity).toBe(9)
+  })
+
+  test('the stepper never goes below 1', async ({ page, api }) => {
+    seedBoard(api, { articles: [{ id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', stock: 4, low_stock_threshold: 5, target_stock: 3 }] })
+    await gotoReady(page, '/print-board')
+    const card = (await openColumn(page, 'To print')).getByRole('article', { name: 'Pikachu Keychain' })
+    await expect(card).toContainText('4 left · target 3')
+    await card.getByRole('button', { name: 'Remove one Pikachu Keychain' }).click()
+    await card.getByRole('button', { name: 'Print 1' }).click()
+    await expect.poll(() => api.db.print_jobs[0]?.quantity).toBe(1)
+  })
+
+  test('Back removes the job and returns the article to To print', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    const printing = await openColumn(page, 'Printing')
+    await expect(printing.getByRole('article', { name: 'Pikachu Keychain' })).toContainText('Stock print × 8')
+    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Back' }).click()
+    await expect.poll(() => api.db.print_jobs.length).toBe(0)
+    const toPrint = await openColumn(page, 'To print')
+    await expect(toPrint.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Print 8' })).toBeVisible()
+    expect(loggedMovements(api)).toHaveLength(0)
+  })
+
+  test('a retried Done after a lost reply adds the stock once', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    const printing = await openColumn(page, 'Printing')
+    const done = printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true })
+    api.fail('stock_movements', 'drop')
+    await done.click()
+    await expect(page.getByRole('alert')).toHaveText("You're offline — the print board needs a connection")
+    expect(api.db.print_jobs[0].status).toBe('printing')
+
+    await done.click()
+    await expect.poll(() => api.db.print_jobs[0].status).toBe('done')
+    expect(loggedMovements(api)).toEqual([expect.objectContaining({ id: 'job000000000001', change: 8, reason: 'printed' })])
+    expect(stockOf(api, 'k1')).toBe(10)
+  })
+
+  test('a stale Print is refused when the article is already printing', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    api.db.print_jobs.push(job({ quantity: 3 }))
+    const toPrint = await openColumn(page, 'To print')
+    await toPrint.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Print 8' }).click()
+    await expect(page.getByRole('alert')).toHaveText('This article is already printing')
+    expect(api.db.print_jobs).toHaveLength(1)
+    await expect(toPrint.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
+  })
+
+  test('Done on a job removed on another device adds no stock', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    api.db.print_jobs.splice(0)
+    const printing = await openColumn(page, 'Printing')
+    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText('Already updated — the board has been refreshed')
+    expect(loggedMovements(api)).toHaveLength(0)
+    expect(stockOf(api, 'k1')).toBe(2)
+    await expect(printing.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
+  })
+
+  test('a commission card follows its own status and never touches stock', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    await gotoReady(page, '/print-board')
+    let toPrint = await openColumn(page, 'To print')
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toContainText('Glurak Figure × 1')
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toContainText('Shiny colours')
+    await toPrint.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Start' }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('printing')
+
+    let printing = await openColumn(page, 'Printing')
+    await printing.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Back' }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('open')
+
+    toPrint = await openColumn(page, 'To print')
+    await toPrint.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Start' }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('printing')
+    printing = await openColumn(page, 'Printing')
+    await printing.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Done', exact: true }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('ready')
+    expect(api.db.commissions[0].ready_at).toBeTruthy()
+
+    const doneToday = await openColumn(page, 'Done today')
+    await expect(doneToday.getByRole('article', { name: COMMISSION_CARD })).toContainText('Commission ready')
+    expect(loggedMovements(api)).toHaveLength(0)
+    expect(api.db.print_jobs).toHaveLength(0)
+  })
+
+  test('a commission changed on another device refreshes the board', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    await gotoReady(page, '/print-board')
+    api.db.commissions[0].status = 'printing'
+    const toPrint = await openColumn(page, 'To print')
+    await toPrint.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Start' }).click()
+    await expect(page.getByRole('alert')).toHaveText('Already updated — the board has been refreshed')
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toHaveCount(0)
+    const printing = await openColumn(page, 'Printing')
+    await expect(printing.getByRole('article', { name: COMMISSION_CARD })).toBeVisible()
+  })
+
+  test('without print_jobs the board asks for the migration and commissions still work', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    api.dropCollection('print_jobs')
+    await gotoReady(page, '/print-board')
+    await expect(page.getByText('Run the migration to enable the print board')).toBeVisible()
+    const toPrint = await openColumn(page, 'To print')
+    await expect(toPrint.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
+    await toPrint.getByRole('article', { name: COMMISSION_CARD }).getByRole('button', { name: 'Start' }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('printing')
+  })
+})
+
+test.describe('visitors cannot reach the print board', () => {
+  test.use({ owner: false })
+
+  test('logged out, /print-board redirects to login', async ({ page, api }) => {
+    seedBoard(api)
+    await page.goto('/print-board')
+    await page.waitForURL(url => url.pathname === '/login')
+  })
+})

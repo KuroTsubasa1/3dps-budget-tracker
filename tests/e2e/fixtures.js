@@ -61,16 +61,18 @@ export const test = base.extend({
       requests: fake.requests,
       get posted () { return fake.db.budget_tracker_transactions },
       enable () { fake.state.enabled = true },
-      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [], commissions = [] } = {}) {
+      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [], commissions = [], printJobs = [] } = {}) {
         api.enable()
         fake.db.categories.push(...structuredClone(categories))
         fake.db.deals.push(...structuredClone(deals))
         fake.db.commissions.push(...structuredClone(commissions))
+        fake.db.print_jobs.push(...structuredClone(printJobs))
         fake.db.budget_tracket_catalog.push(...articles.map(article => ({
           collectionId: 'articles0000001',
           active: true,
           stock: 10,
           low_stock_threshold: 2,
+          target_stock: 0,
           images: [],
           description: '',
           price: 0,

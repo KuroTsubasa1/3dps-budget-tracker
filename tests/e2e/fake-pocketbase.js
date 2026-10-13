@@ -10,15 +10,16 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions']
-const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions'])
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs']
+const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
-  budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, images: [], price: 0, description: '' },
+  budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '' },
   stock_movements: { note: '' },
   budget_tracker_transactions: { notes: '' },
   deals: {},
-  commissions: { notes: '', address: '', delivered_at: '', cancelled_at: '', anonymised_at: '' }
+  commissions: { notes: '', address: '', delivered_at: '', cancelled_at: '', anonymised_at: '', ready_at: '' },
+  print_jobs: { done_at: '' }
 }
 
 let counter = 0
@@ -32,12 +33,18 @@ const parseValue = (raw) => {
   return Number(value)
 }
 
-// Only what the app sends: `field = value` clauses joined by &&, optionally in parentheses
+// Only what the app sends: `field = value` and `field >= value` clauses joined by && and ||, optionally in parentheses
+const CLAUSE = /^\s*(\w+)\s*(>=|=)\s*(.+?)\s*$/
+// Dates compare as text; the app writes ISO ("T") and PocketBase filters use a space
+const asDateText = value => String(value ?? '').replace('T', ' ')
+const matchesClause = (record, clause) => {
+  const [, field, operator, raw] = clause.match(CLAUSE)
+  const value = parseValue(raw)
+  if (operator === '>=') return asDateText(record[field]) >= asDateText(value)
+  return record[field] === value
+}
 const matchesFilter = (record, filter) =>
-  !filter || filter.replace(/[()]/g, '').split('&&').every((clause) => {
-    const [field, value] = clause.split('=')
-    return record[field.trim()] === parseValue(value)
-  })
+  !filter || filter.replace(/[()]/g, '').split('||').some(group => group.split('&&').every(clause => matchesClause(record, clause)))
 
 const sortRecords = (records, sort) => {
   if (!sort) return records
@@ -93,7 +100,7 @@ export function createFakePocketBase () {
   const requests = []
   const state = { enabled: false }
 
-  // Expand only the relations the app asks for: category (articles) and article (commissions)
+  // Expand only the relations the app asks for: category (articles) and article (commissions, print jobs)
   const EXPANDABLE = { category: 'categories', article: 'budget_tracket_catalog' }
   const withExpand = (record, expand) => {
     const fields = String(expand || '').split(',').map(field => field.trim()).filter(field => EXPANDABLE[field] && record[field])
