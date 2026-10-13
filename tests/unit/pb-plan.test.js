@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   ARTICLES,
   CATEGORY_SEED,
+  DEAL_SEED,
   ownerRule,
   planSchema,
   planRequireCategory,
@@ -11,7 +12,8 @@ import {
   resolveOwner,
   simulate,
   guessCategory,
-  describeOp
+  describeOp,
+  planDealSeed
 } from '../../scripts/lib/pb-plan.mjs'
 
 const OWNER_ID = 'owner0000000001'
@@ -24,10 +26,11 @@ test('plans the new collections, article fields and optional price', () => {
   assert.deepEqual(opKeys(ops), [
     'createCollection:categories',
     'createCollection:stock_movements',
+    'createCollection:deals',
     `addFields:${ARTICLES}`,
     `updateField:${ARTICLES}.price`
   ])
-  assert.deepEqual(ops[2].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold'])
+  assert.deepEqual(ops[3].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -69,6 +72,7 @@ test('rules pin the owner record id, close sign-up first, and apply only once', 
   assert.deepEqual(opKeys(ops), [
     'setRules:users',
     'setRules:categories',
+    'setRules:deals',
     'setRules:stock_movements',
     `setRules:${ARTICLES}`,
     'setRules:budget_tracker_transactions'
@@ -137,4 +141,60 @@ test('a missing articles collection is an error, not an empty plan', () => {
 test('ops describe themselves for the dry run', () => {
   const [first] = planSchema(current())
   assert.equal(describeOp(first), 'create collection "categories" (name, base_price, sort_order)')
+})
+
+test('deals reference categories, may hold several, and start publicly readable but locked', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const deals = afterSchema.find(c => c.name === 'deals')
+  const categories = deals.schema.find(f => f.name === 'categories')
+  assert.equal(categories.options.collectionId, afterSchema.find(c => c.name === 'categories').id)
+  assert.equal(categories.options.maxSelect, null)
+  assert.equal(categories.required, true)
+  assert.deepEqual(deals.schema.find(f => f.name === 'type').options.values, ['bundle', 'group'])
+  assert.equal(deals.schema.find(f => f.name === 'min_qty').options.min, 2)
+  assert.deepEqual(
+    [deals.listRule, deals.viewRule, deals.createRule, deals.updateRule, deals.deleteRule],
+    ['', '', null, null, null]
+  )
+})
+
+test('owner rules open deal writes to the owner only', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const deals = planRules(afterSchema, OWNER_ID).find(op => op.collection === 'deals')
+  assert.deepEqual(deals.rules, { listRule: '', viewRule: '', createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+})
+
+const CATEGORY_RECORDS = ['Keychain', 'Mini Figure', 'Coaster', 'Bookmark', 'Big Figure', 'Pokeball', 'CardridgeCase']
+  .map((name, index) => ({ id: `cat${String(index).padStart(12, '0')}`, name }))
+const idOf = name => CATEGORY_RECORDS.find(category => category.name === name).id
+
+test('the deal seed matches the agreed price list', () => {
+  assert.deepEqual(DEAL_SEED.map(deal => [deal.name, deal.type, deal.categoryNames, deal.min_qty, deal.price]), [
+    ['Keychain 2 for 7', 'bundle', ['Keychain'], 2, 7],
+    ['Mini Figure 2 for 15', 'bundle', ['Mini Figure'], 2, 15],
+    ['Coaster 2 for 15', 'bundle', ['Coaster'], 2, 15],
+    ['Bookmark 2 for 9', 'bundle', ['Bookmark'], 2, 9],
+    ['Big items', 'group', ['Big Figure', 'Pokeball', 'CardridgeCase'], 2, 25]
+  ])
+})
+
+test('seeding maps category names to ids', () => {
+  const { create, skipped } = planDealSeed([], CATEGORY_RECORDS)
+  assert.deepEqual(skipped, [])
+  assert.equal(create.length, 5)
+  assert.deepEqual(create[4], { name: 'Big items', type: 'group', categories: [idOf('Big Figure'), idOf('Pokeball'), idOf('CardridgeCase')], min_qty: 2, price: 25 })
+})
+
+test('seeding skips a deal whose category already has a deal, so re-runs change nothing', () => {
+  const first = planDealSeed([], CATEGORY_RECORDS).create
+  assert.deepEqual(planDealSeed(first, CATEGORY_RECORDS), {
+    create: [],
+    skipped: first.map(deal => ({ name: deal.name, reason: 'a category already has a deal' }))
+  })
+})
+
+test('seeding skips a deal whose category does not exist', () => {
+  const { create, skipped } = planDealSeed([], CATEGORY_RECORDS.filter(category => category.name !== 'Bookmark'))
+  assert.equal(create.length, 4)
+  assert.deepEqual(skipped, [{ name: 'Bookmark 2 for 9', reason: 'category Bookmark not found' }])
 })

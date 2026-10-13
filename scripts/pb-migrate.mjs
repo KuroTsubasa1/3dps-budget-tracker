@@ -1,6 +1,6 @@
-// PocketBase 0.22 migration for categories, stock and owner-only rules.
+// PocketBase 0.22 migration for categories, deals, stock and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
-//   npm run pb:migrate -- --apply      schema + seed + category mapping (old rules stay; deployed app keeps working)
+//   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping (old rules stay; deployed app keeps working)
 //   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -9,6 +9,7 @@ import {
   TRANSACTIONS,
   CATEGORY_SEED,
   planSchema,
+  planDealSeed,
   planRequireCategory,
   planRules,
   resolveField,
@@ -61,7 +62,9 @@ async function adminToken () {
 
 async function applyOp (op) {
   const collections = await listCollections()
-  if (op.op === 'createCollection') return api('POST', '/collections', op.body)
+  if (op.op === 'createCollection') {
+    return api('POST', '/collections', { ...op.body, schema: op.body.schema.map(field => resolveField(field, collections)) })
+  }
   const collection = byName(collections, op.collection)
   if (op.op === 'setRules') return api('PATCH', `/collections/${collection.id}`, op.rules)
   const schema = op.op === 'addFields'
@@ -81,7 +84,7 @@ async function loadMapping (articles) {
 }
 
 async function writeSnapshot () {
-  const ours = new Set(['categories', 'stock_movements', ARTICLES, TRANSACTIONS])
+  const ours = new Set(['categories', 'deals', 'stock_movements', ARTICLES, TRANSACTIONS])
   const snapshot = (await listCollections()).filter(collection => ours.has(collection.name))
   await mkdir('pocketbase', { recursive: true })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
@@ -105,6 +108,13 @@ async function migrateSchema () {
     ? `Categories to add: ${seed.map(item => `${item.name} (${item.base_price} €)`).join(', ')}`
     : 'Categories: all present')
 
+  const existingDeals = byName(collections, 'deals') ? await listRecords('deals') : []
+  // Dry run: categories that will be seeded count as present
+  const plannedCategories = [...existing, ...seed.map(item => ({ id: `new:${item.name}`, name: item.name }))]
+  const dealPlan = planDealSeed(existingDeals, plannedCategories)
+  console.log(dealPlan.create.length ? `Deals to add: ${dealPlan.create.map(deal => deal.name).join(', ')}` : 'Deals: nothing to add')
+  dealPlan.skipped.forEach(item => console.log(`  - skip ${item.name}: ${item.reason}`))
+
   const articles = await listRecords(ARTICLES)
   const mapping = await loadMapping(articles)
   console.log(`Article → category (edit ${MAPPING_FILE} to change):`)
@@ -121,6 +131,8 @@ async function migrateSchema () {
   for (const item of seed) await api('POST', '/collections/categories/records', item)
 
   const categories = await listRecords('categories')
+  const { create: dealsToCreate } = planDealSeed(await listRecords('deals'), categories)
+  for (const deal of dealsToCreate) await api('POST', '/collections/deals/records', deal)
   const unmapped = Object.values(mapping).filter(entry => !categories.some(category => category.name === entry.category))
   if (unmapped.length) {
     throw new Error(`Map these articles to an existing category in ${MAPPING_FILE}: ${unmapped.map(entry => entry.name).join(', ')}`)
