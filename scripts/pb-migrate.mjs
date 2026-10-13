@@ -87,13 +87,15 @@ async function applyOp (op) {
   return api('PATCH', `/collections/${collection.id}`, { schema })
 }
 
+// The mapping only gives articles without a category their first one; once set, the app owns the category
+// (a re-run never moves an article the owner has re-categorised). Earlier entries stay in the file as a record.
 async function loadMapping (articles) {
   const saved = existsSync(MAPPING_FILE) ? JSON.parse(await readFile(MAPPING_FILE, 'utf8')) : {}
   const mapping = {}
-  for (const article of articles) {
+  for (const article of articles.filter(item => !item.category)) {
     mapping[article.id] = saved[article.id] ?? { name: article.name, category: guessCategory(article.name) }
   }
-  await writeFile(MAPPING_FILE, `${JSON.stringify(mapping, null, 2)}\n`)
+  await writeFile(MAPPING_FILE, `${JSON.stringify({ ...saved, ...mapping }, null, 2)}\n`)
   return mapping
 }
 
@@ -131,8 +133,12 @@ async function migrateSchema () {
 
   const articles = await listRecords(ARTICLES)
   const mapping = await loadMapping(articles)
-  console.log(`Article → category (edit ${MAPPING_FILE} to change):`)
-  for (const entry of Object.values(mapping)) console.log(`  - ${entry.name} → ${entry.category ?? 'UNMAPPED'}`)
+  if (Object.keys(mapping).length) {
+    console.log(`Article → category for articles without one (edit ${MAPPING_FILE} to change):`)
+    for (const entry of Object.values(mapping)) console.log(`  - ${entry.name} → ${entry.category ?? 'UNMAPPED'}`)
+  } else {
+    console.log('Article categories: all set (change them in the app)')
+  }
   const legacyCommissions = planCommissionItems(byName(collections, 'commissions') ? await listRecords('commissions') : [], articles)
   console.log(legacyCommissions.length
     ? `Commissions to convert to items: ${legacyCommissions.length}`
@@ -167,13 +173,11 @@ async function migrateSchema () {
   if (unmapped.length) {
     throw new Error(`Map these articles to an existing category in ${MAPPING_FILE}: ${unmapped.map(entry => entry.name).join(', ')}`)
   }
-  for (const article of articles) {
+  for (const article of articles.filter(item => mapping[item.id])) {
     const target = categories.find(category => category.name === mapping[article.id].category)
-    if (article.category === target.id) continue
     // First assignment also sets the default threshold and active: the catalog and rules filter on active = true,
-    // and articles created before the migration may have active unset. Later runs leave both alone.
-    const patch = article.category ? { category: target.id } : { category: target.id, low_stock_threshold: 2, active: true }
-    await api('PATCH', `/collections/${ARTICLES}/records/${article.id}`, patch)
+    // and articles created before the migration may have active unset
+    await api('PATCH', `/collections/${ARTICLES}/records/${article.id}`, { category: target.id, low_stock_threshold: 2, active: true })
   }
   for (const op of planRequireCategory(await listCollections())) await applyOp(op)
   await writeSnapshot()
