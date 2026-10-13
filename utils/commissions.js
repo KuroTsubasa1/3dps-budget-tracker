@@ -15,6 +15,9 @@ export function transitionPatch (commission, target, now = new Date()) {
   if (!allowed) throw new Error(`Cannot move a commission from ${from} to ${target}`)
   if (target === 'delivered') return { status: target, delivered_at: now.toISOString() }
   if (target === 'cancelled') return { status: target, cancelled_at: now.toISOString() }
+  // ready_at feeds the print board's "Done today"; stepping back from Ready clears it
+  if (target === 'ready') return { status: target, ready_at: now.toISOString() }
+  if (from === 'ready') return { status: target, ready_at: '' }
   return { status: target }
 }
 

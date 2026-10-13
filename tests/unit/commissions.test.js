@@ -20,7 +20,7 @@ test('forward, back and cancel moves follow the lifecycle', () => {
   assert.deepEqual(PREVIOUS, { printing: 'open', ready: 'printing' })
   assert.deepEqual(NEXT_ACTION, { open: 'Start printing', printing: 'Mark ready', ready: 'Mark delivered' })
   assert.deepEqual(transitionPatch({ status: 'open' }, 'printing', NOW), { status: 'printing' })
-  assert.deepEqual(transitionPatch({ status: 'ready' }, 'printing', NOW), { status: 'printing' })
+  assert.deepEqual(transitionPatch({ status: 'ready' }, 'printing', NOW), { status: 'printing', ready_at: '' })
   assert.deepEqual(transitionPatch({ status: 'printing' }, 'cancelled', NOW), { status: 'cancelled', cancelled_at: NOW.toISOString() })
   assert.deepEqual(transitionPatch({ status: 'ready' }, 'delivered', NOW), { status: 'delivered', delivered_at: NOW.toISOString() })
 })
@@ -105,4 +105,11 @@ test('an anonymised commission skips the customer data checks but keeps the rest
   assert.equal(validateCommission(anonymised), '')
   assert.equal(validateCommission({ ...anonymised, quantity: '0' }), 'Quantity must be a whole number of 1 or more')
   assert.equal(validateCommission({ ...anonymised, article: '' }), 'Choose an article')
+})
+
+test('moving to ready stamps ready_at and moving back clears it', () => {
+  assert.deepEqual(transitionPatch({ status: 'printing' }, 'ready', NOW), { status: 'ready', ready_at: NOW.toISOString() })
+  assert.deepEqual(transitionPatch({ status: 'ready' }, 'printing', NOW), { status: 'printing', ready_at: '' })
+  assert.deepEqual(transitionPatch({ status: 'printing' }, 'open', NOW), { status: 'open' })
+  assert.deepEqual(transitionPatch({ status: 'open' }, 'printing', NOW), { status: 'printing' })
 })
