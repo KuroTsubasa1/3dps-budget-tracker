@@ -184,6 +184,19 @@ test.describe('the print board', () => {
     await expect(printing.getByRole('article', { name: COMMISSION_CARD })).toBeVisible()
   })
 
+  test('a locked print_jobs (403) shows the migration hint and commissions still work', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    // Between pb:migrate --apply and --apply-rules the collection exists with listRule null: a non-admin list is a 403
+    api.failReads('print_jobs', 403)
+    await gotoReady(page, '/print-board')
+    await expect(page.getByText('Run the migration to enable the print board')).toBeVisible()
+    await expect(page.getByText(/Could not load/)).toHaveCount(0)
+    const toPrint = await openColumn(page, 'To print')
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toBeVisible()
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 to print/ })).toBeVisible()
+  })
+
   test('without print_jobs the board asks for the migration and commissions still work', async ({ page, api }) => {
     seedBoard(api, { commissions: [commission()] })
     api.dropCollection('print_jobs')

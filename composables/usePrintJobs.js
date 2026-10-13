@@ -10,7 +10,7 @@ const DONE_DAYS_KEPT = 2
 
 export const staleError = () => Object.assign(new Error(ALREADY_UPDATED), { code: 'stale' })
 const alreadyPrinting = () => Object.assign(new Error('This article is already printing'), { code: 'already_printing' })
-const missingAsNull = err => (err?.status === 404 ? null : Promise.reject(err))
+const missingAsNull = err => ([403, 404].includes(err?.status) ? null : Promise.reject(err))
 
 export const usePrintJobs = () => {
   const pb = usePocketBase()

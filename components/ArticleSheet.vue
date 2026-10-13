@@ -167,6 +167,7 @@ const validate = () => {
   if (!isBlank(form.value.price) && !(parseNumber(form.value.price) >= 0)) return 'Price must be a number'
   if (!isCount(form.value.lowStockThreshold)) return 'Low stock must be a whole number of 0 or more'
   if (!isBlank(form.value.targetStock) && !isCount(form.value.targetStock)) return 'Target stock must be a whole number of 0 or more'
+  if (parseNumber(form.value.targetStock) > 0 && parseNumber(form.value.lowStockThreshold) > 0 && parseNumber(form.value.targetStock) <= parseNumber(form.value.lowStockThreshold)) return 'Target stock must be above the low-stock threshold'
   if (!isBlank(form.value.startingStock) && !isCount(form.value.startingStock)) return 'Starting stock must be a whole number of 0 or more'
   return ''
 }

@@ -96,6 +96,7 @@ const applyChanges = (record, body) => {
 export function createFakePocketBase () {
   const db = Object.fromEntries(COLLECTIONS.map(name => [name, []]))
   const failures = {}
+  const readFailures = {}
   const delays = {}
   const requests = []
   const state = { enabled: false }
@@ -136,6 +137,7 @@ export function createFakePocketBase () {
     const isOwner = authorization === FAKE_TOKEN
 
     if (method === 'GET') {
+      if (readFailures[name]) return reply(readFailures[name], { code: readFailures[name], message: 'Only admins can perform this action.', data: {} })
       const perPage = Number(url.searchParams.get('perPage') || 30)
       if (OWNER_READ_ONLY.has(name) && !isOwner) return reply(200, { page: 1, perPage, totalItems: 0, totalPages: 0, items: [] })
       if (id) {
@@ -189,5 +191,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, delays, requests, state, handle }
+  return { db, failures, readFailures, delays, requests, state, handle }
 }

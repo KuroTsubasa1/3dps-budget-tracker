@@ -127,6 +127,18 @@ test.describe('target stock', () => {
     await expect(card.getByRole('button', { name: 'Print 7' })).toBeVisible()
   })
 
+  test('a target stock at or below the low-stock threshold is refused', async ({ page, api }) => {
+    await sheet(page).getByLabel('Target stock').fill('5')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('Target stock must be above the low-stock threshold')
+    expect(api.db.budget_tracket_catalog[0].target_stock).toBe(0)
+
+    await sheet(page).getByLabel('Target stock').fill('6')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(api.db.budget_tracket_catalog[0].target_stock).toBe(6)
+  })
+
   test('an empty target stock saves 0 and a negative one is refused', async ({ page, api }) => {
     await sheet(page).getByLabel('Target stock').fill('-1')
     await sheet(page).getByRole('button', { name: 'Save changes' }).click()
