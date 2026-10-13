@@ -105,3 +105,37 @@ test.describe('visitors', () => {
     await expect(page.getByRole('button', { name: 'Manage' })).toHaveCount(0)
   })
 })
+
+test.describe('target stock', () => {
+  test.beforeEach(async ({ page, api }) => {
+    api.seed({ articles: [{ id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', price: 0, stock: 5, low_stock_threshold: 5 }] })
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+  })
+
+  test('the target stock is saved and drives the print board suggestion', async ({ page, api }) => {
+    await expect(sheet(page).getByText('Empty = 2× low-stock threshold')).toBeVisible()
+    await sheet(page).getByLabel('Target stock').fill('12')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(api.db.budget_tracket_catalog[0].target_stock).toBe(12)
+
+    await gotoReady(page, '/print-board')
+    const card = page.getByRole('region', { name: 'To print' }).getByRole('article', { name: 'Pikachu Keychain' })
+    await expect(card).toContainText('5 left · target 12')
+    await expect(card.getByRole('button', { name: 'Print 7' })).toBeVisible()
+  })
+
+  test('an empty target stock saves 0 and a negative one is refused', async ({ page, api }) => {
+    await sheet(page).getByLabel('Target stock').fill('-1')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('Target stock must be a whole number of 0 or more')
+    expect(api.db.budget_tracket_catalog[0].target_stock).toBe(0)
+
+    await sheet(page).getByLabel('Target stock').fill('')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(api.db.budget_tracket_catalog[0].target_stock).toBe(0)
+  })
+})

@@ -6,6 +6,7 @@ const PAGES = [
   '/business-card',
   '/reports',
   '/commissions',
+  '/print-board',
   '/login',
   '/settings',
   '/settings#account',
@@ -37,6 +38,16 @@ const seed = async (page, { dark }) => {
     localStorage.setItem('budget-tracker-transactions', JSON.stringify([transaction]))
   }, { dark, transaction: longTransaction })
 }
+
+// Controls inside a <label> (switches) use the whole label row as their target
+const smallTargets = page => page.evaluate(() =>
+  [...document.querySelectorAll('a[href], button, input, select, textarea')]
+    .filter(el => !el.closest('label'))
+    .map(el => ({ el, box: el.getBoundingClientRect() }))
+    .filter(({ box }) => box.width > 0 && box.height > 0)
+    .filter(({ box }) => box.width < 44 || box.height < 44)
+    .map(({ el, box }) => `${el.tagName.toLowerCase()} "${(el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 30)}" ${Math.round(box.width)}×${Math.round(box.height)}`)
+)
 
 test.describe('phone layout sweep', () => {
   test.beforeEach(async ({ page, isMobile }) => {
@@ -73,15 +84,7 @@ test.describe('phone layout sweep', () => {
       await gotoReady(page, path)
       await page.waitForLoadState('networkidle')
 
-      // Controls inside a <label> (switches) use the whole label row as their target
-      const small = await page.evaluate(() =>
-        [...document.querySelectorAll('a[href], button, input, select, textarea')]
-          .filter(el => !el.closest('label'))
-          .map(el => ({ el, box: el.getBoundingClientRect() }))
-          .filter(({ box }) => box.width > 0 && box.height > 0)
-          .filter(({ box }) => box.width < 44 || box.height < 44)
-          .map(({ el, box }) => `${el.tagName.toLowerCase()} "${(el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 30)}" ${Math.round(box.width)}×${Math.round(box.height)}`)
-      )
+      const small = await smallTargets(page)
       expect(small).toEqual([])
     })
   }
@@ -96,5 +99,33 @@ test.describe('phone layout sweep', () => {
     expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
     const clipped = await page.getByRole('dialog').evaluate(dialog => dialog.scrollWidth > dialog.clientWidth)
     expect(clipped).toBe(false)
+  })
+
+  test('the print board fits at 375px with long cards', async ({ page, api }) => {
+    api.seed({
+      articles: [{ ...longProducts[0], stock: 1, low_stock_threshold: 5 }],
+      commissions: [{
+        id: 'c1',
+        customer_name: 'Supercalifragilisticexpialidocious-customer-name',
+        customer_email: 'a@example.com',
+        fulfilment: 'pickup',
+        address: '',
+        article: 'p1',
+        quantity: 12,
+        agreed_price: 30,
+        notes: 'Unbroken-colour-notes-'.repeat(8),
+        status: 'open',
+        created: '2026-10-01 10:00:00.000Z',
+        delivered_at: '',
+        cancelled_at: '',
+        anonymised_at: '',
+        ready_at: ''
+      }]
+    })
+    await gotoReady(page, '/print-board')
+    await expect(page.getByRole('button', { name: 'Print 9' })).toBeVisible()
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
+    expect(await smallTargets(page)).toEqual([])
   })
 })

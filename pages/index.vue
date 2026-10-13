@@ -36,6 +36,18 @@
           <AppIcon name="chevron-right" class="h-4 w-4 text-ink-muted" />
         </NuxtLink>
 
+        <NuxtLink
+          v-if="toPrintCount > 0"
+          to="/print-board"
+          class="card flex min-h-[56px] items-center justify-between gap-3 px-4 text-sm font-medium text-ink hover:bg-muted md:px-5"
+        >
+          <span class="flex items-center gap-3">
+            <AppIcon name="printer" class="h-5 w-5 text-ink-muted" />
+            {{ toPrintCount }} to print
+          </span>
+          <AppIcon name="chevron-right" class="h-4 w-4 text-ink-muted" />
+        </NuxtLink>
+
         <BaseCard title="Recent Transactions" icon="clipboard" flush>
           <template #actions>
             <BaseButton variant="ghost">View All</BaseButton>
@@ -92,8 +104,10 @@ import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useCommissions } from '~/composables/useCommissions'
+import { usePrintJobs } from '~/composables/usePrintJobs'
 import { formatCurrency } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
+import { buildBoard } from '~/utils/printBoard'
 
 definePageMeta({ middleware: 'owner' })
 
@@ -110,6 +124,17 @@ onMounted(async () => {
     anonymiseDue(list).catch(() => {})
   } catch {
     // No commissions collection yet (before the migration) or offline: the card simply stays hidden
+  }
+})
+
+const { loadBoardData } = usePrintJobs()
+const toPrintCount = ref(0)
+
+onMounted(async () => {
+  try {
+    toPrintCount.value = buildBoard({ ...(await loadBoardData()), now: new Date() }).toPrint.length
+  } catch {
+    // Offline or a failed load: the link quietly stays hidden
   }
 })
 

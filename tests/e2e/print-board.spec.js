@@ -205,3 +205,42 @@ test.describe('visitors cannot reach the print board', () => {
     await page.waitForURL(url => url.pathname === '/login')
   })
 })
+
+test.describe('entry points', () => {
+  test('the dashboard counts the To print cards and links to the board', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    await gotoReady(page, '/')
+    await page.getByRole('link', { name: /2 to print/ }).click()
+    await page.waitForURL(url => url.pathname === '/print-board')
+  })
+
+  test('one card reads "1 to print"', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()], commissions: [commission()] })
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 to print/ })).toBeVisible()
+  })
+
+  test('the dashboard hides the link when nothing is to print', async ({ page, api }) => {
+    seedBoard(api, { articles: [BOARD_ARTICLES[1]] })
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /to print/ })).toHaveCount(0)
+  })
+
+  test('the catalog header opens the print board', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Print board' }).click()
+    await page.waitForURL(url => url.pathname === '/print-board')
+  })
+})
+
+test.describe('visitors see no print board button', () => {
+  test.use({ owner: false })
+
+  test('the catalog header has no Print board button', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/catalog')
+    await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Print board' })).toHaveCount(0)
+  })
+})

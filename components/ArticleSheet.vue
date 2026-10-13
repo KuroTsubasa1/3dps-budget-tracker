@@ -28,6 +28,12 @@
         </div>
       </div>
 
+      <div>
+        <label for="article-target" class="label">Target stock</label>
+        <input id="article-target" v-model="form.targetStock" type="text" inputmode="numeric" class="input">
+        <p class="hint">Empty = 2× low-stock threshold</p>
+      </div>
+
       <div v-if="!article">
         <label for="article-stock" class="label">Starting stock</label>
         <input id="article-stock" v-model="form.startingStock" type="text" inputmode="numeric" class="input" placeholder="0">
@@ -103,7 +109,7 @@ const { createArticle, updateArticle, deleteArticle } = useArticles()
 const { applyMovements } = useInventory()
 const { toast } = useToast()
 
-const emptyForm = () => ({ name: '', category: '', price: '', lowStockThreshold: '2', startingStock: '', description: '' })
+const emptyForm = () => ({ name: '', category: '', price: '', lowStockThreshold: '2', targetStock: '', startingStock: '', description: '' })
 
 const form = ref(emptyForm())
 const keptImages = ref([])
@@ -124,6 +130,7 @@ watch(() => props.open, (isOpen) => {
         category: article.category,
         price: Number(article.price) > 0 ? String(article.price) : '',
         lowStockThreshold: String(article.low_stock_threshold ?? 2),
+        targetStock: Number(article.target_stock) > 0 ? String(article.target_stock) : '',
         startingStock: '',
         description: article.description || ''
       }
@@ -159,6 +166,7 @@ const validate = () => {
   if (!form.value.category) return 'Choose a category'
   if (!isBlank(form.value.price) && !(parseNumber(form.value.price) >= 0)) return 'Price must be a number'
   if (!isCount(form.value.lowStockThreshold)) return 'Low stock must be a whole number of 0 or more'
+  if (!isBlank(form.value.targetStock) && !isCount(form.value.targetStock)) return 'Target stock must be a whole number of 0 or more'
   if (!isBlank(form.value.startingStock) && !isCount(form.value.startingStock)) return 'Starting stock must be a whole number of 0 or more'
   return ''
 }
@@ -173,6 +181,8 @@ const save = async () => {
     // 0 means "no override" in PocketBase 0.22 number fields
     price: isBlank(form.value.price) ? 0 : parseNumber(form.value.price),
     low_stock_threshold: parseNumber(form.value.lowStockThreshold),
+    // 0 means "use 2× the threshold"
+    target_stock: isBlank(form.value.targetStock) ? 0 : parseNumber(form.value.targetStock),
     description: form.value.description.trim()
   }
   try {
