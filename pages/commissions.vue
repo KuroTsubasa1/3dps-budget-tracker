@@ -47,6 +47,7 @@
       :commission="selected"
       :articles="articles"
       :deals="deals"
+      :preset-items="presetItems"
       @saved="onSaved"
       @changed="onChanged"
     />
@@ -59,6 +60,7 @@ import { useCommissions } from '~/composables/useCommissions'
 import { useArticles } from '~/composables/useArticles'
 import { useDeals } from '~/composables/useDeals'
 import { useToast } from '~/composables/useToast'
+import { useCommissionDraft } from '~/composables/useCommissionDraft'
 import { formatCurrency } from '~/utils/currency'
 import { isFinal, summaryOf } from '~/utils/commissions'
 
@@ -75,6 +77,7 @@ const { listCommissions, anonymiseDue } = useCommissions()
 const { listActive } = useArticles()
 const { listDeals } = useDeals()
 const { toast } = useToast()
+const { takeDraft } = useCommissionDraft()
 
 const commissions = ref([])
 const articles = ref([])
@@ -84,6 +87,7 @@ const loadError = ref('')
 const activeTab = ref('open')
 const sheetOpen = ref(false)
 const selected = ref(null)
+const presetItems = ref([])
 
 const tabOf = commission => (isFinal(commission.status) ? 'done' : commission.status)
 const counts = computed(() => Object.fromEntries(TABS.map(tab => [tab.id, commissions.value.filter(item => tabOf(item) === tab.id).length])))
@@ -107,6 +111,7 @@ const load = async () => {
     const { changed, failed } = await anonymiseDue(list)
     commissions.value = changed.length ? await listCommissions() : list
     if (failed.length) toast('Some customer data could not be anonymised — it will be retried next time', { tone: 'warning', duration: 6000 })
+    openDraft()
   } catch (err) {
     loadError.value = 'Could not load commissions. Check your connection and try again.'
   } finally {
@@ -116,7 +121,18 @@ const load = async () => {
 
 onMounted(load)
 
+// Cart lines from the catalog open the new-commission form once, after the articles and deals are loaded
+// (so the price suggestion has them). A failed load keeps the draft for Try Again.
+const openDraft = () => {
+  const lines = takeDraft()
+  if (!lines.length) return
+  presetItems.value = lines
+  selected.value = null
+  sheetOpen.value = true
+}
+
 const openNew = () => {
+  presetItems.value = []
   selected.value = null
   sheetOpen.value = true
 }

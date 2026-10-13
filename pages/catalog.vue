@@ -137,14 +137,6 @@
                   >
                     <AppIcon name="plus" class="h-5 w-5" />
                   </button>
-                  <button
-                    type="button"
-                    class="flex h-11 w-11 items-center justify-center rounded-lg bg-muted text-ink-muted hover:text-ink"
-                    :aria-label="`Commission ${product.name}`"
-                    @click.stop="openCommission(product)"
-                  >
-                    <AppIcon name="clipboard" class="h-5 w-5" />
-                  </button>
                 </template>
               </div>
             </div>
@@ -163,6 +155,7 @@
             @decrement="decrementQuantity"
             @remove="removeProduct"
             @submit="submitToBalance"
+            @commission="startCommission"
           />
         </BaseCard>
       </aside>
@@ -193,6 +186,7 @@
           @decrement="decrementQuantity"
           @remove="removeProduct"
           @submit="submitToBalance"
+            @commission="startCommission"
         />
       </BottomSheet>
     </template>
@@ -204,15 +198,6 @@
       @saved="onArticleSaved"
       @deleted="onArticleDeleted"
       @stock-changed="onStockChanged"
-    />
-
-    <CommissionSheet
-      v-if="isOwner"
-      v-model:open="isCommissionOpen"
-      :commission="null"
-      :articles="products"
-      :deals="deals"
-      :preset-items="commissionItems"
     />
   </div>
 </template>
@@ -226,6 +211,7 @@ import { useDeals } from '~/composables/useDeals'
 import { useAuth } from '~/composables/useAuth'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
+import { useCommissionDraft } from '~/composables/useCommissionDraft'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
@@ -385,12 +371,14 @@ const onStockChanged = (id, stock) => {
   if (product) product.stock = stock
 }
 
-const isCommissionOpen = ref(false)
-const commissionItems = ref([])
+const { setDraft } = useCommissionDraft()
 
-const openCommission = (product) => {
-  commissionItems.value = [{ article: product.id, name: product.name, quantity: 1 }]
-  isCommissionOpen.value = true
+// The cart's lines travel to the Commissions page once; the cart itself stays page-local and empties on leaving
+const startCommission = () => {
+  if (selectedProducts.value.length === 0) return
+  setDraft(selectedProducts.value.map(product => ({ article: product.id, name: product.name, quantity: product.quantity })))
+  isCartOpen.value = false
+  navigateTo('/commissions')
 }
 
 const { addTransaction } = useTransactions()

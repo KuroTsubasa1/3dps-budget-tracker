@@ -18,6 +18,15 @@ const sheet = page => page.getByRole('dialog')
 const addArticle = (page, name) => sheet(page).getByLabel('Add article').selectOption({ label: name })
 // A form line is found by its quantity stepper, a group labelled "Quantity of <name>"
 const line = (page, name) => sheet(page).getByRole('group', { name: `Quantity of ${name}` })
+const card = (page, name) => page.locator('h3', { hasText: name })
+const isCompact = page => page.viewportSize().width < 1024
+const addToCart = async (page, name, times = 1) => {
+  for (let i = 0; i < times; i++) await card(page, name).click()
+}
+// Below lg the cart is a sheet behind the "View cart" bar
+const openCart = async (page) => {
+  if (isCompact(page)) await page.getByRole('button', { name: /View cart/ }).click()
+}
 const monthsAgo = (months) => {
   const date = new Date()
   date.setMonth(date.getMonth() - months)
@@ -404,17 +413,58 @@ test.describe('the commissions page', () => {
 })
 
 test.describe('entry points', () => {
-  test('a catalog card starts a commission for that article', async ({ page, api }) => {
+  test('the cart becomes a new commission with every line and the deal price', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/catalog')
-    await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
-    await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
-    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('4,00')
-    await sheet(page).getByLabel('Customer name').fill('Misty')
-    await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(page.getByRole('button', { name: /^Commission / })).toHaveCount(0)
+    await addToCart(page, 'Pikachu Keychain', 2)
+    await addToCart(page, 'Totoro')
+    await openCart(page)
+    await page.getByRole('button', { name: 'Commission', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+
+    const form = page.getByRole('dialog', { name: 'New commission' })
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
+    await expect(line(page, 'Totoro')).toHaveText('1')
+    await expect(form.getByLabel('Agreed price')).toHaveValue('15,00')
+    await form.getByLabel('Customer name').fill('Misty')
+    await form.getByLabel('Email').fill('misty@example.com')
+    await form.getByRole('button', { name: 'Create commission' }).click()
     await expect(page.getByText('Commission created')).toBeVisible()
-    expect(api.db.commissions[0]).toMatchObject({ items: [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }], agreed_price: 4 })
+    expect(api.db.commissions).toHaveLength(1)
+    expect(api.db.commissions[0]).toMatchObject({ items: TWO_LINES, agreed_price: 15, status: 'open' })
+    expect(api.db.stock_movements.filter(movement => movement.note !== 'opening stock')).toHaveLength(0)
+  })
+
+  test('the cart lines open the form only once', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await addToCart(page, 'Totoro')
+    await openCart(page)
+    await page.getByRole('button', { name: 'Commission', exact: true }).click()
+    await expect(line(page, 'Totoro')).toHaveText('1')
+    await page.keyboard.press('Escape')
+    await expect(sheet(page)).toHaveCount(0)
+
+    // Away and back inside the app (no reload): the draft has been used up
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/')
+    await page.goBack()
+    await page.waitForURL(url => url.pathname === '/commissions')
+    await expect(page.getByText('No commissions here')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
+
+    // A commission started by hand begins with no lines
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await expect(sheet(page).getByRole('group', { name: /^Quantity of / })).toHaveCount(0)
+    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('')
+  })
+
+  test('an empty cart cannot become a commission', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    test.skip(isCompact(page), 'The phone cart only opens once it holds something')
+    await expect(page.getByRole('button', { name: 'Commission', exact: true })).toBeDisabled()
   })
 
   test('the catalog header links to the commissions page', async ({ page, api }) => {
@@ -439,27 +489,6 @@ test.describe('entry points', () => {
     seedWith(api, [commission({ id: 'a', status: 'printing' })])
     await gotoReady(page, '/')
     await expect(page.getByRole('link', { name: /1 open commission(?!s)/ })).toBeVisible()
-  })
-
-  test('manage mode hides the Commission buttons', async ({ page, api }) => {
-    seedWith(api)
-    await gotoReady(page, '/catalog')
-    await expect(page.getByRole('button', { name: 'Commission Pikachu Keychain' })).toBeVisible()
-    await page.getByRole('button', { name: 'Manage' }).click()
-    await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Commission / })).toHaveCount(0)
-  })
-
-  test('the Commission button does not add the article to the cart', async ({ page, api }) => {
-    seedWith(api)
-    await gotoReady(page, '/catalog')
-    await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
-    await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
-    await page.keyboard.press('Escape')
-    await expect(sheet(page)).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Add Pikachu Keychain to cart' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /View cart/ })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /^Add one Pikachu/ })).toHaveCount(0)
   })
 
   test('the dashboard hides the card when nothing is open', async ({ page, api }) => {

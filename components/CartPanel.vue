@@ -43,9 +43,14 @@
       </li>
     </ul>
 
-    <BaseButton size="lg" block icon="cash" :disabled="!items.length" @click="$emit('submit')">
-      Add to Balance
-    </BaseButton>
+    <div class="space-y-2">
+      <BaseButton size="lg" block icon="cash" :disabled="!items.length" @click="$emit('submit')">
+        Add to Balance
+      </BaseButton>
+      <BaseButton variant="secondary" block icon="clipboard" :disabled="!items.length" @click="$emit('commission')">
+        Commission
+      </BaseButton>
+    </div>
   </div>
 </template>
 
@@ -58,5 +63,5 @@ defineProps({
   priceOf: { type: Function, default: item => item.price },
   applied: { type: Array, default: () => [] }
 })
-defineEmits(['increment', 'decrement', 'remove', 'submit'])
+defineEmits(['increment', 'decrement', 'remove', 'submit', 'commission'])
 </script>
