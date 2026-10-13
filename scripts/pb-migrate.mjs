@@ -1,4 +1,4 @@
-// PocketBase 0.22 migration for categories, deals, stock and owner-only rules.
+// PocketBase 0.22 migration for categories, deals, stock, commissions, print jobs and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
 //   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping (old rules stay; deployed app keeps working)
 //   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)
@@ -84,7 +84,7 @@ async function loadMapping (articles) {
 }
 
 async function writeSnapshot () {
-  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', ARTICLES, TRANSACTIONS])
+  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', 'print_jobs', ARTICLES, TRANSACTIONS])
   const snapshot = (await listCollections()).filter(collection => ours.has(collection.name))
   await mkdir('pocketbase', { recursive: true })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)

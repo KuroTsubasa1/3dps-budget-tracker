@@ -28,10 +28,11 @@ test('plans the new collections, article fields and optional price', () => {
     'createCollection:stock_movements',
     'createCollection:deals',
     'createCollection:commissions',
+    'createCollection:print_jobs',
     `addFields:${ARTICLES}`,
     `updateField:${ARTICLES}.price`
   ])
-  assert.deepEqual(ops[4].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold'])
+  assert.deepEqual(ops[5].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -77,7 +78,8 @@ test('rules pin the owner record id, close sign-up first, and apply only once', 
     'setRules:stock_movements',
     `setRules:${ARTICLES}`,
     'setRules:budget_tracker_transactions',
-    'setRules:commissions'
+    'setRules:commissions',
+    'setRules:print_jobs'
   ])
   assert.deepEqual(planRules(simulate(afterSchema, ops), OWNER_ID), [])
 })
@@ -222,4 +224,52 @@ test('owner rules give the owner, and only the owner, every commission permissio
   const afterSchema = simulate(current(), planSchema(current()))
   const commissions = planRules(afterSchema, OWNER_ID).find(op => op.collection === 'commissions')
   assert.deepEqual(commissions.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+})
+
+test('print jobs are created locked, reference the articles, and the new fields exist', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const jobs = afterSchema.find(c => c.name === 'print_jobs')
+  const field = name => jobs.schema.find(f => f.name === name)
+  assert.equal(field('article').options.collectionId, 'i1f9o7q6bnjx6k8')
+  assert.equal(field('article').options.maxSelect, 1)
+  assert.equal(field('article').required, true)
+  assert.deepEqual(field('quantity').options, { min: 1, max: null, noDecimal: true })
+  assert.equal(field('quantity').required, true)
+  assert.deepEqual(field('status').options.values, ['printing', 'done'])
+  assert.equal(field('status').required, true)
+  assert.equal(field('done_at').type, 'date')
+  assert.deepEqual(
+    [jobs.listRule, jobs.viewRule, jobs.createRule, jobs.updateRule, jobs.deleteRule],
+    [null, null, null, null, null]
+  )
+  const target = afterSchema.find(c => c.name === ARTICLES).schema.find(f => f.name === 'target_stock')
+  assert.deepEqual(target.options, { min: 0, max: null, noDecimal: true })
+  assert.equal(target.required, false)
+  assert.equal(afterSchema.find(c => c.name === 'commissions').schema.find(f => f.name === 'ready_at').type, 'date')
+})
+
+test('owner rules give the owner, and only the owner, every print job permission', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const jobs = planRules(afterSchema, OWNER_ID).find(op => op.collection === 'print_jobs')
+  assert.deepEqual(jobs.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+})
+
+// The live server after the commissions sub-project: no print_jobs, no target_stock, commissions without ready_at
+const afterCommissions = () => {
+  const collections = simulate(current(), planSchema(current())).filter(c => c.name !== 'print_jobs')
+  const strip = (name, fieldName) => {
+    const collection = collections.find(c => c.name === name)
+    collection.schema = collection.schema.filter(f => f.name !== fieldName)
+  }
+  strip('commissions', 'ready_at')
+  strip(ARTICLES, 'target_stock')
+  return collections
+}
+
+test('a server migrated for commissions gains ready_at, print_jobs and target_stock exactly once', () => {
+  const ops = planSchema(afterCommissions())
+  assert.deepEqual(opKeys(ops), ['addFields:commissions', 'createCollection:print_jobs', `addFields:${ARTICLES}`])
+  assert.deepEqual(ops[0].fields.map(field => [field.name, field.type]), [['ready_at', 'date']])
+  assert.deepEqual(ops[2].fields.map(field => field.name), ['target_stock'])
+  assert.deepEqual(planSchema(simulate(afterCommissions(), ops)), [])
 })

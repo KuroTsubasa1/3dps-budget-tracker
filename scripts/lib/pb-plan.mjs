@@ -68,7 +68,8 @@ const rulesFor = (ownerId) => {
     stock_movements: { listRule: O, viewRule: O, createRule: O, updateRule: null, deleteRule: null },
     [ARTICLES]: { listRule: `active = true || (${O})`, viewRule: `active = true || (${O})`, createRule: O, updateRule: O, deleteRule: O },
     [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
-    commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
+    commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
+    print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
   }
 }
 
@@ -134,7 +135,8 @@ export function planSchema (collections) {
     })
   }
 
-  if (!byName(collections, 'commissions')) {
+  const commissions = byName(collections, 'commissions')
+  if (!commissions) {
     ops.push({
       op: 'createCollection',
       name: 'commissions',
@@ -154,9 +156,32 @@ export function planSchema (collections) {
           select('status', ['open', 'printing', 'ready', 'delivered', 'cancelled'], true),
           date('delivered_at'),
           date('cancelled_at'),
-          date('anonymised_at')
+          date('anonymised_at'),
+          date('ready_at')
         ],
         indexes: [],
+        ...LOCKED
+      }
+    })
+  } else if (!findField(commissions, 'ready_at')) {
+    // Servers migrated before the print board need the date behind "Done today"
+    ops.push({ op: 'addFields', collection: 'commissions', fields: [date('ready_at')] })
+  }
+
+  if (!byName(collections, 'print_jobs')) {
+    ops.push({
+      op: 'createCollection',
+      name: 'print_jobs',
+      body: {
+        name: 'print_jobs',
+        type: 'base',
+        schema: [
+          relation('article', articles.id, true),
+          number('quantity', { required: true, min: 1, noDecimal: true }),
+          select('status', ['printing', 'done'], true),
+          date('done_at')
+        ],
+        indexes: ['CREATE INDEX `idx_print_jobs_article` ON `print_jobs` (`article`)'],
         ...LOCKED
       }
     })
@@ -166,6 +191,7 @@ export function planSchema (collections) {
   if (!findField(articles, 'category')) missing.push(relation('category', '@categories'))
   if (!findField(articles, 'stock')) missing.push(number('stock', { min: 0, noDecimal: true }))
   if (!findField(articles, 'low_stock_threshold')) missing.push(number('low_stock_threshold', { min: 0, noDecimal: true }))
+  if (!findField(articles, 'target_stock')) missing.push(number('target_stock', { min: 0, noDecimal: true }))
   if (missing.length) ops.push({ op: 'addFields', collection: ARTICLES, fields: missing })
 
   if (findField(articles, 'price')?.required) {
