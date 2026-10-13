@@ -75,6 +75,12 @@ export const useTransactions = () => {
   // txSynced survives in the offline queue so a retry never posts the same transaction twice;
   // stock movements are idempotent by id, so they are simply replayed.
   const postTransaction = async (data) => {
+    // PocketBase 0.22 answers an expired token as a guest (400/404), so check the session first
+    if (!pb.authStore.isValid) {
+      const error = new Error('Session expired')
+      error.status = 401
+      throw error
+    }
     let record = null
     if (!data.txSynced) {
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
@@ -113,7 +119,7 @@ export const useTransactions = () => {
       // Different message for offline vs other errors
       if (!isOnline()) {
         apiError.value = 'You are offline. Transaction saved locally and will sync when online.'
-      } else if (error.status === 401 || error.status === 403) {
+      } else if (error.status === 401 || error.status === 403 || !pb.authStore.isValid) {
         apiError.value = 'Your session has expired. Log in again to sync - Transaction saved locally.'
       } else {
         apiError.value = 'Failed to save transaction to server'

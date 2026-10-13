@@ -77,8 +77,10 @@ test('transactions are sent with the owner session instead of the shared token',
 })
 
 test('an expired session keeps the transaction and asks to log in', async ({ page, api }) => {
-  await api.mockTransactions({ status: 401 })
+  await api.mockTransactions()
   await gotoReady(page, '/')
+  // The fake token expires in 2100, so from here on the SDK treats the session as invalid
+  await page.clock.setFixedTime(new Date('2101-01-01T00:00:00Z'))
   await openTransactionForm(page)
   await page.getByPlaceholder('What is this transaction for?').fill('Commission')
   await page.getByPlaceholder('0.00').fill('40')
@@ -88,4 +90,6 @@ test('an expired session keeps the transaction and asks to log in', async ({ pag
   await expect(page.getByText('1 pending')).toBeVisible()
   const stored = await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), TRANSACTIONS_KEY)
   expect(stored).toHaveLength(1)
+  const posts = api.requests.filter(request => request.method === 'POST' && request.path.endsWith('/budget_tracker_transactions/records'))
+  expect(posts).toHaveLength(0)
 })

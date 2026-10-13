@@ -134,7 +134,13 @@ export function createFakePocketBase () {
       return reply(200, { page: 1, perPage, totalItems: items.length, totalPages: 1, items: items.slice(0, perPage).map(record => withExpand(record, expand)) })
     }
 
-    if (!isOwner) return reply(403, { code: 403, message: 'Only the owner can perform this action.', data: {} })
+    // PocketBase 0.22 treats a missing or invalid token as a guest: a create that fails its rule
+    // is a 400, an update or delete a 404. It never answers 401/403 here.
+    if (!isOwner) {
+      return method === 'POST'
+        ? reply(400, { code: 400, message: 'Failed to create record.', data: {} })
+        : reply(404, { code: 404, message: 'The requested resource wasn\'t found.', data: {} })
+    }
     if (failures[name]) return reply(failures[name], { code: failures[name], message: 'Forced failure.', data: {} })
 
     if (method === 'POST') {

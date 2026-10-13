@@ -18,17 +18,28 @@
 import { computed, onMounted, watch } from 'vue'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useAuth } from '~/composables/useAuth'
+import { useTransactions } from '~/composables/useTransactions'
+import { useToast } from '~/composables/useToast'
 
 const route = useRoute()
 const chromeless = computed(() => !!route.meta.chromeless)
 
 const { displaySettings } = useAppSettings()
 const { restoreSession } = useAuth()
+const { apiError, clearApiError } = useTransactions()
+const { toast } = useToast()
 const isDark = computed(() => !!displaySettings.value.darkMode)
 
 useHead({
   meta: [{ name: 'theme-color', content: computed(() => (isDark.value ? '#111827' : '#ffffff')) }]
 })
+
+// The one place sync problems are shown, so catalog sales report them too (the form may be closed)
+watch(apiError, (message) => {
+  if (!message) return
+  toast(message.includes('saved locally') ? message : `${message} - Transaction saved locally.`, { tone: 'warning', duration: 6000 })
+  clearApiError()
+}, { immediate: true })
 
 onMounted(() => {
   // useAppSettings loads stored settings in its own onMounted, registered before this one
