@@ -15,7 +15,7 @@ import {
 } from '../../scripts/lib/pb-plan.mjs'
 
 const OWNER_ID = 'owner0000000001'
-const OWNER_EXPR = `@request.auth.id = "${OWNER_ID}"`
+const OWNER_EXPR = `@request.auth.collectionName = "users" && @request.auth.id = "${OWNER_ID}"`
 const current = () => JSON.parse(readFileSync(new URL('../fixtures/pb-schema-current.json', import.meta.url)))
 const opKeys = ops => ops.map(op => `${op.op}:${op.name || op.collection}${op.field ? `.${op.field}` : ''}`)
 

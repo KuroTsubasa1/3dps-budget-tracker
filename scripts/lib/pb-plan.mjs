@@ -1,10 +1,11 @@
 // Pure planning for the PocketBase 0.22 schema migration (no network); see scripts/pb-migrate.mjs
 export const ARTICLES = 'budget_tracket_catalog'
 export const TRANSACTIONS = 'budget_tracker_transactions'
-// Pins writes to one record in "users". The id is validated because it is spliced into the rule text.
+// Pins writes to one record in "users" (collection and id). The id is validated because it is spliced into the rule text.
+// Combine it with other clauses only inside parentheses: `x || (<rule>)`.
 export const ownerRule = (ownerId) => {
   if (!/^[a-z0-9]{15}$/.test(ownerId)) throw new Error(`Invalid owner id: ${ownerId}`)
-  return `@request.auth.id = "${ownerId}"`
+  return `@request.auth.collectionName = "users" && @request.auth.id = "${ownerId}"`
 }
 
 export const CATEGORY_SEED = [
@@ -45,7 +46,7 @@ export function planSchema (collections) {
   if (!articles) throw new Error(`Collection ${ARTICLES} not found`)
   const ops = []
 
-  // New collections get their final rules immediately: nothing deployed uses them yet
+  // New collections start locked (admin-only writes); --apply-rules sets the owner rules
   if (!byName(collections, 'categories')) {
     ops.push({
       op: 'createCollection',
