@@ -6,7 +6,10 @@ const parseDate = value => new Date(String(value).replace(' ', 'T'))
 export const targetFor = article =>
   Number(article.target_stock) > 0 ? Number(article.target_stock) : 2 * Number(article.low_stock_threshold)
 
-export const suggestedQuantity = article => Math.max(1, targetFor(article) - Number(article.stock))
+// A missing or invalid stock counts as 0
+export const stockOf = article => Number(article.stock) || 0
+
+export const suggestedQuantity = article => Math.max(1, Math.ceil(targetFor(article) - stockOf(article)))
 
 // "Today" is the device's local calendar day
 export function isSameLocalDay (value, now) {
@@ -26,9 +29,9 @@ export function buildBoard ({ articles = [], jobs = [], commissions = [], now = 
     .filter(article =>
       article.active &&
       Number(article.low_stock_threshold) > 0 &&
-      Number(article.stock) <= Number(article.low_stock_threshold) &&
+      stockOf(article) <= Number(article.low_stock_threshold) &&
       !printingArticles.has(article.id))
-    .sort((a, b) => Number(a.stock) - Number(b.stock) || String(a.name).localeCompare(String(b.name)))
+    .sort((a, b) => stockOf(a) - stockOf(b) || String(a.name).localeCompare(String(b.name)))
 
   const withStatus = status => commissions.filter(commission => commission.status === status).sort(oldestFirst)
   const articleOf = job => job.expand?.article ?? articles.find(article => article.id === job.article) ?? null

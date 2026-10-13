@@ -69,8 +69,8 @@
             Start
           </BaseButton>
           <div v-else-if="column.id === 'printing'" class="grid grid-cols-2 gap-2">
-            <BaseButton icon="check" :loading="busy === keyOf(card)" :disabled="!!busy" @click="done(card)">Done</BaseButton>
-            <BaseButton variant="secondary" :disabled="!!busy" @click="back(card)">Back</BaseButton>
+            <BaseButton icon="check" :loading="busy === keyOf(card) && busyAction === 'done'" :disabled="!!busy" @click="done(card)">Done</BaseButton>
+            <BaseButton variant="secondary" :loading="busy === keyOf(card) && busyAction === 'back'" :disabled="!!busy" @click="back(card)">Back</BaseButton>
           </div>
           <p v-else class="text-sm font-medium" :class="card.kind === 'job' ? 'text-income' : 'text-accent'">
             {{ card.kind === 'job' ? `+${card.job.quantity} to stock` : 'Commission ready' }}
@@ -82,7 +82,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { usePrintJobs, staleError } from '~/composables/usePrintJobs'
 import { useCommissions } from '~/composables/useCommissions'
 import { buildBoard, targetFor } from '~/utils/printBoard'
@@ -107,6 +107,8 @@ const loading = ref(true)
 const loadError = ref('')
 const error = ref('')
 const busy = ref('')
+// Which action holds `busy`: Done and Back on one card each show their own spinner
+const busyAction = ref('')
 const activeColumn = ref('toPrint')
 const quantities = ref({})
 let loaded = false
@@ -156,12 +158,29 @@ const load = async () => {
   }
 }
 
-onMounted(load)
+// A board left open (overnight, in a background tab) is re-read when the owner comes back to it
+const refresh = () => {
+  if (busy.value || loading.value) return
+  load()
+}
+const onVisibility = () => {
+  if (document.visibilityState === 'visible') refresh()
+}
+onMounted(() => {
+  load()
+  document.addEventListener('visibilitychange', onVisibility)
+  window.addEventListener('focus', refresh)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibility)
+  window.removeEventListener('focus', refresh)
+})
 
 // Every action re-lists the board; a refusal re-lists too, so the screen shows what changed elsewhere
-const run = async (key, action) => {
+const run = async (key, action, name = '') => {
   if (busy.value) return
   busy.value = key
+  busyAction.value = name
   error.value = ''
   try {
     await action()
@@ -171,6 +190,7 @@ const run = async (key, action) => {
     if (err?.code === 'stale' || err?.code === 'already_printing') await load()
   } finally {
     busy.value = ''
+    busyAction.value = ''
   }
 }
 
@@ -180,17 +200,17 @@ const start = card => run(keyOf(card), async () => {
 })
 
 // Another device may have moved the commission: act only on the status this board shows
-const moveCommission = (commission, target) => run(`commission:${commission.id}`, async () => {
+const moveCommission = (commission, target, name = '') => run(`commission:${commission.id}`, async () => {
   const current = await getCommission(commission.id)
   if (current.status !== commission.status) throw staleError()
   await updateCommission(commission.id, transitionPatch(current, target))
-})
+}, name)
 
 const done = card => (card.kind === 'job'
-  ? run(keyOf(card), () => finishJob(card.job))
-  : moveCommission(card.commission, 'ready'))
+  ? run(keyOf(card), () => finishJob(card.job), 'done')
+  : moveCommission(card.commission, 'ready', 'done'))
 
 const back = card => (card.kind === 'job'
-  ? run(keyOf(card), () => cancelJob(card.job))
-  : moveCommission(card.commission, 'open'))
+  ? run(keyOf(card), () => cancelJob(card.job), 'back')
+  : moveCommission(card.commission, 'open', 'back'))
 </script>

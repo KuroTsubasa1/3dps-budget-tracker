@@ -30,11 +30,12 @@ export const usePrintJobs = () => {
   }
 
   // Before the migration print_jobs is missing (404): commission cards still show, stock cards do not
-  const loadBoardData = async () => {
+  // A caller that already holds the commissions list passes it in to skip a second fetch
+  const loadBoardData = async (knownCommissions) => {
     const [articles, jobs, commissions] = await Promise.all([
       listActive(),
       listPrintJobs().catch(missingAsNull),
-      listCommissions()
+      knownCommissions ?? listCommissions()
     ])
     return { articles: jobs ? articles : [], jobs: jobs ?? [], commissions, jobsMissing: !jobs }
   }
@@ -48,6 +49,14 @@ export const usePrintJobs = () => {
     return pb.collection(PRINT_JOBS).create({ article: article.id, quantity, status: 'printing', done_at: '' }, withArticle)
   }
 
+  // The printing job of an article, or null (also when print_jobs is missing or locked)
+  const findPrintingJob = async (articleId) => {
+    const jobs = await pb.collection(PRINT_JOBS).getFullList({
+      filter: pb.filter('article = {:id} && status = "printing"', { id: articleId })
+    }).catch(missingAsNull)
+    return jobs?.[0] ?? null
+  }
+
   // The printed movement's id is the job id: a retried Done finds it already written and adds nothing.
   // The job is re-read first, so a job removed elsewhere adds no stock and a finished one is left alone.
   const finishJob = async (job, now = new Date()) => {
@@ -55,7 +64,9 @@ export const usePrintJobs = () => {
     if (!current) throw staleError()
     if (current.status === 'done') return current
     await applyMovements([{ id: current.id, article: current.article, ...printedMovement(Number(current.quantity)) }])
+    // Gone between the re-read and the write: another device removed it
     return pb.collection(PRINT_JOBS).update(current.id, { status: 'done', done_at: now.toISOString() }, withArticle)
+      .catch(err => (err?.status === 404 ? Promise.reject(staleError()) : Promise.reject(err)))
   }
 
   // A job that is already gone (a retry after a lost reply) counts as removed; a finished one is never undone
@@ -64,7 +75,8 @@ export const usePrintJobs = () => {
     if (!current) return
     if (current.status !== 'printing') throw staleError()
     await pb.collection(PRINT_JOBS).delete(current.id)
+      .catch(err => (err?.status === 404 ? Promise.reject(staleError()) : Promise.reject(err)))
   }
 
-  return { listPrintJobs, loadBoardData, startJob, finishJob, cancelJob }
+  return { listPrintJobs, findPrintingJob, loadBoardData, startJob, finishJob, cancelJob }
 }

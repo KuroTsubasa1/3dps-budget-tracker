@@ -10,6 +10,8 @@
 
     <p v-if="error" role="alert" class="rounded-lg bg-expense/10 px-3 py-2 text-sm text-expense">{{ error }}</p>
 
+    <p v-if="onBoard" class="rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted" data-testid="print-board-hint">This article is on the print board — use Done there to add the batch</p>
+
     <form class="flex items-end gap-2" novalidate @submit.prevent="addPrinted">
       <div class="min-w-0 flex-1">
         <label for="inventory-printed" class="label">Add printed</label>
@@ -52,6 +54,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useInventory } from '~/composables/useInventory'
+import { usePrintJobs } from '~/composables/usePrintJobs'
 import { printedMovement, correctionMovement, newRecordId } from '~/utils/inventory'
 import { formatDateTime } from '~/utils/date'
 
@@ -63,6 +66,7 @@ const emit = defineEmits(['changed'])
 const REASON_LABEL = { sale: 'Sold', printed: 'Printed', correction: 'Correction' }
 
 const { applyMovements, listMovements } = useInventory()
+const { findPrintingJob } = usePrintJobs()
 
 const stock = ref(props.article.stock ?? 0)
 const movements = ref([])
@@ -71,12 +75,15 @@ const correctTo = ref('')
 const correctionNote = ref('')
 const busy = ref('')
 const error = ref('')
+const onBoard = ref(false)
 
 const loadMovements = async () => {
   movements.value = await listMovements(props.article.id)
 }
 
 onMounted(() => {
+  // A printing job means Done on the board adds this batch; a locked or missing print_jobs just shows no hint
+  findPrintingJob(props.article.id).then((job) => { onBoard.value = !!job }).catch(() => {})
   loadMovements().catch(() => { error.value = 'Could not load stock history' })
 })
 

@@ -94,3 +94,23 @@ test('empty or invalid dates are never today', () => {
   assert.equal(isSameLocalDay('not a date', NOW), false)
   assert.equal(isSameLocalDay(pbDate(NOW), NOW), true)
 })
+
+test('the suggestion is always a whole number of at least 1', () => {
+  assert.equal(suggestedQuantity(article({ stock: 2.5 })), 8)
+  assert.equal(suggestedQuantity(article({ stock: undefined })), 10)
+  assert.equal(suggestedQuantity(article({ stock: null, target_stock: 3 })), 3)
+  assert.equal(suggestedQuantity(article({ stock: 'abc', target_stock: 3 })), 3)
+  assert.equal(suggestedQuantity(article({ low_stock_threshold: 0, target_stock: 0, stock: 0 })), 1)
+})
+
+test('an article with no stock value counts as 0 and is low', () => {
+  const board = buildBoard({ articles: [article({ stock: undefined }), article({ id: 'n', stock: null, name: 'Null stock' })], now: NOW })
+  assert.deepEqual(board.toPrint.map(idOf), ['n', 'a1'])
+  assert.deepEqual(board.toPrint.map(card => card.quantity), [10, 10])
+})
+
+test('a job\'s expanded article takes precedence over the articles list', () => {
+  const expanded = article({ name: 'From expand' })
+  const board = buildBoard({ articles: [article({ name: 'From list' })], jobs: [job({ expand: { article: expanded } })], now: NOW })
+  assert.equal(board.printing[0].article, expanded)
+})

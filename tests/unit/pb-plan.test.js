@@ -248,6 +248,12 @@ test('print jobs are created locked, reference the articles, and the new fields 
   assert.equal(afterSchema.find(c => c.name === 'commissions').schema.find(f => f.name === 'ready_at').type, 'date')
 })
 
+test('the print_jobs create op carries its article index', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === 'print_jobs')
+  assert.ok(op, 'print_jobs create op exists')
+  assert.deepEqual(op.body.indexes, ['CREATE INDEX `idx_print_jobs_article` ON `print_jobs` (`article`)'])
+})
+
 test('owner rules give the owner, and only the owner, every print job permission', () => {
   const afterSchema = simulate(current(), planSchema(current()))
   const jobs = planRules(afterSchema, OWNER_ID).find(op => op.collection === 'print_jobs')

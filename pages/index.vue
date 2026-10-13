@@ -114,25 +114,24 @@ definePageMeta({ middleware: 'owner' })
 const { transactions, earnings, todayEarnings } = useTransactions()
 const { displaySettings } = useAppSettings()
 const { listCommissions, anonymiseDue } = useCommissions()
-const openCommissions = ref(0)
-
-onMounted(async () => {
-  try {
-    const list = await listCommissions()
-    openCommissions.value = list.filter(item => ['open', 'printing', 'ready'].includes(item.status)).length
-    // DSGVO wipe also runs here, so it happens even if the Commissions page is never opened
-    anonymiseDue(list).catch(() => {})
-  } catch {
-    // No commissions collection yet (before the migration) or offline: the card simply stays hidden
-  }
-})
-
 const { loadBoardData } = usePrintJobs()
+const openCommissions = ref(0)
 const toPrintCount = ref(0)
 
+// One commissions fetch feeds the open count, the DSGVO wipe and the print-board count
 onMounted(async () => {
+  let list
   try {
-    toPrintCount.value = buildBoard({ ...(await loadBoardData()), now: new Date() }).toPrint.length
+    list = await listCommissions()
+  } catch {
+    // No commissions collection yet (before the migration) or offline: both cards simply stay hidden
+    return
+  }
+  openCommissions.value = list.filter(item => ['open', 'printing', 'ready'].includes(item.status)).length
+  // DSGVO wipe also runs here, so it happens even if the Commissions page is never opened
+  anonymiseDue(list).catch(() => {})
+  try {
+    toPrintCount.value = buildBoard({ ...(await loadBoardData(list)), now: new Date() }).toPrint.length
   } catch {
     // Offline or a failed load: the link quietly stays hidden
   }

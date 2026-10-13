@@ -145,6 +145,105 @@ test.describe('the print board', () => {
     await expect(printing.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
   })
 
+  test('Done on a job that vanishes between the re-read and the write shows the stale message', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    const printing = await openColumn(page, 'Printing')
+    api.failOnce('print_jobs', 404)
+    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText('Already updated — the board has been refreshed')
+  })
+
+  test('Back on a job that vanishes between the re-read and the delete shows the stale message', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    const printing = await openColumn(page, 'Printing')
+    api.failOnce('print_jobs', 404)
+    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Back' }).click()
+    await expect(page.getByRole('alert')).toHaveText('Already updated — the board has been refreshed')
+  })
+
+  test('the board reloads when the tab becomes visible again', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    const toPrint = await openColumn(page, 'To print')
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toHaveCount(0)
+    api.db.commissions.push(commission())
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toBeVisible()
+  })
+
+  test('the board reloads when the window regains focus', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    const toPrint = await openColumn(page, 'To print')
+    api.db.commissions.push(commission())
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(toPrint.getByRole('article', { name: COMMISSION_CARD })).toBeVisible()
+  })
+
+  test('a hidden tab does not reload the board', async ({ page, api }) => {
+    seedBoard(api)
+    await gotoReady(page, '/print-board')
+    await openColumn(page, 'To print')
+    const before = api.requests.length
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await page.waitForTimeout(300)
+    expect(api.requests.length).toBe(before)
+  })
+
+  test('Done today shows jobs finished today, not two days ago', async ({ page, api }) => {
+    const today = new Date().toISOString()
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+    seedBoard(api, {
+      printJobs: [
+        job({ id: 'jobtoday0000001', article: 'k1', status: 'done', done_at: today }),
+        job({ id: 'jobold000000001', article: 'f1', status: 'done', done_at: twoDaysAgo })
+      ]
+    })
+    await gotoReady(page, '/print-board')
+    const doneToday = await openColumn(page, 'Done today')
+    await expect(doneToday.getByRole('article', { name: 'Pikachu Keychain' })).toContainText('+8 to stock')
+    await expect(doneToday.getByRole('article', { name: 'Glurak Figure' })).toHaveCount(0)
+  })
+
+  test('Back shows its own loading state while Done stays idle', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/print-board')
+    const printing = await openColumn(page, 'Printing')
+    const card = printing.getByRole('article', { name: 'Pikachu Keychain' })
+    api.delayNext('print_jobs', 1500)
+    await card.getByRole('button', { name: 'Back' }).click()
+    await expect(card.getByRole('button', { name: 'Back' }).locator('.animate-spin')).toBeVisible()
+    await expect(card.getByRole('button', { name: 'Done', exact: true }).locator('.animate-spin')).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Done', exact: true })).toBeDisabled()
+  })
+
+  test('a job on the board hints at Done in the article inventory', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet.getByText('This article is on the print board — use Done there to add the batch')).toBeVisible()
+    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+  })
+
+  test('no hint without a printing job, or when print_jobs is locked', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job({ status: 'done', done_at: new Date().toISOString() })] })
+    api.failReads('print_jobs', 403)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+    await expect(sheet.getByText(/on the print board/)).toHaveCount(0)
+    await expect(sheet.getByRole('alert')).toHaveCount(0)
+  })
+
   test('a commission card follows its own status and never touches stock', async ({ page, api }) => {
     seedBoard(api, { commissions: [commission()] })
     await gotoReady(page, '/print-board')
@@ -237,6 +336,32 @@ test.describe('entry points', () => {
     seedBoard(api, { articles: [BOARD_ARTICLES[1]] })
     await gotoReady(page, '/')
     await expect(page.getByRole('link', { name: /to print/ })).toHaveCount(0)
+  })
+
+  test('the dashboard still counts the commission when print_jobs is locked or missing', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    api.failReads('print_jobs', 403)
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 to print/ })).toBeVisible()
+    api.failReads('print_jobs', 404)
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 to print/ })).toBeVisible()
+  })
+
+  test('the dashboard hides the link when the commissions list fails', async ({ page, api }) => {
+    seedBoard(api, { commissions: [commission()] })
+    api.failReads('commissions', 403)
+    await gotoReady(page, '/')
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /to print/ })).toHaveCount(0)
+  })
+
+  test('the dashboard fetches the commissions once', async ({ page, api }) => {
+    seedBoard(api, { articles: [BOARD_ARTICLES[1]], commissions: [commission()] })
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 to print/ })).toBeVisible()
+    const lists = api.requests.filter(request => request.method === 'GET' && request.path === '/api/collections/commissions/records')
+    expect(lists).toHaveLength(1)
   })
 
   test('the catalog header opens the print board', async ({ page, api }) => {
