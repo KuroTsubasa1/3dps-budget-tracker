@@ -159,7 +159,7 @@ The app needs PocketBase **0.22** with an owner account in the `users` collectio
 
 ```bash
 npm run pb:migrate                  # dry run: prints the plan, writes scripts/category-mapping.json
-npm run pb:migrate -- --apply       # create collections, seed categories, assign article categories
+npm run pb:migrate -- --apply       # create collections (incl. deals), seed categories and deals, assign article categories
 npm run pb:migrate -- --apply-rules # pin owner-only writes and close public sign-up on users
 npm run pb:migrate -- --apply-rules --owner you@example.com  # if users has more than one account
 ```
@@ -172,6 +172,8 @@ Order matters:
 3. Run `--apply-rules` (add `--owner <email>` if `users` has more than one account). The old shared API token then stops working.
 
 Run `--apply-rules` right after the new app is live, before selling or editing anything. Until then the new app cannot save sales, stock or categories.
+Updating from an earlier version: re-run `npm run pb:migrate -- --apply` (creates and seeds `deals`) before deploying this build, then `--apply-rules` to open deal editing to the owner.
+
 Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.

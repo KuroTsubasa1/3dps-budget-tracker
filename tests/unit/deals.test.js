@@ -115,3 +115,13 @@ test('dealForCategory finds the valid deal a category belongs to', () => {
   assert.equal(dealForCategory(DEALS, 'poke').id, 'd-big')
   assert.equal(dealForCategory(DEALS, 'nope'), undefined)
 })
+
+test('overlapping deals never stack: the first deal claims the category', () => {
+  const overlapping = [
+    { id: 'a', name: 'A pairs', type: 'bundle', categories: ['key'], min_qty: 2, price: 7 },
+    { id: 'b', name: 'B group', type: 'group', categories: ['key', 'book'], min_qty: 2, price: 3 }
+  ]
+  const result = priceCart([line(KEYCHAIN, 2)], overlapping)
+  assert.equal(result.total, 7)
+  assert.deepEqual(result.applied.map(deal => deal.name), ['A pairs'])
+})

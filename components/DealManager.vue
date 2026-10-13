@@ -168,12 +168,15 @@ const validate = () => {
 }
 
 const save = async () => {
-  error.value = validate()
-  if (error.value) return
+  error.value = ''
   saving.value = true
   const { name, type, categories: chosen, min_qty: minQty, price } = draft.value
   const fields = { name, type, categories: chosen, min_qty: minQty, price }
   try {
+    // Refresh first so the overlap check sees deals saved from another device
+    deals.value = await listDeals()
+    error.value = validate()
+    if (error.value) return
     if (editing.value) await updateDeal(editing.value.id, fields)
     else await createDeal(fields)
     await load()

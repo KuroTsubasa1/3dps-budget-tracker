@@ -96,6 +96,8 @@ export const test = base.extend({
         api.enable()
         if (status !== 200) fake.failures.budget_tracker_transactions = status
       },
+      // The fake answers 404 for a collection that is gone, like a deploy before the migration
+      dropCollection (name) { delete fake.db[name] },
       fail (collection, status) { fake.failures[collection] = status },
       // The next write to the collection succeeds but answers only after `ms`
       delayNext (collection, ms) { fake.delays[collection] = ms }

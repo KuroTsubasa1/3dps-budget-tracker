@@ -236,7 +236,9 @@ const fetchProducts = async () => {
   loading.value = true
   error.value = null
   try {
-    const [articles, categoryList, dealList] = await Promise.all([listActive(), listCategories(), listDeals()])
+    // A missing `deals` collection (deploy made before the migration's --apply) means no deals
+    const noDealsIfMissing = listDeals().catch(err => (err?.status === 404 ? [] : Promise.reject(err)))
+    const [articles, categoryList, dealList] = await Promise.all([listActive(), listCategories(), noDealsIfMissing])
     products.value = articles.map(item => ({ ...item, quantity: 0 }))
     categories.value = categoryList
     deals.value = dealList

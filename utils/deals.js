@@ -32,8 +32,13 @@ export function priceCart (lines, deals = []) {
   // Overridden articles are special: they never count toward, or receive, a deal
   const regular = priced.filter(line => !(Number(line.override) > 0) && line.quantity > 0)
   const applied = []
+  // One deal per category: the first deal in the given (name) order claims its categories,
+  // and a later deal touching any claimed category is skipped so deals never stack
+  const claimed = new Set()
 
   for (const deal of deals.filter(isValidDeal)) {
+    if (deal.categories.some(id => claimed.has(id))) continue
+    deal.categories.forEach(id => claimed.add(id))
     const members = regular.filter(line => deal.categories.includes(line.categoryId))
     const count = members.reduce((sum, line) => sum + line.quantity, 0)
     const n = Number(deal.min_qty)

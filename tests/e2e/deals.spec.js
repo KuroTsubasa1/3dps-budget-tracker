@@ -76,6 +76,16 @@ test.describe('cart deals', () => {
   })
 })
 
+test('the catalog still sells without deals when the collection is missing', async ({ page, api }) => {
+  api.seed({ categories: DEAL_CATEGORIES, articles: ARTICLES })
+  api.dropCollection('deals')
+  await api.mockTransactions()
+  await gotoReady(page, '/catalog')
+  await addToCart(page, 'Pikachu Keychain', 2)
+  await openCart(page)
+  await expect(cart(page).getByTestId('cart-total')).toContainText('8,00')
+})
+
 test.describe('managing deals', () => {
   const editor = page => page.getByRole('dialog')
   const dealList = page => page.getByRole('list', { name: 'Deals' })
@@ -115,6 +125,19 @@ test.describe('managing deals', () => {
     await editor(page).getByRole('button', { name: 'Save' }).click()
     await expect(editor(page).getByRole('alert')).toHaveText('Keychain is already in the deal "Keychain 2 for 7"')
     expect(api.db.deals).toHaveLength(2)
+  })
+
+  test('a deal saved on another device is caught before saving', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByLabel('Name').fill('Coasters')
+    await editor(page).getByLabel('Coaster').check()
+    await editor(page).getByLabel('Number of items (N)').fill('2')
+    await editor(page).getByLabel('Price', { exact: true }).fill('15')
+    // Another device saves a deal for the same category after this screen loaded
+    api.db.deals.push({ id: 'deal-elsewhere0', name: 'Coaster from phone', type: 'bundle', categories: ['cat-coaster'], min_qty: 2, price: 14 })
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Coaster is already in the deal "Coaster from phone"')
+    expect(api.db.deals).toHaveLength(3)
   })
 
   test('an "N for X" deal needs exactly one category', async ({ page }) => {
