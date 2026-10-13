@@ -2,7 +2,7 @@
   {
     "id": "i1f9o7q6bnjx6k8",
     "created": "2025-02-23 01:43:03.026Z",
-    "updated": "2026-10-13 22:24:12.879Z",
+    "updated": "2026-10-13 22:36:57.316Z",
     "name": "budget_tracket_catalog",
     "type": "base",
     "system": false,
@@ -163,17 +163,17 @@
       }
     ],
     "indexes": [],
-    "listRule": "",
-    "viewRule": "",
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "active = true || (@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\")",
+    "viewRule": "active = true || (@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\")",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "j0cxry2bb8mlusa",
     "created": "2025-04-11 23:48:59.661Z",
-    "updated": "2025-04-12 00:17:50.065Z",
+    "updated": "2026-10-13 22:36:58.986Z",
     "name": "budget_tracker_transactions",
     "type": "base",
     "system": false,
@@ -236,17 +236,17 @@
       }
     ],
     "indexes": [],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": "@request.headers.x_token = @collection.api_token.token",
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "viewRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "1j0mm9cnexqx322",
     "created": "2026-10-13 22:24:11.990Z",
-    "updated": "2026-10-13 22:24:11.990Z",
+    "updated": "2026-10-13 22:36:52.292Z",
     "name": "categories",
     "type": "base",
     "system": false,
@@ -299,15 +299,15 @@
     ],
     "listRule": "",
     "viewRule": "",
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "ftzc6lwhjlji9o9",
     "created": "2026-10-13 22:24:12.055Z",
-    "updated": "2026-10-13 22:24:12.055Z",
+    "updated": "2026-10-13 22:36:55.456Z",
     "name": "stock_movements",
     "type": "base",
     "system": false,
@@ -377,9 +377,9 @@
     "indexes": [
       "CREATE INDEX `idx_stock_movements_article` ON `stock_movements` (`article`)"
     ],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
+    "listRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "viewRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "updateRule": null,
     "deleteRule": null,
     "options": {}
@@ -387,7 +387,7 @@
   {
     "id": "ar8yfdf5ybfczm2",
     "created": "2026-10-13 22:24:12.117Z",
-    "updated": "2026-10-13 22:24:12.117Z",
+    "updated": "2026-10-13 22:36:53.872Z",
     "name": "deals",
     "type": "base",
     "system": false,
@@ -470,15 +470,15 @@
     "indexes": [],
     "listRule": "",
     "viewRule": "",
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "47ebsejsa31yx0x",
     "created": "2026-10-13 22:24:12.178Z",
-    "updated": "2026-10-13 22:24:12.178Z",
+    "updated": "2026-10-13 22:37:00.770Z",
     "name": "commissions",
     "type": "base",
     "system": false,
@@ -671,17 +671,17 @@
       }
     ],
     "indexes": [],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "viewRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "mpxn1h8tqut68bf",
     "created": "2026-10-13 22:24:12.247Z",
-    "updated": "2026-10-13 22:24:12.247Z",
+    "updated": "2026-10-13 22:37:02.541Z",
     "name": "print_jobs",
     "type": "base",
     "system": false,
@@ -749,11 +749,11 @@
     "indexes": [
       "CREATE INDEX `idx_print_jobs_article` ON `print_jobs` (`article`)"
     ],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "viewRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   }
 ]
