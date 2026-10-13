@@ -158,7 +158,12 @@ export function createFakePocketBase () {
     }
     // 'drop' is one-shot: the write happens, then the reply is lost (the connection aborts)
     const drop = failures[name] === 'drop'
-    if (failures[name] && !drop) return reply(failures[name], { code: failures[name], message: 'Forced failure.', data: {} })
+    // A failure is a status, or { status, data, once } to carry PocketBase field errors / fail a single write
+    const failure = typeof failures[name] === 'object' ? failures[name] : { status: failures[name] }
+    if (failure.status && !drop) {
+      if (failure.once) failures[name] = 0
+      return reply(failure.status, { code: failure.status, message: 'Forced failure.', data: failure.data ?? {} })
+    }
     // One-shot slow write: the write happens now, its reply arrives after the delay
     const delay = delays[name]
     delays[name] = 0

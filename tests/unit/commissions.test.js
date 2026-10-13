@@ -45,7 +45,7 @@ test('anonymising is due only after six calendar months', () => {
   assert.equal(dueForAnonymising({ status: 'cancelled', cancelled_at: '2026-01-01T00:00:00.000Z', anonymised_at: '', customer_name: 'Ash' }, NOW), true)
 })
 
-test('open, already anonymised or undated commissions are never due', () => {
+test('open or already anonymised commissions are never due', () => {
   assert.equal(dueForAnonymising({ status: 'ready', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '', customer_name: 'Ash' }, NOW), false)
   assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '2020-08-01 00:00:00.000Z', customer_name: '—', customer_email: '', address: '—' }, NOW), false)
 })
@@ -112,4 +112,32 @@ test('moving to ready stamps ready_at and moving back clears it', () => {
   assert.deepEqual(transitionPatch({ status: 'ready' }, 'printing', NOW), { status: 'printing', ready_at: '' })
   assert.deepEqual(transitionPatch({ status: 'printing' }, 'open', NOW), { status: 'open' })
   assert.deepEqual(transitionPatch({ status: 'open' }, 'printing', NOW), { status: 'printing' })
+})
+
+test('a missing or unknown target is a disallowed move', () => {
+  assert.throws(() => transitionPatch({}, undefined, NOW), /Cannot move a commission from undefined to undefined/)
+  assert.throws(() => transitionPatch({ status: 'open' }, undefined, NOW), /Cannot move a commission from open to undefined/)
+  assert.throws(() => transitionPatch({ status: 'open' }, 'bogus', NOW), /Cannot move/)
+})
+
+test('quantity and price accept plain numbers only', () => {
+  const QUANTITY = 'Quantity must be a whole number of 1 or more'
+  const PRICE = 'Agreed price must be above 0'
+  assert.equal(validateCommission({ ...VALID, quantity: '1e0' }), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, quantity: 'Infinity' }), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, quantity: '0x10' }), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, quantity: ' 3 ' }), '')
+  assert.equal(validateCommission({ ...VALID, price: '1e1' }), PRICE)
+  assert.equal(validateCommission({ ...VALID, price: 'Infinity' }), PRICE)
+  assert.equal(validateCommission({ ...VALID, price: '1,234' }), PRICE)
+  assert.equal(validateCommission({ ...VALID, price: '-5' }), PRICE)
+  assert.equal(validateCommission({ ...VALID, price: '7.5' }), '')
+  assert.equal(validateCommission({ ...VALID, price: ' 12 ' }), '')
+})
+
+test('a record holding only an email still holds customer data', () => {
+  const wiped = { status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', customer_name: '—', address: '—' }
+  assert.equal(dueForAnonymising({ ...wiped, customer_email: 'a@b.de' }, NOW), true)
+  assert.equal(dueForAnonymising({ ...wiped, customer_email: '' }, NOW), false)
+  assert.equal(dueForAnonymising(wiped, NOW), false)
 })

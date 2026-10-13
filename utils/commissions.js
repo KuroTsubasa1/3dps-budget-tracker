@@ -11,7 +11,7 @@ export const canCancel = status => status === 'open' || status === 'printing' ||
 
 export function transitionPatch (commission, target, now = new Date()) {
   const from = commission.status
-  const allowed = NEXT[from] === target || PREVIOUS[from] === target || (target === 'cancelled' && canCancel(from))
+  const allowed = !!target && (NEXT[from] === target || PREVIOUS[from] === target || (target === 'cancelled' && canCancel(from)))
   if (!allowed) throw new Error(`Cannot move a commission from ${from} to ${target}`)
   if (target === 'delivered') return { status: target, delivered_at: now.toISOString() }
   if (target === 'cancelled') return { status: target, cancelled_at: now.toISOString() }
@@ -41,7 +41,7 @@ function monthsBefore (now) {
 
 const holdsCustomerData = commission =>
   commission.customer_name !== '—' ||
-  (!!commission.customer_email && commission.customer_email !== '') ||
+  !!commission.customer_email ||
   (!!commission.address && commission.address !== '—')
 
 // Privacy fails safe: a missing or unparseable finish date counts as due. anonymised_at is not consulted,
@@ -75,8 +75,9 @@ export function validateCommission (form) {
   }
   if (!form.article) return 'Choose an article'
   if (!form.anonymised && form.fulfilment === 'shipping' && !String(form.address ?? '').trim()) return 'Enter an address for shipping'
-  const quantity = parseNumber(form.quantity)
-  if (!Number.isInteger(quantity) || quantity < 1) return 'Quantity must be a whole number of 1 or more'
-  if (String(form.price ?? '').trim() === '' || !(parseNumber(form.price) > 0)) return 'Agreed price must be above 0'
+  const quantityText = String(form.quantity ?? '').trim()
+  if (!/^\d+$/.test(quantityText) || Number(quantityText) < 1) return 'Quantity must be a whole number of 1 or more'
+  const priceText = String(form.price ?? '').trim()
+  if (!/^\d+([.,]\d{1,2})?$/.test(priceText) || !(parseNumber(priceText) > 0)) return 'Agreed price must be above 0'
   return ''
 }

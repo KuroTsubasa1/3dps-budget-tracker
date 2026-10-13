@@ -101,7 +101,9 @@ export const test = base.extend({
       },
       // The fake answers 404 for a collection that is gone, like a deploy before the migration
       dropCollection (name) { delete fake.db[name] },
-      fail (collection, status) { fake.failures[collection] = status },
+      fail (collection, status, data) { fake.failures[collection] = data ? { status, data } : status },
+      // Only the next write to the collection fails; later ones succeed
+      failOnce (collection, status) { fake.failures[collection] = { status, once: true } },
       // Every read of the collection answers `status` (a collection whose listRule is still locked)
       failReads (collection, status) { fake.readFailures[collection] = status },
       // The next write to the collection succeeds but answers only after `ms`

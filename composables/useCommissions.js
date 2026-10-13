@@ -16,8 +16,18 @@ export const useCommissions = () => {
   // DSGVO: finished commissions keep their record but lose customer data after six months
   const anonymiseDue = async (list, now = new Date()) => {
     const due = list.filter(commission => dueForAnonymising(commission, now))
-    for (const commission of due) await updateCommission(commission.id, anonymisedPatch(now))
-    return due.map(commission => commission.id)
+    const changed = []
+    const failed = []
+    // One record failing must not stop the others; it stays due and is retried on the next load
+    for (const commission of due) {
+      try {
+        await updateCommission(commission.id, anonymisedPatch(now))
+        changed.push(commission.id)
+      } catch {
+        failed.push(commission.id)
+      }
+    }
+    return { changed, failed }
   }
 
   return { listCommissions, getCommission, createCommission, updateCommission, anonymise, anonymiseDue }

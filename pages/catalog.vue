@@ -207,6 +207,7 @@
     />
 
     <CommissionSheet
+      v-if="isOwner"
       v-model:open="isCommissionOpen"
       :commission="null"
       :articles="products"

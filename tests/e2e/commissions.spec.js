@@ -97,6 +97,10 @@ test.describe('the commissions page', () => {
     await expect.poll(() => api.db.commissions[0].notes).toBe('Gold paint')
     expect(api.db.commissions[0]).toMatchObject({ customer_name: '—', customer_email: '' })
     await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+    const patches = api.requests.filter(request => request.method === 'PATCH' && request.path.endsWith('/commissions/records/c1'))
+    const update = patches.at(-1).body
+    expect(update).toMatchObject({ notes: 'Gold paint' })
+    for (const key of ['customer_name', 'customer_email', 'address', 'fulfilment']) expect(update).not.toHaveProperty(key)
   })
 
   test('the address is only asked for, and required, when shipping', async ({ page, api }) => {
@@ -251,6 +255,77 @@ test.describe('the commissions page', () => {
     expect(api.db.commissions[0].anonymised_at).toBeTruthy()
   })
 
+  test('cancelling an edit returns to the read view without saving', async ({ page, api }) => {
+    seedWith(api, [commission({ notes: 'Old notes' })])
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await expect(sheet(page).getByText('Old notes')).toBeVisible()
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await sheet(page).getByLabel('Notes').fill('New notes')
+    await sheet(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+    await expect(sheet(page).getByRole('button', { name: 'Edit' })).toBeVisible()
+    await expect(sheet(page).getByText('Old notes')).toBeVisible()
+    await expect(sheet(page).getByText('New notes')).toHaveCount(0)
+    expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
+    // The discarded draft does not come back on the next edit
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await expect(sheet(page).getByLabel('Notes')).toHaveValue('Old notes')
+  })
+
+  test('a new commission has no Cancel button in its form', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await expect(sheet(page).getByRole('button', { name: 'Create commission' })).toBeVisible()
+    await expect(sheet(page).getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0)
+  })
+
+  test('one failed anonymise does not block the page or the others', async ({ page, api }) => {
+    seedWith(api, [
+      commission({ id: 'old1', customer_name: 'First Customer', status: 'delivered', delivered_at: monthsAgo(7) }),
+      commission({ id: 'old2', customer_name: 'Second Customer', status: 'delivered', delivered_at: monthsAgo(8) })
+    ])
+    api.failOnce('commissions', 500)
+    await gotoReady(page, '/commissions')
+    await expect(page.getByText('Some customer data could not be anonymised — it will be retried next time')).toBeVisible()
+    await expect(page.getByText('Could not load commissions')).toHaveCount(0)
+    await expect.poll(() => api.db.commissions.filter(item => item.anonymised_at).length).toBe(1)
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Done/ }).click()
+    await expect(page.getByRole('button', { name: /Anonymised/ })).toHaveCount(1)
+    await expect(page.getByRole('button', { name: /Customer/ })).toHaveCount(1)
+  })
+
+  test('an email the server rejects shows the email message and keeps the form open', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await sheet(page).getByLabel('Email').fill('misty@example.com')
+    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
+    api.fail('commissions', 400, { customer_email: { code: 'validation_is_email', message: 'Must be a valid email address.' } })
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('Enter a valid email address')
+    await expect(sheet(page).getByLabel('Customer name')).toHaveValue('Misty')
+  })
+
+  test('a commission for an archived article can still be edited', async ({ page, api }) => {
+    api.seed({
+      categories: COMMISSION_CATEGORIES,
+      articles: [...COMMISSION_ARTICLES, { id: 'old1', name: 'Retired Dino', category: 'cat-figure', active: false }],
+      commissions: [commission({ article: 'old1' })]
+    })
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await expect(sheet(page).getByLabel('Article')).toHaveValue('old1')
+    await expect(sheet(page).getByLabel('Article').locator('option:checked')).toHaveText('Retired Dino')
+    await sheet(page).getByLabel('Notes').fill('Still the dino')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect.poll(() => api.db.commissions[0].notes).toBe('Still the dino')
+    expect(api.db.commissions[0].article).toBe('old1')
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+  })
+
   test('customer data can be deleted on request', async ({ page, api }) => {
     seedWith(api, [commission()])
     await gotoReady(page, '/commissions')
@@ -293,6 +368,33 @@ test.describe('entry points', () => {
     await gotoReady(page, '/')
     await page.getByRole('link', { name: /2 open commissions/ }).click()
     await page.waitForURL(url => url.pathname === '/commissions')
+  })
+
+  test('the dashboard says "1 open commission" in the singular', async ({ page, api }) => {
+    seedWith(api, [commission({ id: 'a', status: 'printing' })])
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /1 open commission(?!s)/ })).toBeVisible()
+  })
+
+  test('manage mode hides the Commission buttons', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await expect(page.getByRole('button', { name: 'Commission Pikachu Keychain' })).toBeVisible()
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Commission / })).toHaveCount(0)
+  })
+
+  test('the Commission button does not add the article to the cart', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
+    await expect(sheet(page).getByLabel('Article')).toHaveValue('k1')
+    await page.keyboard.press('Escape')
+    await expect(sheet(page)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add Pikachu Keychain to cart' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /View cart/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Add one Pikachu/ })).toHaveCount(0)
   })
 
   test('the dashboard hides the card when nothing is open', async ({ page, api }) => {

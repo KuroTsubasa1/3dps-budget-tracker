@@ -25,6 +25,7 @@
         <label for="commission-article" class="label">Article</label>
         <select id="commission-article" v-model="form.article" class="input pr-9">
           <option value="" disabled>Choose an article</option>
+          <option v-if="archivedArticleId" :value="archivedArticleId" disabled>{{ archivedArticleName }}</option>
           <option v-for="article in articles" :key="article.id" :value="article.id">{{ article.name }}</option>
         </select>
       </div>
@@ -42,7 +43,10 @@
         <label for="commission-notes" class="label">Notes <span class="font-normal text-ink-muted">(optional)</span></label>
         <textarea id="commission-notes" v-model="form.notes" rows="2" class="input py-2" placeholder="Colour, size, engraving…" />
       </div>
-      <BaseButton type="submit" size="lg" block :loading="busy">{{ commission ? 'Save changes' : 'Create commission' }}</BaseButton>
+      <div class="space-y-2">
+        <BaseButton type="submit" size="lg" block :loading="busy">{{ commission ? 'Save changes' : 'Create commission' }}</BaseButton>
+        <BaseButton v-if="commission" variant="secondary" block :disabled="busy" @click="cancelEdit">Cancel</BaseButton>
+      </div>
     </form>
 
     <div v-else-if="commission" class="space-y-5">
@@ -173,6 +177,9 @@ const title = computed(() => {
 
 const articleById = id => props.articles.find(article => article.id === id)
 const articleName = computed(() => props.commission?.expand?.article?.name ?? articleById(props.commission?.article)?.name ?? 'Unknown article')
+// An edited commission may point at an article that was archived since: keep it selectable-looking but not choosable
+const archivedArticleId = computed(() => (form.value.article && !articleById(form.value.article) ? form.value.article : ''))
+const archivedArticleName = computed(() => props.commission?.expand?.article?.name ?? 'Archived article')
 const anonymised = computed(() => !!props.commission?.anonymised_at)
 const customerLabel = computed(() => (props.commission?.anonymised_at ? 'Anonymised' : props.commission?.customer_name))
 
@@ -226,6 +233,11 @@ const startEdit = () => {
   mode.value = 'form'
 }
 
+const cancelEdit = () => {
+  error.value = ''
+  mode.value = 'view'
+}
+
 const save = async () => {
   if (busy.value) return
   error.value = validateCommission({ ...form.value, anonymised: anonymised.value })
@@ -260,7 +272,10 @@ const save = async () => {
       toast('Commission created')
     }
   } catch (err) {
-    error.value = failMessage(err, 'Could not save the commission. Try again.')
+    // PocketBase 0.22 reports field errors under response.data.<field>
+    error.value = err?.status === 400 && err.response?.data?.customer_email
+      ? 'Enter a valid email address'
+      : failMessage(err, 'Could not save the commission. Try again.')
   } finally {
     busy.value = false
   }

@@ -58,6 +58,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useCommissions } from '~/composables/useCommissions'
 import { useArticles } from '~/composables/useArticles'
 import { useDeals } from '~/composables/useDeals'
+import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { isFinal } from '~/utils/commissions'
 
@@ -73,6 +74,7 @@ const TABS = [
 const { listCommissions, anonymiseDue } = useCommissions()
 const { listActive } = useArticles()
 const { listDeals } = useDeals()
+const { toast } = useToast()
 
 const commissions = ref([])
 const articles = ref([])
@@ -99,8 +101,9 @@ const load = async () => {
     ])
     articles.value = articleList
     deals.value = dealList
-    const changed = await anonymiseDue(list)
+    const { changed, failed } = await anonymiseDue(list)
     commissions.value = changed.length ? await listCommissions() : list
+    if (failed.length) toast('Some customer data could not be anonymised — it will be retried next time', { tone: 'warning', duration: 6000 })
   } catch (err) {
     loadError.value = 'Could not load commissions. Check your connection and try again.'
   } finally {
