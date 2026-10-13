@@ -1,5 +1,4 @@
 import { ref, onMounted, watch } from 'vue'
-import { useRuntimeConfig } from 'nuxt/app'
 
 const SETTINGS_STORAGE_KEY = 'budget-tracker-settings'
 
@@ -9,11 +8,6 @@ const defaultSettings = {
     displayName: '',
     email: '',
     profileImage: null
-  },
-  api: {
-    baseUrl: '',
-    endpoint: '',
-    token: ''
   },
   display: {
     currencyFormat: 'EUR',
@@ -31,7 +25,6 @@ const defaultSettings = {
 
 // Create reactive refs for settings
 const accountSettings = ref({...defaultSettings.account})
-const apiSettings = ref({...defaultSettings.api})
 const displaySettings = ref({...defaultSettings.display})
 const notificationSettings = ref({...defaultSettings.notifications})
 
@@ -41,8 +34,6 @@ const lastSaved = ref(null)
 const saveError = ref('')
 
 export const useAppSettings = () => {
-  const config = useRuntimeConfig()
-  
   // Load settings from localStorage
   const loadSettings = () => {
     try {
@@ -50,18 +41,11 @@ export const useAppSettings = () => {
       if (stored) {
         const parsed = JSON.parse(stored)
         
-        // Merge stored settings with defaults to ensure all properties exist
+        // Merge stored settings with defaults to ensure all properties exist.
+        // An old `api` block (shared token) is ignored and dropped on the next save
         accountSettings.value = { ...defaultSettings.account, ...parsed.account }
-        apiSettings.value = { ...defaultSettings.api, ...parsed.api }
         displaySettings.value = { ...defaultSettings.display, ...parsed.display }
         notificationSettings.value = { ...defaultSettings.notifications, ...parsed.notifications }
-      } else {
-        // If no stored settings, use environment values for API settings
-        apiSettings.value = {
-          baseUrl: config.public.apiBaseUrl,
-          endpoint: config.public.apiEndpoint,
-          token: config.public.apiToken
-        }
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -77,7 +61,6 @@ export const useAppSettings = () => {
       
       const settings = {
         account: accountSettings.value,
-        api: apiSettings.value,
         display: displaySettings.value,
         notifications: notificationSettings.value
       }
@@ -96,15 +79,6 @@ export const useAppSettings = () => {
   
   // Individual setting category save functions
   const saveAccountSettings = () => {
-    return saveSettings()
-  }
-  
-  const saveApiSettings = () => {
-    // Update runtime config values
-    config.public.apiBaseUrl = apiSettings.value.baseUrl
-    config.public.apiEndpoint = apiSettings.value.endpoint
-    config.public.apiToken = apiSettings.value.token
-    
     return saveSettings()
   }
   
@@ -133,7 +107,8 @@ export const useAppSettings = () => {
     try {
       // Get all data for export
       const transactions = JSON.parse(localStorage.getItem('budget-tracker-transactions') || '[]')
-      const settings = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}')
+      // Settings saved by older versions may still hold the shared API token: never export it
+      const { api, ...settings } = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}')
       const offlineQueue = JSON.parse(localStorage.getItem('budget-tracker-offline-queue') || '[]')
       
       const exportData = {
@@ -208,11 +183,6 @@ export const useAppSettings = () => {
       
       // Reset settings to defaults
       accountSettings.value = {...defaultSettings.account}
-      apiSettings.value = {
-        baseUrl: config.public.apiBaseUrl,
-        endpoint: config.public.apiEndpoint,
-        token: config.public.apiToken
-      }
       displaySettings.value = {...defaultSettings.display}
       notificationSettings.value = {...defaultSettings.notifications}
       
@@ -250,7 +220,6 @@ export const useAppSettings = () => {
   return {
     // Settings data
     accountSettings,
-    apiSettings,
     displaySettings,
     notificationSettings,
     
@@ -263,7 +232,6 @@ export const useAppSettings = () => {
     loadSettings,
     saveSettings,
     saveAccountSettings,
-    saveApiSettings,
     saveDisplaySettings,
     saveNotificationSettings,
     exportData,

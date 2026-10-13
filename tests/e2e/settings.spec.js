@@ -50,6 +50,23 @@ test.describe('settings', () => {
     await expect(html).toHaveClass(/dark/)
   })
 
+  test('the legacy shared API token is neither shipped nor kept in settings', async ({ page, context }) => {
+    await context.addInitScript(() => {
+      if (sessionStorage.getItem('settings-seeded')) return
+      const legacy = { api: { baseUrl: 'https://old.example/api/', endpoint: 'records', token: 'old-shared-token' }, display: { darkMode: false } }
+      localStorage.setItem('budget-tracker-settings', JSON.stringify(legacy))
+      sessionStorage.setItem('settings-seeded', '1')
+    })
+    await gotoReady(page, '/settings#display')
+    expect(await page.evaluate(() => Object.keys(window.__NUXT__.config.public))).not.toContain('apiToken')
+
+    await page.getByRole('button', { name: 'Save Display Settings' }).click()
+    await expect(page.getByText('Display settings saved successfully')).toBeVisible()
+    const stored = await page.evaluate(() => localStorage.getItem('budget-tracker-settings'))
+    expect(JSON.parse(stored).api).toBeUndefined()
+    expect(stored).not.toContain('old-shared-token')
+  })
+
   test('clearing data asks for confirmation in a sheet', async ({ page }) => {
     await gotoReady(page, '/settings#data')
     await page.getByRole('button', { name: 'Clear All Local Data' }).click()
