@@ -135,3 +135,22 @@ test('a sale whose server reply was lost is not posted twice', async ({ page, ap
   expect(api.posted).toHaveLength(1)
   await expect(page.getByText('1 pending')).toHaveCount(0)
 })
+
+test('printing after a double sale of the last item counts in full', async ({ page, api }) => {
+  api.seed({ articles: [keychain({ stock: 1 })] })
+  // Two devices sold the last one at the same moment
+  api.db.stock_movements.push(
+    { id: 'dbl00000000001a', collectionName: 'stock_movements', article: 'k1', change: -1, reason: 'sale', note: '', created: '2021-01-01 00:00:00.000Z' },
+    { id: 'dbl00000000002a', collectionName: 'stock_movements', article: 'k1', change: -1, reason: 'sale', note: '', created: '2021-01-01 00:00:01.000Z' }
+  )
+  api.db.budget_tracket_catalog[0].stock = 0
+  await gotoReady(page, '/catalog')
+  await page.getByRole('button', { name: 'Manage' }).click()
+  await card(page, 'Pikachu Keychain').click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByLabel('Add printed').fill('3')
+  await sheet.getByRole('button', { name: 'Add', exact: true }).click()
+
+  await expect(sheet.getByTestId('article-stock')).toHaveText('3')
+  expect(api.db.budget_tracket_catalog[0].stock).toBe(3)
+})

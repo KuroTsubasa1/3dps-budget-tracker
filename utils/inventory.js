@@ -19,8 +19,12 @@ export const correctionMovement = (stock, target, note = '') => {
   return change === 0 ? null : { change, reason: 'correction', note }
 }
 
+// Replayed in date order (id breaks ties) and floored at every step: a printed batch after an oversell counts in full
+const byCreated = (a, b) =>
+  String(a.created ?? '').localeCompare(String(b.created ?? '')) || String(a.id ?? '').localeCompare(String(b.id ?? ''))
+
 export const stockFromMovements = movements =>
-  Math.max(0, movements.reduce((sum, movement) => sum + Number(movement.change), 0))
+  [...movements].sort(byCreated).reduce((stock, movement) => Math.max(0, stock + Number(movement.change)), 0)
 
 export const stockStatus = (stock, threshold) => {
   if (stock <= 0) return 'out'

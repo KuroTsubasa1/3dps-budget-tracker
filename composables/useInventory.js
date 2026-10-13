@@ -20,7 +20,8 @@ export const useInventory = () => {
   const recomputeStock = async (articleId) => {
     const movements = await pb.collection(MOVEMENTS).getFullList({
       filter: pb.filter('article = {:id}', { id: articleId }),
-      fields: 'change'
+      sort: 'created,id',
+      fields: 'id,change,created'
     })
     const stock = stockFromMovements(movements)
     await pb.collection(ARTICLES).update(articleId, { stock })

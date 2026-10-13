@@ -60,3 +60,25 @@ test('record ids are 15 lowercase alphanumerics and unique', () => {
   assert.equal(ids.size, 200)
   for (const id of ids) assert.match(id, /^[a-z0-9]{15}$/)
 })
+
+const DOUBLE_SALE = [
+  { id: 'a', change: 1, created: '2020-01-01 00:00:00.000Z' },
+  { id: 'b', change: -1, created: '2021-01-01 00:00:00.000Z' },
+  { id: 'c', change: -1, created: '2021-01-01 00:00:01.000Z' },
+  { id: 'd', change: 3, created: '2022-01-01 00:00:00.000Z' }
+]
+
+test('stock never dips below 0 at any step, so a later printed batch counts in full', () => {
+  assert.equal(stockFromMovements(DOUBLE_SALE), 3)
+})
+
+test('movements are replayed in date order whatever order they arrive in', () => {
+  assert.equal(stockFromMovements([...DOUBLE_SALE].reverse()), 3)
+})
+
+test('equal timestamps fall back to id order', () => {
+  assert.equal(stockFromMovements([
+    { id: 'b', change: 2, created: '2021-01-01 00:00:00.000Z' },
+    { id: 'a', change: -1, created: '2021-01-01 00:00:00.000Z' }
+  ]), 2)
+})
