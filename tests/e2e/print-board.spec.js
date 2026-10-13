@@ -387,21 +387,20 @@ test.describe('entry points', () => {
     expect(lists).toHaveLength(1)
   })
 
-  test('the catalog header opens the print board', async ({ page, api }) => {
+  test('the Print board tab opens the board', async ({ page, api }) => {
     seedBoard(api)
     await gotoReady(page, '/catalog')
-    await page.getByRole('button', { name: 'Print board' }).click()
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Print board', exact: true }).click()
     await page.waitForURL(url => url.pathname === '/print-board')
   })
 })
 
-test.describe('visitors see no print board button', () => {
-  test.use({ owner: false })
-
-  test('the catalog header has no Print board button', async ({ page, api }) => {
+test.describe('the catalog header', () => {
+  test('has no Commissions or Print board buttons: the tabs replace them', async ({ page, api }) => {
     seedBoard(api)
     await gotoReady(page, '/catalog')
-    await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Print board' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Manage' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Print board', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Commissions', exact: true })).toHaveCount(0)
   })
 })

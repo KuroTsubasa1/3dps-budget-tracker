@@ -1,9 +1,10 @@
 <template>
   <component
-    :is="clickable ? 'button' : 'div'"
-    :type="clickable ? 'button' : undefined"
+    :is="to ? NuxtLink : clickable ? 'button' : 'div'"
+    :to="to || undefined"
+    :type="!to && clickable ? 'button' : undefined"
     class="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left md:px-5"
-    :class="{ 'transition-colors hover:bg-muted focus:outline-none focus-visible:bg-muted': clickable }"
+    :class="{ 'transition-colors hover:bg-muted focus:outline-none focus-visible:bg-muted': interactive }"
   >
     <div v-if="icon" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full" :class="iconClass">
       <AppIcon :name="icon" class="h-5 w-5" />
@@ -13,16 +14,23 @@
       <p v-if="subtitle" class="truncate text-xs text-ink-muted">{{ subtitle }}</p>
     </div>
     <slot name="trailing" />
-    <AppIcon v-if="clickable" name="chevron-right" class="h-4 w-4 shrink-0 text-ink-muted" />
+    <AppIcon v-if="interactive" name="chevron-right" class="h-4 w-4 shrink-0 text-ink-muted" />
   </component>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { NuxtLink } from '#components'
+
+const props = defineProps({
   title: { type: String, required: true },
   subtitle: { type: String, default: '' },
   icon: { type: String, default: '' },
   iconClass: { type: String, default: 'bg-muted text-ink-muted' },
-  clickable: { type: Boolean, default: false }
+  clickable: { type: Boolean, default: false },
+  // A route turns the row into a link
+  to: { type: String, default: '' }
 })
+
+const interactive = computed(() => props.clickable || !!props.to)
 </script>

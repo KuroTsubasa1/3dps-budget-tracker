@@ -4,18 +4,33 @@ import { NAV_ITEMS } from '../../utils/navigation.js'
 const SETTINGS_KEY = 'budget-tracker-settings'
 const TRANSACTIONS_KEY = 'budget-tracker-transactions'
 
+// Phones reach Reports, Business Card and Settings through the More sheet; the side rail lists every page.
+// Returns the control that should now be marked current.
+const goTo = async (page, item) => {
+  const nav = page.getByRole('navigation', { name: 'Primary' })
+  const more = nav.getByRole('button', { name: 'More', exact: true })
+  if (item.phone === 'more' && await more.isVisible()) {
+    await more.click()
+    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: item.label, exact: true }).click()
+    await page.waitForURL(url => url.pathname === item.to)
+    await expect(page.getByRole('dialog', { name: 'More' })).toHaveCount(0)
+    return more
+  }
+  const link = nav.getByRole('link', { name: item.label, exact: true })
+  await link.click()
+  await page.waitForURL(url => url.pathname === item.to)
+  return link
+}
+
 test.describe('app shell', () => {
   test('primary navigation reaches every page and marks it current', async ({ page, api }) => {
     await api.mockCatalog()
     await gotoReady(page, '/business-card')
-    const nav = page.getByRole('navigation', { name: 'Primary' })
-    await expect(nav).toHaveCount(1)
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toHaveCount(1)
 
     for (const item of NAV_ITEMS) {
-      const link = nav.getByRole('link', { name: item.label, exact: true })
-      await link.click()
-      await page.waitForURL(url => url.pathname === item.to)
-      await expect(link).toHaveAttribute('aria-current', 'page')
+      const current = await goTo(page, item)
+      await expect(current).toHaveAttribute('aria-current', 'page')
     }
   })
 
@@ -33,16 +48,54 @@ test.describe('app shell', () => {
     }
   })
 
-  test('tab bar links are comfortable tap targets', async ({ page, isMobile }) => {
+  test('the tab bar shows five comfortable tap targets', async ({ page, isMobile }) => {
     test.skip(!isMobile, 'Tab bar is phone-only')
     await gotoReady(page, '/business-card')
-    const links = page.getByRole('navigation', { name: 'Primary' }).getByRole('link')
-    await expect(links).toHaveCount(NAV_ITEMS.length)
-    for (const link of await links.all()) {
-      const box = await link.boundingBox()
+    const nav = page.getByRole('navigation', { name: 'Primary' })
+    const targets = nav.locator('a[href], button')
+    await expect(targets).toHaveCount(5)
+    await expect(nav.getByRole('link')).toHaveText(['Home', 'Catalog', 'Commissions', 'Print'])
+    await expect(nav.getByRole('button', { name: 'More', exact: true })).toBeVisible()
+    for (const target of await targets.all()) {
+      const box = await target.boundingBox()
       expect(box.height).toBeGreaterThanOrEqual(44)
       expect(box.width).toBeGreaterThanOrEqual(44)
     }
+  })
+
+  test('More opens the other pages and is highlighted on them', async ({ page, api, isMobile }) => {
+    test.skip(!isMobile, 'More is phone-only')
+    await api.mockCatalog()
+    await gotoReady(page, '/catalog')
+    const nav = page.getByRole('navigation', { name: 'Primary' })
+    const more = nav.getByRole('button', { name: 'More', exact: true })
+    await expect(more).not.toHaveAttribute('aria-current', 'page')
+    await more.click()
+    const sheet = page.getByRole('dialog', { name: 'More' })
+    await expect(sheet.getByRole('link')).toHaveText(['Reports', 'Business Card', 'Settings'])
+    await sheet.getByRole('link', { name: 'Settings', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/settings')
+    await expect(sheet).toHaveCount(0)
+    await expect(more).toHaveAttribute('aria-current', 'page')
+
+    for (const path of ['/reports', '/business-card']) {
+      await gotoReady(page, path)
+      await expect(more).toHaveAttribute('aria-current', 'page')
+    }
+    await gotoReady(page, '/commissions')
+    await expect(more).not.toHaveAttribute('aria-current', 'page')
+    await expect(nav.getByRole('link', { name: 'Commissions', exact: true })).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('the side nav lists all seven pages', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'The side nav is for larger screens')
+    await gotoReady(page, '/business-card')
+    const nav = page.getByRole('navigation', { name: 'Primary' })
+    const links = nav.getByRole('link')
+    await expect(links).toHaveCount(7)
+    const labels = ['Dashboard', 'Catalog', 'Commissions', 'Print board', 'Reports', 'Business Card', 'Settings']
+    for (const [index, label] of labels.entries()) await expect(links.nth(index)).toHaveAccessibleName(label)
+    await expect(nav.getByRole('button', { name: 'More', exact: true })).toHaveCount(0)
   })
 
   test('header shows the balance on every screen size', async ({ page }) => {
@@ -71,9 +124,9 @@ test.describe('app shell', () => {
     const nav = page.getByRole('navigation', { name: 'Primary' })
     const html = page.locator('html')
 
+    await expect(nav).toHaveCount(1)
     for (const item of NAV_ITEMS) {
-      await nav.getByRole('link', { name: item.label, exact: true }).click()
-      await page.waitForURL(url => url.pathname === item.to)
+      await goTo(page, item)
       await expect(html).toHaveClass(/dark/)
     }
   })

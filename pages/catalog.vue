@@ -4,12 +4,6 @@
       <div class="min-w-0">
         <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products">
           <template v-if="isOwner" #actions>
-            <BaseButton variant="secondary" icon="clipboard" @click="navigateTo('/commissions')">
-              <span class="sr-only sm:not-sr-only">Commissions</span>
-            </BaseButton>
-            <BaseButton variant="secondary" icon="printer" @click="navigateTo('/print-board')">
-              <span class="sr-only sm:not-sr-only">Print board</span>
-            </BaseButton>
             <BaseButton :variant="managing ? 'primary' : 'secondary'" icon="cog" :aria-pressed="managing" @click="managing = !managing">
               {{ managing ? 'Done' : 'Manage' }}
             </BaseButton>

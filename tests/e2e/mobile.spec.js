@@ -142,4 +142,14 @@ test.describe('phone layout sweep', () => {
     expect(await dialog.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
     expect(await smallTargets(page)).toEqual([])
   })
+
+  test('the More sheet fits at 375px with 44px targets', async ({ page, api }) => {
+    await api.mockCatalog()
+    await gotoReady(page, '/')
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'More', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'More' })).toBeVisible()
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
+    expect(await smallTargets(page)).toEqual([])
+  })
 })

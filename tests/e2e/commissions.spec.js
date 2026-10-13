@@ -467,10 +467,10 @@ test.describe('entry points', () => {
     await expect(page.getByRole('button', { name: 'Commission', exact: true })).toBeDisabled()
   })
 
-  test('the catalog header links to the commissions page', async ({ page, api }) => {
+  test('the Commissions tab opens the commissions page', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/catalog')
-    await page.getByRole('button', { name: 'Commissions' }).click()
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Commissions', exact: true }).click()
     await page.waitForURL(url => url.pathname === '/commissions')
   })
 
