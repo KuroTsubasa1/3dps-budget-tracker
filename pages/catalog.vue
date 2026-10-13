@@ -149,7 +149,7 @@
             @decrement="decrementQuantity"
             @remove="removeProduct"
             @submit="submitToBalance"
-            @commission="startCommission"
+          @commission="startCommission"
           />
         </BaseCard>
       </aside>

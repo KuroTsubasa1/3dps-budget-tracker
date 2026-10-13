@@ -136,7 +136,7 @@ async function migrateSchema () {
   const legacyCommissions = planCommissionItems(byName(collections, 'commissions') ? await listRecords('commissions') : [], articles)
   console.log(legacyCommissions.length
     ? `Commissions to convert to items: ${legacyCommissions.length}`
-    : 'Commissions: all converted to items')
+    : 'Commissions: nothing to convert')
 
   console.log(`Accounts in "users": ${await accountCount()} (the owner is chosen with --owner when running --apply-rules)`)
 
@@ -148,8 +148,16 @@ async function migrateSchema () {
   for (const op of ops) await applyOp(op)
   // After the schema ops, items exists. Planned again from fresh records, so a re-run skips converted ones.
   const converting = planCommissionItems(await listRecords('commissions'), articles)
-  for (const { id, patch } of converting) await api('PATCH', `/collections/commissions/records/${id}`, patch)
-  if (converting.length) console.log(`Converted ${converting.length} commissions to items`)
+  // One bad record must not stop the rest: collect the failures and report them at the end
+  const unconverted = []
+  for (const { id, patch } of converting) {
+    try {
+      await api('PATCH', `/collections/commissions/records/${id}`, patch)
+    } catch (error) {
+      unconverted.push({ id, reason: reason(error) })
+    }
+  }
+  if (converting.length) console.log(`Converted ${converting.length - unconverted.length} commissions to items`)
   for (const item of seed) await api('POST', '/collections/categories/records', item)
 
   const categories = await listRecords('categories')
@@ -169,6 +177,11 @@ async function migrateSchema () {
   }
   for (const op of planRequireCategory(await listCollections())) await applyOp(op)
   await writeSnapshot()
+  if (unconverted.length) {
+    console.error(`Could not convert commissions: ${unconverted.map(item => item.id).join(', ')} (${[...new Set(unconverted.map(item => item.reason))].join('; ')})`)
+    process.exitCode = 1
+    return
+  }
   console.log('Done. Deploy the new app, then run: npm run pb:migrate -- --apply-rules')
 }
 

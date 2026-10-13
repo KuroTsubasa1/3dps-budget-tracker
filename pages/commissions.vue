@@ -96,7 +96,12 @@ const visible = computed(() => commissions.value.filter(item => tabOf(item) === 
 const subtitleOf = item =>
   [summaryOf(item, articles.value), item.fulfilment === 'shipping' ? 'Ship' : 'Pickup'].filter(Boolean).join(' · ')
 
+// The cart lines are taken once, when the page first loads, and kept here for Try Again:
+// leaving the page drops them, so a later visit never reopens an old cart
+let draftLines = null
+
 const load = async () => {
+  if (draftLines === null) draftLines = takeDraft()
   loading.value = true
   loadError.value = ''
   try {
@@ -122,9 +127,10 @@ const load = async () => {
 onMounted(load)
 
 // Cart lines from the catalog open the new-commission form once, after the articles and deals are loaded
-// (so the price suggestion has them). A failed load keeps the draft for Try Again.
+// (so the price suggestion has them). A failed load keeps the lines for Try Again.
 const openDraft = () => {
-  const lines = takeDraft()
+  const lines = draftLines || []
+  draftLines = []
   if (!lines.length) return
   presetItems.value = lines
   selected.value = null

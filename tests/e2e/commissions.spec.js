@@ -375,6 +375,41 @@ test.describe('the commissions page', () => {
     await expect(sheet(page).getByRole('alert')).toHaveCount(0)
   })
 
+  test('a commission can be created without an email', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await addArticle(page, 'Glurak Figure')
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(page.getByText('Commission created')).toBeVisible()
+    expect(api.db.commissions[0]).toMatchObject({ customer_name: 'Misty', customer_email: '' })
+  })
+
+  test('a server that is not migrated yet is reported, not saved silently', async ({ page, api }) => {
+    seedWith(api)
+    api.stripItems('commissions')
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await addArticle(page, 'Glurak Figure')
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('The server needs updating — run the migration first')
+    await expect(sheet(page).getByLabel('Customer name')).toHaveValue('Misty')
+    await expect(page.getByText('Commission created')).toHaveCount(0)
+  })
+
+  test('a create the server rejects for the required article asks for the migration', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await addArticle(page, 'Glurak Figure')
+    api.fail('commissions', 400, { article: { code: 'validation_required', message: 'Cannot be blank.' } })
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('The server needs updating — run the migration first')
+  })
+
   test('customer data can be deleted on request', async ({ page, api }) => {
     seedWith(api, [commission()])
     await gotoReady(page, '/commissions')
@@ -458,6 +493,26 @@ test.describe('entry points', () => {
     await page.getByRole('button', { name: '+ New commission' }).click()
     await expect(sheet(page).getByRole('group', { name: /^Quantity of / })).toHaveCount(0)
     await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('')
+  })
+
+  test('a cart draft is not kept when the list fails to load', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await addToCart(page, 'Totoro')
+    await openCart(page)
+    api.failReads('commissions', 500)
+    await page.getByRole('button', { name: 'Commission', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+    await expect(page.getByText('Could not load commissions')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
+
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/')
+    api.failReads('commissions', 0)
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Commissions', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+    await expect(page.getByText('No commissions here')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
   })
 
   test('an empty cart cannot become a commission', async ({ page, api }) => {

@@ -98,6 +98,8 @@ export function createFakePocketBase () {
   const failures = {}
   const readFailures = {}
   const delays = {}
+  // Collections whose write replies drop `items`, like a server that has not been migrated yet
+  const stripItems = new Set()
   const requests = []
   const state = { enabled: false }
 
@@ -168,6 +170,7 @@ export function createFakePocketBase () {
     const delay = delays[name]
     delays[name] = 0
     const done = async (status, json) => {
+      if (stripItems.has(name)) { json = { ...json }; delete json.items }
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       if (!drop) return reply(status, json)
       failures[name] = 0
@@ -197,5 +200,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, readFailures, delays, requests, state, handle }
+  return { db, failures, readFailures, delays, stripItems, requests, state, handle }
 }

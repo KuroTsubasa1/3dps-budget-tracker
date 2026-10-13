@@ -131,7 +131,9 @@ export function validateCommission (form) {
   // An anonymised commission has no customer data left to require
   if (!form.anonymised) {
     if (!String(form.customerName ?? '').trim()) return "Enter the customer's name"
-    if (!EMAIL.test(String(form.email ?? '').trim())) return 'Enter a valid email address'
+    // The email is optional; a given one must be valid
+    const email = String(form.email ?? '').trim()
+    if (email && !EMAIL.test(email)) return 'Enter a valid email address'
   }
   const items = Array.isArray(form.items) ? form.items : []
   if (!items.length) return 'Add at least one article'

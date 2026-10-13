@@ -111,6 +111,13 @@ test('a complete commission is valid', () => {
   assert.equal(validateCommission({ ...VALID, fulfilment: 'shipping', address: 'Krete 8, Eutin' }), '')
 })
 
+test('the email is optional, but a given one must be valid', () => {
+  assert.equal(validateCommission({ ...VALID, email: '' }), '')
+  assert.equal(validateCommission({ ...VALID, email: '   ' }), '')
+  assert.equal(validateCommission({ ...VALID, email: undefined }), '')
+  assert.equal(validateCommission({ ...VALID, email: 'not-an-email' }), 'Enter a valid email address')
+})
+
 test('validation names the first problem in a fixed order', () => {
   assert.equal(validateCommission({ ...VALID, customerName: '  ' }), "Enter the customer's name")
   assert.equal(validateCommission({ ...VALID, email: 'nope' }), 'Enter a valid email address')

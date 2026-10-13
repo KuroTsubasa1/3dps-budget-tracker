@@ -256,6 +256,8 @@ const cancelEdit = () => {
   mode.value = 'view'
 }
 
+const NOT_MIGRATED = 'The server needs updating — run the migration first'
+
 const save = async () => {
   if (busy.value) return
   error.value = validateCommission({ ...form.value, anonymised: anonymised.value })
@@ -281,19 +283,22 @@ const save = async () => {
   try {
     if (props.commission) {
       const record = await updateCommission(props.commission.id, fields)
+      if (!Array.isArray(record.items)) throw new Error(NOT_MIGRATED)
       emit('changed', record)
       mode.value = 'view'
     } else {
       const record = await createCommission(fields)
+      if (!Array.isArray(record.items)) throw new Error(NOT_MIGRATED)
       emit('saved', record)
       emit('update:open', false)
       toast('Commission created')
     }
   } catch (err) {
     // PocketBase 0.22 reports field errors under response.data.<field>
-    error.value = err?.status === 400 && err.response?.data?.customer_email
-      ? 'Enter a valid email address'
-      : failMessage(err, 'Could not save the commission. Try again.')
+    // A server without the migration has no items field and still requires an article
+    if (err?.message === NOT_MIGRATED || (err?.status === 400 && err.response?.data?.article)) error.value = NOT_MIGRATED
+    else if (err?.status === 400 && err.response?.data?.customer_email) error.value = 'Enter a valid email address'
+    else error.value = failMessage(err, 'Could not save the commission. Try again.')
   } finally {
     busy.value = false
   }

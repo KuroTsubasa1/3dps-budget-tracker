@@ -32,6 +32,7 @@
           <ListRow
             :to="item.to"
             :title="item.label"
+            @click="moreOpen = false"
             :icon="item.icon"
             :icon-class="isActivePath(route.path, item.to) ? 'bg-accent/10 text-accent' : 'bg-muted text-ink-muted'"
           />

@@ -174,6 +174,8 @@ Order matters:
 Run `--apply-rules` right after the new app is live, before selling or editing anything. Until then the new app cannot save sales, stock or categories.
 Updating from an earlier version: re-run `npm run pb:migrate -- --apply` (creates and seeds `deals`) before deploying this build, then `--apply-rules` to open deal editing to the owner.
 
+Rollout for the multi-article commissions release: run `npm run pb:migrate` (dry run, it should list the commissions to convert), then `npm run pb:migrate -- --apply`, then deploy right away. Don't edit commissions on a device until it has loaded the new app (reload an installed PWA once).
+
 Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.

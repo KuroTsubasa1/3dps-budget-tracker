@@ -106,6 +106,8 @@ export const test = base.extend({
       failOnce (collection, status) { fake.failures[collection] = { status, once: true } },
       // Every read of the collection answers `status` (a collection whose listRule is still locked)
       failReads (collection, status) { fake.readFailures[collection] = status },
+      // Write replies for the collection come back without `items` (a server that is not migrated yet)
+      stripItems (collection) { fake.stripItems.add(collection) },
       // The next write to the collection succeeds but answers only after `ms`
       delayNext (collection, ms) { fake.delays[collection] = ms }
     }

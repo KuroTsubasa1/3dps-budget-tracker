@@ -87,6 +87,17 @@ test.describe('app shell', () => {
     await expect(nav.getByRole('link', { name: 'Commissions', exact: true })).toHaveAttribute('aria-current', 'page')
   })
 
+  test('tapping the current page in More closes the sheet', async ({ page, api, isMobile }) => {
+    test.skip(!isMobile, 'More is phone-only')
+    await api.mockCatalog()
+    await gotoReady(page, '/settings')
+    const nav = page.getByRole('navigation', { name: 'Primary' })
+    await nav.getByRole('button', { name: 'More', exact: true }).click()
+    const sheet = page.getByRole('dialog', { name: 'More' })
+    await sheet.getByRole('link', { name: 'Settings', exact: true }).click()
+    await expect(sheet).toHaveCount(0)
+  })
+
   test('the side nav lists all seven pages', async ({ page, isMobile }) => {
     test.skip(isMobile, 'The side nav is for larger screens')
     await gotoReady(page, '/business-card')
