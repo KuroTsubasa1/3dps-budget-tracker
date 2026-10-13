@@ -140,7 +140,7 @@ const FULFILMENT_OPTIONS = [
   { value: 'shipping', label: 'Shipping' }
 ]
 
-const { createCommission, updateCommission, anonymise } = useCommissions()
+const { getCommission, createCommission, updateCommission, anonymise } = useCommissions()
 const { addTransaction } = useTransactions()
 const { toast } = useToast()
 
@@ -267,21 +267,45 @@ const save = async () => {
 }
 
 // The commission is updated first; income is only booked once the server has accepted "delivered"
+const bookDelivery = (record) => {
+  emit('changed', record)
+  const income = incomeFor(record, record.expand?.article?.name ?? articleName.value)
+  addTransaction({ ...income, date: new Date().toISOString().split('T')[0] })
+  toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
+}
+
 const move = async (target) => {
   if (busy.value) return
   busy.value = true
   error.value = ''
+  const delivering = target === 'delivered'
+  let patchSent = false
   try {
-    const record = await updateCommission(props.commission.id, transitionPatch(props.commission, target))
-    confirming.value = ''
-    emit('changed', record)
-    if (target === 'delivered') {
-      const income = incomeFor(record, record.expand?.article?.name ?? articleName.value)
-      addTransaction({ ...income, date: new Date().toISOString().split('T')[0] })
-      toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
+    let current = props.commission
+    if (delivering) {
+      // A second device may have delivered it already: never book from a stale screen
+      current = await getCommission(props.commission.id)
+      if (current.status !== props.commission.status) {
+        emit('changed', current)
+        error.value = 'This commission was already updated — check its status'
+        return
+      }
     }
+    patchSent = true
+    const record = await updateCommission(props.commission.id, transitionPatch(current, target))
+    patchSent = false
+    confirming.value = ''
+    if (delivering) bookDelivery(record)
+    else emit('changed', record)
   } catch (err) {
-    error.value = failMessage(err, 'Could not update the commission. Check your connection and try again.')
+    // The reply may have been lost after the server accepted "delivered": confirm before giving up
+    const landed = delivering && patchSent ? await getCommission(props.commission.id).catch(() => null) : null
+    if (landed?.status === 'delivered') {
+      confirming.value = ''
+      bookDelivery(landed)
+    } else {
+      error.value = failMessage(err, 'Could not update the commission. Check your connection and try again.')
+    }
   } finally {
     busy.value = false
   }

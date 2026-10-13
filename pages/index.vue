@@ -99,13 +99,15 @@ definePageMeta({ middleware: 'owner' })
 
 const { transactions, earnings, todayEarnings } = useTransactions()
 const { displaySettings } = useAppSettings()
-const { listCommissions } = useCommissions()
+const { listCommissions, anonymiseDue } = useCommissions()
 const openCommissions = ref(0)
 
 onMounted(async () => {
   try {
     const list = await listCommissions()
     openCommissions.value = list.filter(item => ['open', 'printing', 'ready'].includes(item.status)).length
+    // DSGVO wipe also runs here, so it happens even if the Commissions page is never opened
+    anonymiseDue(list).catch(() => {})
   } catch {
     // No commissions collection yet (before the migration) or offline: the card simply stays hidden
   }

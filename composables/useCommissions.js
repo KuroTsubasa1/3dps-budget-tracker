@@ -8,6 +8,7 @@ export const useCommissions = () => {
   const withArticle = { expand: 'article' }
 
   const listCommissions = () => pb.collection(COMMISSIONS).getFullList({ expand: 'article', sort: '-created' })
+  const getCommission = id => pb.collection(COMMISSIONS).getOne(id, withArticle)
   const createCommission = fields => pb.collection(COMMISSIONS).create({ ...fields, status: 'open' }, withArticle)
   const updateCommission = (id, fields) => pb.collection(COMMISSIONS).update(id, fields, withArticle)
   const anonymise = id => updateCommission(id, anonymisedPatch())
@@ -19,5 +20,5 @@ export const useCommissions = () => {
     return due.map(commission => commission.id)
   }
 
-  return { listCommissions, createCommission, updateCommission, anonymise, anonymiseDue }
+  return { listCommissions, getCommission, createCommission, updateCommission, anonymise, anonymiseDue }
 }

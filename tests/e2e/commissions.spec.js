@@ -173,6 +173,32 @@ test.describe('the commissions page', () => {
     expect(api.db.commissions[0].status).toBe('ready')
   })
 
+  test('a stale Ready screen does not book a delivery another device already made', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'ready' })])
+    await api.mockTransactions()
+    await gotoReady(page, '/commissions')
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Ready/ }).click()
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    api.db.commissions[0].status = 'delivered'
+    await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('This commission was already updated — check its status')
+    expect(api.posted).toHaveLength(0)
+  })
+
+  test('a lost reply on the delivery update still books the income once', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'ready' })])
+    await api.mockTransactions()
+    await gotoReady(page, '/commissions')
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Ready/ }).click()
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    api.fail('commissions', 'drop')
+    await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
+    await expect(page.getByText(/added to balance/)).toBeVisible()
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: 30 })
+    expect(api.db.commissions[0].status).toBe('delivered')
+  })
+
   test('a step back, a cancellation and the Done chip', async ({ page, api }) => {
     seedWith(api, [commission()])
     await gotoReady(page, '/commissions')
@@ -216,6 +242,13 @@ test.describe('the commissions page', () => {
 
     await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Done/ }).click()
     await expect(page.getByRole('button', { name: /Anonymised/ })).toBeVisible()
+  })
+
+  test('the dashboard also anonymises finished commissions older than six months', async ({ page, api }) => {
+    seedWith(api, [commission({ id: 'old', status: 'delivered', delivered_at: monthsAgo(7) })])
+    await gotoReady(page, '/')
+    await expect.poll(() => api.db.commissions[0].customer_name).toBe('—')
+    expect(api.db.commissions[0].anonymised_at).toBeTruthy()
   })
 
   test('customer data can be deleted on request', async ({ page, api }) => {
