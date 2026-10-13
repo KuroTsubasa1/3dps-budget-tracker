@@ -3,6 +3,7 @@ import { useRuntimeConfig } from 'nuxt/app'
 import { useOfflineQueue } from './useOfflineQueue'
 import { usePocketBase } from './usePocketBase'
 import { useInventory } from './useInventory'
+import { newRecordId } from '~/utils/inventory'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
 const transactions = ref([])
@@ -69,7 +70,8 @@ export const useTransactions = () => {
 
   // The owner's session token replaces the shared x-token; PocketBase rules check @request.auth.
   // txSynced survives in the offline queue so a retry never posts the same transaction twice;
-  // stock movements are idempotent by id, so they are simply replayed.
+  // stock movements are idempotent by id, so they are simply replayed. The client record id
+  // covers a lost reply: PocketBase rejects the repeated id with a 400 naming data.id.
   const postTransaction = async (data) => {
     // PocketBase 0.22 answers an expired token as a guest (400/404), so check the session first
     if (!pb.authStore.isValid) {
@@ -82,15 +84,17 @@ export const useTransactions = () => {
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: pb.authStore.token },
-        body: JSON.stringify({ description: data.description, amount: data.amount, notes: data.notes || '' })
+        body: JSON.stringify({ id: data.recordId, description: data.description, amount: data.amount, notes: data.notes || '' })
       })
-      if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      const alreadyCreated = response.status === 400 && !!data.recordId && !!body?.data?.id
+      if (!response.ok && !alreadyCreated) {
         const error = new Error(`API error: ${response.status}`)
         error.status = response.status
         throw error
       }
       data.txSynced = true
-      record = await response.json()
+      record = response.ok ? body : null
     }
     if (data.stockMovements?.length) await applyMovements(data.stockMovements)
     return record
@@ -139,6 +143,8 @@ export const useTransactions = () => {
     const newTransaction = {
       id: Date.now(),
       ...transaction,
+      // Sent as the PocketBase record id and kept in the queue, so a retry can tell it already exists
+      recordId: newRecordId(),
       amount: Number(transaction.amount)
     }
     

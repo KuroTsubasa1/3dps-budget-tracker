@@ -118,3 +118,20 @@ test('a sale that fails to sync twice is retried until it succeeds', async ({ pa
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(9)
   await expect(page.getByText('1 pending')).toHaveCount(0)
 })
+
+test('a sale whose server reply was lost is not posted twice', async ({ page, api }) => {
+  api.seed({ articles: [keychain({ stock: 10 })] })
+  api.fail('budget_tracker_transactions', 'drop')
+  await gotoReady(page, '/catalog')
+  await addToCart(page, 'Pikachu Keychain', 1)
+  await openCart(page)
+  await page.getByRole('button', { name: 'Add to Balance' }).click()
+  await expect.poll(() => transactionPosts(api).length).toBe(1)
+
+  await goToDashboard(page)
+  await page.getByRole('button', { name: /Sync now/ }).click()
+  // Stock only moves once the sale counts as synced
+  await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(9)
+  expect(api.posted).toHaveLength(1)
+  await expect(page.getByText('1 pending')).toHaveCount(0)
+})

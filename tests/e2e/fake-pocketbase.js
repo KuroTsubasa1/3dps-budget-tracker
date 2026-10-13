@@ -141,7 +141,14 @@ export function createFakePocketBase () {
         ? reply(400, { code: 400, message: 'Failed to create record.', data: {} })
         : reply(404, { code: 404, message: 'The requested resource wasn\'t found.', data: {} })
     }
-    if (failures[name]) return reply(failures[name], { code: failures[name], message: 'Forced failure.', data: {} })
+    // 'drop' is one-shot: the write happens, then the reply is lost (the connection aborts)
+    const drop = failures[name] === 'drop'
+    if (failures[name] && !drop) return reply(failures[name], { code: failures[name], message: 'Forced failure.', data: {} })
+    const done = (status, json) => {
+      if (!drop) return reply(status, json)
+      failures[name] = 0
+      return route.abort()
+    }
 
     if (method === 'POST') {
       if (body.id && records.some(record => record.id === body.id)) {
@@ -149,11 +156,11 @@ export function createFakePocketBase () {
       }
       const record = applyChanges({ ...DEFAULTS[name], id: newId(), collectionName: name, created: stamp(), updated: stamp() }, body)
       records.push(record)
-      return reply(200, withExpand(record, expand))
+      return done(200, withExpand(record, expand))
     }
     const record = records.find(item => item.id === id)
     if (!record) return reply(404, { code: 404, message: 'Not found.', data: {} })
-    if (method === 'PATCH') return reply(200, withExpand(applyChanges(record, { ...body, updated: stamp() }), expand))
+    if (method === 'PATCH') return done(200, withExpand(applyChanges(record, { ...body, updated: stamp() }), expand))
     if (method === 'DELETE') {
       // Mirrors PocketBase: a required relation blocks deleting the referenced record
       if (name === 'categories' && db.budget_tracket_catalog.some(article => article.category === id)) {
