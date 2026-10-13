@@ -129,7 +129,7 @@ const keyOf = (card) => {
 const customerOf = commission => (commission.anonymised_at ? 'Anonymised' : commission.customer_name)
 const titleOf = card => (card.kind === 'commission' ? `Commission · ${customerOf(card.commission)}` : (card.article?.name ?? 'Unknown article'))
 const detailOf = (card) => {
-  if (card.kind === 'stock') return `${Number(card.article.stock)} left · target ${targetFor(card.article)}`
+  if (card.kind === 'stock') return `${Number(card.article.stock) || 0} left · target ${targetFor(card.article)}`
   if (card.kind === 'job') return `Stock print × ${card.job.quantity}`
   return `${card.commission.expand?.article?.name ?? 'Unknown article'} × ${card.commission.quantity}`
 }
