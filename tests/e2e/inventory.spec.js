@@ -65,9 +65,8 @@ test('an offline checkout syncs its stock changes later', async ({ page, api, co
   await page.getByRole('button', { name: 'Add to Balance' }).click()
   expect(loggedMovements(api)).toHaveLength(0)
 
+  // Coming back online syncs the queue by itself (the window online event)
   await context.setOffline(false)
-  await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
-  await page.getByRole('button', { name: /Sync now/ }).click()
 
   await expect.poll(() => loggedMovements(api).length).toBe(1)
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(4)
@@ -91,4 +90,31 @@ test('a retried sync does not duplicate the sale', async ({ page, api }) => {
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(3)
   expect(api.posted).toHaveLength(1)
   expect(loggedMovements(api)).toHaveLength(1)
+})
+
+const transactionPosts = api =>
+  api.requests.filter(request => request.method === 'POST' && request.path.endsWith('/budget_tracker_transactions/records'))
+const goToDashboard = page =>
+  page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
+
+test('a sale that fails to sync twice is retried until it succeeds', async ({ page, api }) => {
+  api.seed({ articles: [keychain({ stock: 10 })] })
+  api.fail('budget_tracker_transactions', 500)
+  await gotoReady(page, '/catalog')
+  await addToCart(page, 'Pikachu Keychain', 1)
+  await openCart(page)
+  await page.getByRole('button', { name: 'Add to Balance' }).click()
+  await expect.poll(() => transactionPosts(api).length).toBe(1)
+
+  await goToDashboard(page)
+  await page.getByRole('button', { name: /Sync now/ }).click()
+  await expect.poll(() => transactionPosts(api).length).toBe(2)
+  await expect(page.getByRole('button', { name: /Syncing/ })).toHaveCount(0)
+  await expect(page.getByText('1 pending')).toBeVisible()
+
+  api.fail('budget_tracker_transactions', 0)
+  await page.getByRole('button', { name: /Sync now/ }).click()
+  await expect.poll(() => api.posted.length).toBe(1)
+  await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(9)
+  await expect(page.getByText('1 pending')).toHaveCount(0)
 })

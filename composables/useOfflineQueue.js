@@ -52,7 +52,8 @@ export const useOfflineQueue = () => {
       for (let i = 0; i < newQueue.length; i++) {
         const item = newQueue[i]
         
-        if (item.status === 'pending') {
+        // A failed item is retried on every sync until it succeeds; lastError keeps the latest reason
+        if (item.status === 'pending' || item.status === 'failed') {
           try {
             await apiHandler(item)
             newQueue[i] = { ...item, status: 'synced', syncedAt: new Date().toISOString() }

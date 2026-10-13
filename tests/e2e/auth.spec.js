@@ -42,6 +42,23 @@ test.describe('logged out', () => {
     expect(page.url()).not.toContain('evil.example')
   })
 
+  test('logging in syncs a sale queued while the session was expired', async ({ page, context, api }) => {
+    api.enable()
+    await context.addInitScript(() => {
+      if (sessionStorage.getItem('queue-seeded')) return
+      const sale = { id: 1, description: 'Queued sale', amount: 12, date: '2026-10-13', notes: '' }
+      localStorage.setItem('budget-tracker-offline-queue', JSON.stringify([{ ...sale, queuedAt: '2026-10-13T10:00:00.000Z', status: 'failed', lastError: 'Session expired' }]))
+      sessionStorage.setItem('queue-seeded', '1')
+    })
+    await gotoReady(page, '/login')
+    await page.getByLabel('Email').fill('owner@example.com')
+    await page.getByLabel('Password').fill('correct-horse')
+    await page.getByRole('button', { name: 'Log in' }).click()
+
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ description: 'Queued sale', amount: 12 })
+  })
+
   test('the catalog can be browsed but not sold from', async ({ page, api }) => {
     await api.mockCatalog()
     await gotoReady(page, '/catalog')

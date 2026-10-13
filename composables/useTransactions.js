@@ -9,6 +9,7 @@ const transactions = ref([])
 const isLoading = ref(false)
 const apiError = ref('')
 let autoSyncStarted = false
+let networkListening = false
 const syncStatus = ref({ 
   lastSync: null, 
   pendingSync: 0,
@@ -32,19 +33,14 @@ export const useTransactions = () => {
   } = useOfflineQueue()
 
   // Update sync status when queue changes
+  // Failed items are retried, so they still count as pending
   watch(offlineQueue, (newQueue) => {
-    syncStatus.value.pendingSync = newQueue.filter(item => item.status === 'pending').length
+    syncStatus.value.pendingSync = newQueue.filter(item => item.status !== 'synced').length
   }, { immediate: true, deep: true })
 
-  // Update online status. Not immediate: a page mounting with a queued sale must not
-  // sync behind the owner's back (and the callback runs before syncTransactionsQueue exists)
+  // isOnline is a plain function, not a ref: the window online/offline events registered in
+  // setupAutoSync keep this flag current and sync the queue when the connection returns
   syncStatus.value.isOnline = isOnline()
-  watch(isOnline, (online) => {
-    syncStatus.value.isOnline = online
-    if (online && syncStatus.value.pendingSync > 0) {
-      syncTransactionsQueue()
-    }
-  })
 
   // Calculate all-time earnings/balance
   const earnings = computed(() => 
@@ -177,6 +173,18 @@ export const useTransactions = () => {
       syncTransactionsQueue()
     }
     
+    // Once per app: sync as soon as the connection comes back
+    if (!networkListening) {
+      networkListening = true
+      window.addEventListener('online', () => {
+        syncStatus.value.isOnline = true
+        syncTransactionsQueue()
+      })
+      window.addEventListener('offline', () => {
+        syncStatus.value.isOnline = false
+      })
+    }
+
     // Set up interval to check for pending transactions while online
     const checkInterval = setInterval(() => {
       if (isOnline() && offlineQueue.value.length > 0 && !isSyncing.value) {
@@ -214,6 +222,6 @@ export const useTransactions = () => {
     syncStatus,
     syncTransactionsQueue,
     queueSyncStatus,
-    pendingTransactions: computed(() => offlineQueue.value.filter(t => t.status === 'pending'))
+    pendingTransactions: computed(() => offlineQueue.value.filter(t => t.status !== 'synced'))
   }
 }

@@ -20,11 +20,13 @@
 <script setup>
 import { ref } from 'vue'
 import { useAuth } from '~/composables/useAuth'
+import { useTransactions } from '~/composables/useTransactions'
 
 definePageMeta({ chromeless: true })
 
 const route = useRoute()
 const { login } = useAuth()
+const { syncTransactionsQueue } = useTransactions()
 
 const email = ref('')
 const password = ref('')
@@ -46,6 +48,8 @@ const submit = async () => {
   busy.value = true
   try {
     await login(email.value.trim(), password.value)
+    // Sales queued while the session was expired can sync now; navigation does not wait for it
+    syncTransactionsQueue()
     await navigateTo(redirectTarget(), { replace: true })
   } catch (err) {
     error.value = err.status === 400 ? 'Wrong email or password' : 'Could not reach the server. Check your connection.'
