@@ -57,7 +57,8 @@ const websiteUrl = 'https://3dps.space/'
 const QR_CODES = [
   { name: 'Website', url: websiteUrl, label: '3dps.space' },
   { name: 'Etsy', url: 'https://www.etsy.com/shop/3DPrintShopHarm', label: 'etsy.com/shop/3DPrintShopHarm' },
-  { name: 'Instagram', url: 'https://www.instagram.com/stories/3d.print.shop.harm/', label: 'instagram.com/3d.print.shop.harm' }
+  { name: 'Instagram', url: 'https://www.instagram.com/stories/3d.print.shop.harm/', label: 'instagram.com/3d.print.shop.harm' },
+  { name: 'PayPal', url: 'https://www.paypal.com/qrcodes/managed/53e0745c-52ea-4922-a33c-04d1c29908eb?utm_source=hawk_quick_link', label: 'Pay with PayPal' }
 ]
 
 const canShare = ref(false)

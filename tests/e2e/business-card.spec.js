@@ -10,21 +10,22 @@ test.describe('business card', () => {
     expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width)
   })
 
-  test('shows a QR code each for the website, Etsy and Instagram', async ({ page }) => {
+  test('shows a QR code each for the website, Etsy, Instagram and PayPal', async ({ page }) => {
     await gotoReady(page, '/business-card')
-    for (const name of ['Website', 'Etsy', 'Instagram']) {
+    for (const name of ['Website', 'Etsy', 'Instagram', 'PayPal']) {
       const block = page.getByRole('figure', { name })
       await expect(block).toBeVisible()
       await expect(block.locator('img[src^="data:image"], canvas').first()).toBeVisible()
     }
     await expect(page.getByRole('link', { name: 'etsy.com/shop/3DPrintShopHarm' })).toHaveAttribute('href', 'https://www.etsy.com/shop/3DPrintShopHarm')
     await expect(page.getByRole('link', { name: 'instagram.com/3d.print.shop.harm' })).toHaveAttribute('href', 'https://www.instagram.com/stories/3d.print.shop.harm/')
+    await expect(page.getByRole('link', { name: 'Pay with PayPal' })).toHaveAttribute('href', 'https://www.paypal.com/qrcodes/managed/53e0745c-52ea-4922-a33c-04d1c29908eb?utm_source=hawk_quick_link')
   })
 
   test('every QR code fits inside the screen', async ({ page }) => {
     await gotoReady(page, '/business-card')
     const codes = page.locator('figure').locator('img[src^="data:image"], canvas')
-    await expect(codes).toHaveCount(3)
+    await expect(codes).toHaveCount(4)
     for (const code of await codes.all()) {
       const box = await code.boundingBox()
       expect(box.x).toBeGreaterThanOrEqual(0)
