@@ -21,13 +21,35 @@ export function transitionPatch (commission, target, now = new Date()) {
 // PocketBase returns dates as "YYYY-MM-DD HH:MM:SS.sssZ"
 const parseDate = value => new Date(String(value).replace(' ', 'T'))
 
+// Same UTC time of day, ANONYMISE_AFTER_MONTHS earlier; the day is clamped to the target month's length
+function monthsBefore (now) {
+  const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - ANONYMISE_AFTER_MONTHS, 1))
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(
+    target.getUTCFullYear(),
+    target.getUTCMonth(),
+    Math.min(now.getUTCDate(), lastDay),
+    now.getUTCHours(),
+    now.getUTCMinutes(),
+    now.getUTCSeconds(),
+    now.getUTCMilliseconds()
+  ))
+}
+
+const holdsCustomerData = commission =>
+  commission.customer_name !== '—' ||
+  (!!commission.customer_email && commission.customer_email !== '') ||
+  (!!commission.address && commission.address !== '—')
+
+// Privacy fails safe: a missing or unparseable finish date counts as due. anonymised_at is not consulted,
+// so data re-entered after an earlier wipe is wiped again.
 export function dueForAnonymising (commission, now = new Date()) {
-  if (!isFinal(commission.status) || commission.anonymised_at) return false
+  if (!isFinal(commission.status) || !holdsCustomerData(commission)) return false
   const finished = commission.status === 'delivered' ? commission.delivered_at : commission.cancelled_at
-  if (!finished) return false
-  const cutoff = new Date(now)
-  cutoff.setMonth(cutoff.getMonth() - ANONYMISE_AFTER_MONTHS)
-  return parseDate(finished) < cutoff
+  if (!finished) return true
+  const at = parseDate(finished)
+  if (Number.isNaN(at.getTime())) return true
+  return at < monthsBefore(now)
 }
 
 // The email field type rejects '—', so the email is cleared instead

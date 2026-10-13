@@ -39,16 +39,36 @@ test('final and cancellable statuses', () => {
 })
 
 test('anonymising is due only after six calendar months', () => {
-  const delivered = at => ({ status: 'delivered', delivered_at: at, anonymised_at: '' })
+  const delivered = at => ({ status: 'delivered', delivered_at: at, anonymised_at: '', customer_name: 'Ash' })
   assert.equal(dueForAnonymising(delivered('2026-04-14 12:00:00.000Z'), NOW), false)
   assert.equal(dueForAnonymising(delivered('2026-04-12 12:00:00.000Z'), NOW), true)
-  assert.equal(dueForAnonymising({ status: 'cancelled', cancelled_at: '2026-01-01T00:00:00.000Z', anonymised_at: '' }, NOW), true)
+  assert.equal(dueForAnonymising({ status: 'cancelled', cancelled_at: '2026-01-01T00:00:00.000Z', anonymised_at: '', customer_name: 'Ash' }, NOW), true)
 })
 
 test('open, already anonymised or undated commissions are never due', () => {
-  assert.equal(dueForAnonymising({ status: 'ready', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '' }, NOW), false)
-  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '2020-08-01 00:00:00.000Z' }, NOW), false)
-  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '', anonymised_at: '' }, NOW), false)
+  assert.equal(dueForAnonymising({ status: 'ready', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '', customer_name: 'Ash' }, NOW), false)
+  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '2020-08-01 00:00:00.000Z', customer_name: '—', customer_email: '', address: '—' }, NOW), false)
+})
+
+test('re-entered customer data is anonymised again after six months', () => {
+  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '2026-01-01 00:00:00.000Z', anonymised_at: '2025-12-01 00:00:00.000Z', customer_name: 'Misty', customer_email: 'm@x.de', address: '' }, NOW), true)
+})
+
+test('already wiped commissions are not due again', () => {
+  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', anonymised_at: '2020-08-01 00:00:00.000Z', customer_name: '—', customer_email: '', address: '—' }, NOW), false)
+})
+
+test('a finished commission without a valid finish date is due (fail safe)', () => {
+  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: '', customer_name: 'Misty', customer_email: '', address: '' }, NOW), true)
+  assert.equal(dueForAnonymising({ status: 'delivered', delivered_at: 'not a date', customer_name: 'Misty', customer_email: '', address: '' }, NOW), true)
+})
+
+test('the six-month cutoff clamps month ends and uses UTC', () => {
+  const august = new Date('2026-08-31T12:00:00.000Z')
+  const delivered = at => ({ status: 'delivered', delivered_at: at, anonymised_at: '', customer_name: 'Ash' })
+  assert.equal(dueForAnonymising(delivered('2026-02-28 12:00:01.000Z'), august), false)
+  assert.equal(dueForAnonymising(delivered('2026-02-28 11:59:59.000Z'), august), true)
+  assert.equal(dueForAnonymising(delivered('2026-03-01 00:00:00.000Z'), august), false)
 })
 
 test('the anonymised patch wipes name, email and address', () => {
