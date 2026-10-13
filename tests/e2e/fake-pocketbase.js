@@ -10,13 +10,14 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions']
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals']
 const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
   budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, images: [], price: 0, description: '' },
   stock_movements: { note: '' },
-  budget_tracker_transactions: { notes: '' }
+  budget_tracker_transactions: { notes: '' },
+  deals: {}
 }
 
 let counter = 0

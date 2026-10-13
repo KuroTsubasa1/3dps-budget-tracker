@@ -106,6 +106,9 @@
               <span class="self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="STOCK_BADGE[stockStatus(product.stock, product.low_stock_threshold)]">
                 {{ stockLabel(product) }}
               </span>
+              <span v-if="dealHint(product)" class="self-start rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                {{ dealHint(product) }}
+              </span>
               <div class="hidden sm:block">
                 <p class="line-clamp-2 text-xs text-ink-muted">{{ product.description }}</p>
               </div>
@@ -141,6 +144,7 @@
             :items="selectedProducts"
             :total="totalAmount"
             :price-of="priceOf"
+            :applied="pricedCart.applied"
             @increment="incrementQuantity"
             @decrement="decrementQuantity"
             @remove="removeProduct"
@@ -170,6 +174,7 @@
           :items="selectedProducts"
           :total="totalAmount"
           :price-of="priceOf"
+          :applied="pricedCart.applied"
           @increment="incrementQuantity"
           @decrement="decrementQuantity"
           @remove="removeProduct"
@@ -194,11 +199,13 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useArticles } from '~/composables/useArticles'
 import { useCategories } from '~/composables/useCategories'
+import { useDeals } from '~/composables/useDeals'
 import { useAuth } from '~/composables/useAuth'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
+import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
 import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
 
 const STOCK_BADGE = {
@@ -209,10 +216,12 @@ const STOCK_BADGE = {
 
 const { listActive, imageUrl } = useArticles()
 const { listCategories } = useCategories()
+const { listDeals } = useDeals()
 const { isOwner } = useAuth()
 
 const products = ref([])
 const categories = ref([])
+const deals = ref([])
 const loading = ref(false)
 const error = ref(null)
 
@@ -227,9 +236,10 @@ const fetchProducts = async () => {
   loading.value = true
   error.value = null
   try {
-    const [articles, categoryList] = await Promise.all([listActive(), listCategories()])
+    const [articles, categoryList, dealList] = await Promise.all([listActive(), listCategories(), listDeals()])
     products.value = articles.map(item => ({ ...item, quantity: 0 }))
     categories.value = categoryList
+    deals.value = dealList
   } catch (err) {
     error.value = 'Could not load products. Check your connection and try again.'
   } finally {
@@ -282,9 +292,25 @@ const clearFilters = () => {
 
 const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
 
-const totalAmount = computed(() => {
-  return products.value.reduce((sum, product) => sum + (priceOf(product) * product.quantity), 0)
-})
+// Cart lines in the shape priceCart expects; an article's own price (> 0) is an override that skips deals
+const cartLines = computed(() => selectedProducts.value.map(product => ({
+  articleId: product.id,
+  name: product.name,
+  quantity: product.quantity,
+  categoryId: product.category,
+  basePrice: product.expand?.category?.base_price ?? 0,
+  override: Number(product.price) > 0 ? Number(product.price) : 0
+})))
+
+const pricedCart = computed(() => priceCart(cartLines.value, deals.value))
+const totalAmount = computed(() => pricedCart.value.total)
+
+// Card hint: only regular (non-override) articles take part in deals
+const dealHint = (product) => {
+  if (Number(product.price) > 0) return ''
+  const deal = dealForCategory(deals.value, product.category)
+  return deal ? describeDeal(deal) : ''
+}
 
 const showCartBar = computed(() => isOwner.value && !isDesktop.value && selectedProducts.value.length > 0 && !isCartOpen.value)
 
@@ -351,8 +377,12 @@ const submitToBalance = () => {
     ...saleMovement(product.stock, product.quantity)
   }))
 
+  const dealNote = pricedCart.value.applied.length
+    ? `\nDeals: ${pricedCart.value.applied.map(deal => `${deal.name} (−${formatCurrency(deal.saving)})`).join(', ')}`
+    : ''
+
   addTransaction({
-    description: `3D Printing Products:\n${productNames}`,
+    description: `3D Printing Products:\n${productNames}${dealNote}`,
     amount: total,
     date: new Date().toISOString().split('T')[0],
     stockMovements
