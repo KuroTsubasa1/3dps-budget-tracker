@@ -1,4 +1,5 @@
 // Commission lifecycle and privacy rules. See docs/superpowers/specs/2026-10-13-commissions-design.md
+import { priceCart } from './deals.js'
 export const STATUS_LABEL = { open: 'Open', printing: 'Printing', ready: 'Ready', delivered: 'Delivered', cancelled: 'Cancelled' }
 export const NEXT = { open: 'printing', printing: 'ready', ready: 'delivered' }
 export const PREVIOUS = { printing: 'open', ready: 'printing' }
@@ -58,6 +59,62 @@ export function dueForAnonymising (commission, now = new Date()) {
 // The email field type rejects '—', so the email is cleared instead
 export const anonymisedPatch = (now = new Date()) =>
   ({ customer_name: '—', customer_email: '', address: '—', anonymised_at: now.toISOString() })
+
+export const UNKNOWN_ARTICLE = 'Unknown article'
+
+const nameIn = (articles, id) => articles.find(article => article.id === id)?.name
+
+// A commission's lines. New records keep them in `items`; records from before multi-article commissions
+// (or before the data conversion) have one `article` × `quantity`, read here as a single line.
+// A saved line shows its article's current name while the article is active, else the name copied when it was added.
+export function itemsOf (commission, articles = []) {
+  if (Array.isArray(commission?.items) && commission.items.length) {
+    return commission.items.map(line => ({ ...line, name: nameIn(articles, line.article) ?? line.name ?? UNKNOWN_ARTICLE }))
+  }
+  if (!commission?.article) return []
+  const name = commission.expand?.article?.name ?? nameIn(articles, commission.article) ?? UNKNOWN_ARTICLE
+  return [{ article: commission.article, name, quantity: Number(commission.quantity) }]
+}
+
+const lineText = line => `${line.name} × ${line.quantity}`
+
+// List rows: "× n" only above 1; more than two lines show the first two and "+n more"
+export function summaryOf (commission, articles = []) {
+  const lines = itemsOf(commission, articles)
+  const shown = lines.slice(0, 2).map(line => (Number(line.quantity) > 1 ? lineText(line) : line.name)).join(', ')
+  return lines.length > 2 ? `${shown} +${lines.length - 2} more` : shown
+}
+
+// Form helpers: each returns a new array, so the form's list is replaced, never changed in place
+export function addLine (items, article) {
+  if (items.some(line => line.article === article.id)) {
+    return items.map(line => (line.article === article.id ? { ...line, quantity: Number(line.quantity) + 1 } : line))
+  }
+  return [...items, { article: article.id, name: article.name, quantity: 1 }]
+}
+
+export const setLineQuantity = (items, index, quantity) =>
+  items.map((line, i) => (i === index ? { ...line, quantity: Math.max(1, quantity) } : line))
+
+export const removeLine = (items, index) => items.filter((line, i) => i !== index)
+
+// Deal-aware price for the lines, as the cart would charge it. A line whose article is not in
+// `articles` (archived since) has no current price and is left out.
+export function suggestedPriceFor (items, articles, deals = []) {
+  const cartLines = items.flatMap((line) => {
+    const article = articles.find(item => item.id === line.article)
+    if (!article) return []
+    return [{
+      articleId: article.id,
+      name: article.name,
+      quantity: Number(line.quantity),
+      categoryId: article.category,
+      basePrice: article.expand?.category?.base_price ?? 0,
+      override: Number(article.price) > 0 ? Number(article.price) : 0
+    }]
+  })
+  return priceCart(cartLines, deals).total
+}
 
 export const incomeFor = (commission, articleName) => ({
   description: `Commission: ${articleName} × ${commission.quantity} (${commission.customer_name})`,

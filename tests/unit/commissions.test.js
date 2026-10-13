@@ -9,11 +9,25 @@ import {
   transitionPatch,
   dueForAnonymising,
   anonymisedPatch,
+  UNKNOWN_ARTICLE,
+  itemsOf,
+  summaryOf,
   incomeFor,
-  validateCommission
+  validateCommission,
+  addLine,
+  setLineQuantity,
+  removeLine,
+  suggestedPriceFor
 } from '../../utils/commissions.js'
 
 const NOW = new Date('2026-10-13T12:00:00.000Z')
+
+const ARTICLES = [
+  { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', price: 0, expand: { category: { base_price: 4 } } },
+  { id: 't1', name: 'Totoro', category: 'cat-mini', price: 0, expand: { category: { base_price: 8 } } }
+]
+const DEALS = [{ id: 'd1', name: 'Keychain 2 for 7', type: 'bundle', categories: ['cat-keychain'], min_qty: 2, price: 7 }]
+const TWO_LINES = [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }, { article: 't1', name: 'Totoro', quantity: 1 }]
 
 test('forward, back and cancel moves follow the lifecycle', () => {
   assert.deepEqual(NEXT, { open: 'printing', printing: 'ready', ready: 'delivered' })
@@ -140,4 +154,66 @@ test('a record holding only an email still holds customer data', () => {
   assert.equal(dueForAnonymising({ ...wiped, customer_email: 'a@b.de' }, NOW), true)
   assert.equal(dueForAnonymising({ ...wiped, customer_email: '' }, NOW), false)
   assert.equal(dueForAnonymising(wiped, NOW), false)
+})
+
+test('itemsOf uses the saved lines, with the current name of an active article', () => {
+  const items = [{ article: 'k1', name: 'Old Pikachu', quantity: 2 }, { article: 'gone', name: 'Retired Dino', quantity: 1 }]
+  assert.deepEqual(itemsOf({ items, article: 'f1', quantity: 9 }, ARTICLES), [
+    { article: 'k1', name: 'Pikachu Keychain', quantity: 2 },
+    { article: 'gone', name: 'Retired Dino', quantity: 1 }
+  ])
+  assert.deepEqual(itemsOf({ items }), items)
+})
+
+test('itemsOf reads a legacy commission as one line', () => {
+  const legacy = { article: 'k1', quantity: 3 }
+  assert.equal(UNKNOWN_ARTICLE, 'Unknown article')
+  assert.deepEqual(itemsOf({ ...legacy, expand: { article: { name: 'From expand' } } }, ARTICLES), [{ article: 'k1', name: 'From expand', quantity: 3 }])
+  assert.deepEqual(itemsOf(legacy, ARTICLES), [{ article: 'k1', name: 'Pikachu Keychain', quantity: 3 }])
+  assert.deepEqual(itemsOf({ ...legacy, article: 'gone' }, ARTICLES), [{ article: 'gone', name: 'Unknown article', quantity: 3 }])
+  // PocketBase returns an empty json field as null; an empty list counts as no items too
+  assert.deepEqual(itemsOf({ ...legacy, items: null }, ARTICLES), [{ article: 'k1', name: 'Pikachu Keychain', quantity: 3 }])
+  assert.deepEqual(itemsOf({ ...legacy, items: [] }, ARTICLES), [{ article: 'k1', name: 'Pikachu Keychain', quantity: 3 }])
+})
+
+test('itemsOf returns no lines without items or an article', () => {
+  assert.deepEqual(itemsOf({ items: [], article: '' }), [])
+  assert.deepEqual(itemsOf({ items: null }), [])
+  assert.deepEqual(itemsOf({}), [])
+})
+
+test('summaryOf writes × only above 1 and folds more than two lines', () => {
+  const line = (name, quantity) => ({ article: name, name, quantity })
+  assert.equal(summaryOf({ items: TWO_LINES }), 'Pikachu Keychain × 2, Totoro')
+  assert.equal(summaryOf({ items: [line('Totoro', 1)] }), 'Totoro')
+  assert.equal(summaryOf({ items: [line('A', 1), line('B', 3), line('C', 1)] }), 'A, B × 3 +1 more')
+  assert.equal(summaryOf({ items: [line('A', 1), line('B', 3), line('C', 1), line('D', 2)] }), 'A, B × 3 +2 more')
+  assert.equal(summaryOf({ article: 'f1', quantity: 1, expand: { article: { name: 'Glurak Figure' } } }), 'Glurak Figure')
+  assert.equal(summaryOf({}), '')
+})
+
+test('addLine adds a new article at 1 and merges a duplicate', () => {
+  const once = addLine([], ARTICLES[0])
+  assert.deepEqual(once, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }])
+  const twice = addLine(once, ARTICLES[0])
+  assert.deepEqual(twice, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }])
+  assert.deepEqual(addLine(twice, ARTICLES[1]), TWO_LINES)
+  assert.deepEqual(once, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }], 'the input is not changed')
+})
+
+test('setLineQuantity stays at 1 or more and removeLine drops one line', () => {
+  assert.deepEqual(setLineQuantity(TWO_LINES, 0, 3).map(line => line.quantity), [3, 1])
+  assert.deepEqual(setLineQuantity(TWO_LINES, 1, 0).map(line => line.quantity), [2, 1])
+  assert.deepEqual(setLineQuantity(TWO_LINES, 5, 4), TWO_LINES)
+  assert.deepEqual(removeLine(TWO_LINES, 0), [TWO_LINES[1]])
+  assert.deepEqual(removeLine(removeLine(TWO_LINES, 0), 0), [])
+  assert.equal(TWO_LINES.length, 2, 'the input is not changed')
+})
+
+test('the suggested price runs every line through the deals', () => {
+  assert.equal(suggestedPriceFor(TWO_LINES, ARTICLES, DEALS), 15)
+  assert.equal(suggestedPriceFor(TWO_LINES, ARTICLES, []), 16)
+  // A line whose article is no longer active has no price to suggest
+  assert.equal(suggestedPriceFor([...TWO_LINES, { article: 'gone', name: 'Retired Dino', quantity: 1 }], ARTICLES, DEALS), 15)
+  assert.equal(suggestedPriceFor([], ARTICLES, DEALS), 0)
 })

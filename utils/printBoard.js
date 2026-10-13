@@ -1,4 +1,5 @@
 // Print board rules. See docs/superpowers/specs/2026-10-13-print-board-design.md
+import { itemsOf } from './commissions.js'
 
 // PocketBase returns dates as "YYYY-MM-DD HH:MM:SS.sssZ"; the app itself writes ISO strings
 const parseDate = value => new Date(String(value).replace(' ', 'T'))
@@ -36,7 +37,8 @@ export function buildBoard ({ articles = [], jobs = [], commissions = [], now = 
   const withStatus = status => commissions.filter(commission => commission.status === status).sort(oldestFirst)
   const articleOf = job => job.expand?.article ?? articles.find(article => article.id === job.article) ?? null
   const jobCard = job => ({ kind: 'job', job, article: articleOf(job) })
-  const commissionCard = commission => ({ kind: 'commission', commission })
+  // A commission card lists every line; a legacy single-article record reads as one line
+  const commissionCard = commission => ({ kind: 'commission', commission, lines: itemsOf(commission, articles) })
 
   const doneJobs = jobs.filter(job => job.status === 'done' && isSameLocalDay(job.done_at, now)).sort(newestFirst('done_at'))
   const readyToday = commissions

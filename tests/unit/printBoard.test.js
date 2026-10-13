@@ -39,7 +39,7 @@ test('To print holds active low-stock articles with a threshold, then open commi
   })
   assert.deepEqual(board.toPrint.map(idOf), ['a1', 'edge', 'c1'])
   assert.deepEqual(board.toPrint[0], { kind: 'stock', article: article(), quantity: 8 })
-  assert.deepEqual(board.toPrint[2], { kind: 'commission', commission: commission() })
+  assert.deepEqual(board.toPrint[2], { kind: 'commission', commission: commission(), lines: [] })
 })
 
 test('an article with a printing job leaves To print and shows under Printing', () => {
@@ -47,7 +47,7 @@ test('an article with a printing job leaves To print and shows under Printing', 
   assert.deepEqual(board.toPrint, [])
   assert.deepEqual(board.printing, [
     { kind: 'job', job: job(), article: article() },
-    { kind: 'commission', commission: commission({ status: 'printing' }) }
+    { kind: 'commission', commission: commission({ status: 'printing' }), lines: [] }
   ])
 })
 
@@ -113,4 +113,20 @@ test('a job\'s expanded article takes precedence over the articles list', () => 
   const expanded = article({ name: 'From expand' })
   const board = buildBoard({ articles: [article({ name: 'From list' })], jobs: [job({ expand: { article: expanded } })], now: NOW })
   assert.equal(board.printing[0].article, expanded)
+})
+
+test('commission cards carry their lines, a legacy record as one line', () => {
+  const items = [{ article: 'a1', name: 'Old name', quantity: 2 }, { article: 't1', name: 'Totoro', quantity: 1 }]
+  const board = buildBoard({
+    articles: [article({ stock: 50 })],
+    commissions: [
+      commission({ items }),
+      commission({ id: 'legacy', article: 'f1', quantity: 3, expand: { article: { name: 'Glurak Figure' } }, created: '2026-10-02 10:00:00.000Z' })
+    ],
+    now: NOW
+  })
+  assert.deepEqual(board.toPrint.map(card => card.lines), [
+    [{ article: 'a1', name: 'Pikachu Keychain', quantity: 2 }, { article: 't1', name: 'Totoro', quantity: 1 }],
+    [{ article: 'f1', name: 'Glurak Figure', quantity: 3 }]
+  ])
 })
