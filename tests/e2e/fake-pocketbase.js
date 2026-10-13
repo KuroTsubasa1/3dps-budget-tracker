@@ -191,6 +191,7 @@ export function createFakePocketBase () {
         return reply(400, { code: 400, message: 'Failed to delete record. Make sure that the record is not part of a required relation reference.', data: {} })
       }
       records.splice(records.indexOf(record), 1)
+      if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       return route.fulfill({ status: 204 })
     }
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })

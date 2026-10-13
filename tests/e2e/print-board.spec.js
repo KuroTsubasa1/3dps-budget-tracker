@@ -232,8 +232,18 @@ test.describe('the print board', () => {
     await expect(sheet.getByLabel('Add printed')).toBeVisible()
   })
 
-  test('no hint without a printing job, or when print_jobs is locked', async ({ page, api }) => {
+  test('no hint when the article only has a finished job', async ({ page, api }) => {
     seedBoard(api, { printJobs: [job({ status: 'done', done_at: new Date().toISOString() })] })
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+    await expect(sheet.getByText(/on the print board/)).toHaveCount(0)
+  })
+
+  test('no hint when print_jobs is locked', async ({ page, api }) => {
+    seedBoard(api, { printJobs: [job()] })
     api.failReads('print_jobs', 403)
     await gotoReady(page, '/catalog')
     await page.getByRole('button', { name: 'Manage' }).click()

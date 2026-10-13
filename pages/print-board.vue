@@ -140,28 +140,40 @@ const setQuantity = (card, value) => {
   quantities.value = { ...quantities.value, [card.article.id]: Math.max(1, value) }
 }
 
+// Only the newest load may write the board: an older one finishing late would put back a stale board
+let loadSeq = 0
 const load = async () => {
+  const seq = ++loadSeq
   if (!loaded) loading.value = true
   try {
     const result = await loadBoardData()
+    if (seq !== loadSeq) return
     data.value = result
     jobsMissing.value = result.jobsMissing
     now.value = new Date()
     loadError.value = ''
     loaded = true
   } catch (err) {
+    if (seq !== loadSeq) return
     // A failed refresh keeps the last board; only a failed first load replaces it
     if (loaded) error.value = messageFor(err)
     else loadError.value = isOffline(err) ? OFFLINE : 'Could not load the print board. Check your connection and try again.'
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
-// A board left open (overnight, in a background tab) is re-read when the owner comes back to it
-const refresh = () => {
-  if (busy.value || loading.value) return
-  load()
+// A board left open (overnight, in a background tab) is re-read when the owner comes back to it;
+// visibilitychange and focus usually fire together, so one refresh at a time
+let refreshing = false
+const refresh = async () => {
+  if (busy.value || loading.value || refreshing) return
+  refreshing = true
+  try {
+    await load()
+  } finally {
+    refreshing = false
+  }
 }
 const onVisibility = () => {
   if (document.visibilityState === 'visible') refresh()
