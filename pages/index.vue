@@ -24,6 +24,18 @@
           </div>
         </BaseCard>
 
+        <NuxtLink
+          v-if="openCommissions > 0"
+          to="/commissions"
+          class="card flex min-h-[56px] items-center justify-between gap-3 px-4 text-sm font-medium text-ink hover:bg-muted md:px-5"
+        >
+          <span class="flex items-center gap-3">
+            <AppIcon name="clipboard" class="h-5 w-5 text-ink-muted" />
+            {{ openCommissions }} open {{ openCommissions === 1 ? 'commission' : 'commissions' }}
+          </span>
+          <AppIcon name="chevron-right" class="h-4 w-4 text-ink-muted" />
+        </NuxtLink>
+
         <BaseCard title="Recent Transactions" icon="clipboard" flush>
           <template #actions>
             <BaseButton variant="ghost">View All</BaseButton>
@@ -75,10 +87,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useMediaQuery } from '~/composables/useMediaQuery'
+import { useCommissions } from '~/composables/useCommissions'
 import { formatCurrency } from '~/utils/currency'
 import { formatDate } from '~/utils/date'
 
@@ -86,6 +99,17 @@ definePageMeta({ middleware: 'owner' })
 
 const { transactions, earnings, todayEarnings } = useTransactions()
 const { displaySettings } = useAppSettings()
+const { listCommissions } = useCommissions()
+const openCommissions = ref(0)
+
+onMounted(async () => {
+  try {
+    const list = await listCommissions()
+    openCommissions.value = list.filter(item => ['open', 'printing', 'ready'].includes(item.status)).length
+  } catch {
+    // No commissions collection yet (before the migration) or offline: the card simply stays hidden
+  }
+})
 
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const isFormOpen = ref(false)

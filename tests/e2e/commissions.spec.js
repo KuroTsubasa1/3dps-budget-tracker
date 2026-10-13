@@ -229,3 +229,54 @@ test.describe('the commissions page', () => {
     await expect(sheet(page).getByRole('button', { name: 'Delete customer data' })).toHaveCount(0)
   })
 })
+
+test.describe('entry points', () => {
+  test('a catalog card starts a commission for that article', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
+    await expect(sheet(page).getByLabel('Article')).toHaveValue('k1')
+    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('4,00')
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await sheet(page).getByLabel('Email').fill('misty@example.com')
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(page.getByText('Commission created')).toBeVisible()
+    expect(api.db.commissions[0]).toMatchObject({ article: 'k1', quantity: 1, agreed_price: 4 })
+  })
+
+  test('the catalog header links to the commissions page', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await page.getByRole('button', { name: 'Commissions' }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+  })
+
+  test('the dashboard counts open commissions and links to them', async ({ page, api }) => {
+    seedWith(api, [
+      commission({ id: 'a', status: 'open' }),
+      commission({ id: 'b', status: 'printing' }),
+      commission({ id: 'c', status: 'delivered', delivered_at: '2026-10-02 10:00:00.000Z' })
+    ])
+    await gotoReady(page, '/')
+    await page.getByRole('link', { name: /2 open commissions/ }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+  })
+
+  test('the dashboard hides the card when nothing is open', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'cancelled', cancelled_at: '2026-10-02 10:00:00.000Z' })])
+    await gotoReady(page, '/')
+    await expect(page.getByRole('link', { name: /open commission/ })).toHaveCount(0)
+  })
+})
+
+test.describe('visitors cannot reach commissions', () => {
+  test.use({ owner: false })
+
+  test('no commission buttons and the page redirects to login', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/catalog')
+    await expect(page.getByRole('button', { name: /^Commission/ })).toHaveCount(0)
+    await page.goto('/commissions')
+    await page.waitForURL(url => url.pathname === '/login')
+  })
+})

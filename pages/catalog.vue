@@ -4,6 +4,7 @@
       <div class="min-w-0">
         <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products">
           <template v-if="isOwner" #actions>
+            <BaseButton variant="secondary" icon="clipboard" @click="navigateTo('/commissions')">Commissions</BaseButton>
             <BaseButton :variant="managing ? 'primary' : 'secondary'" icon="cog" :aria-pressed="managing" @click="managing = !managing">
               {{ managing ? 'Done' : 'Manage' }}
             </BaseButton>
@@ -131,6 +132,14 @@
                   >
                     <AppIcon name="plus" class="h-5 w-5" />
                   </button>
+                  <button
+                    type="button"
+                    class="flex h-11 w-11 items-center justify-center rounded-lg bg-muted text-ink-muted hover:text-ink"
+                    :aria-label="`Commission ${product.name}`"
+                    @click.stop="openCommission(product)"
+                  >
+                    <AppIcon name="clipboard" class="h-5 w-5" />
+                  </button>
                 </template>
               </div>
             </div>
@@ -190,6 +199,14 @@
       @saved="onArticleSaved"
       @deleted="onArticleDeleted"
       @stock-changed="onStockChanged"
+    />
+
+    <CommissionSheet
+      v-model:open="isCommissionOpen"
+      :commission="null"
+      :articles="products"
+      :deals="deals"
+      :preset-article-id="commissionArticleId"
     />
   </div>
 </template>
@@ -360,6 +377,14 @@ const onArticleDeleted = (id) => {
 const onStockChanged = (id, stock) => {
   const product = products.value.find(item => item.id === id)
   if (product) product.stock = stock
+}
+
+const isCommissionOpen = ref(false)
+const commissionArticleId = ref('')
+
+const openCommission = (product) => {
+  commissionArticleId.value = product.id
+  isCommissionOpen.value = true
 }
 
 const { addTransaction } = useTransactions()

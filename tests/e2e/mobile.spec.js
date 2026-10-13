@@ -5,6 +5,7 @@ const PAGES = [
   '/catalog',
   '/business-card',
   '/reports',
+  '/commissions',
   '/login',
   '/settings',
   '/settings#account',
