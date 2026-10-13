@@ -33,7 +33,7 @@
         :key="item.id"
         clickable
         :title="item.anonymised_at ? 'Anonymised' : item.customer_name"
-        :subtitle="`${item.expand?.article?.name ?? 'Unknown article'} × ${item.quantity} · ${item.fulfilment === 'shipping' ? 'Ship' : 'Pickup'}`"
+        :subtitle="subtitleOf(item)"
         @click="openExisting(item)"
       >
         <template #trailing>
@@ -60,7 +60,7 @@ import { useArticles } from '~/composables/useArticles'
 import { useDeals } from '~/composables/useDeals'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
-import { isFinal } from '~/utils/commissions'
+import { isFinal, summaryOf } from '~/utils/commissions'
 
 definePageMeta({ middleware: 'owner' })
 
@@ -88,6 +88,9 @@ const selected = ref(null)
 const tabOf = commission => (isFinal(commission.status) ? 'done' : commission.status)
 const counts = computed(() => Object.fromEntries(TABS.map(tab => [tab.id, commissions.value.filter(item => tabOf(item) === tab.id).length])))
 const visible = computed(() => commissions.value.filter(item => tabOf(item) === activeTab.value))
+// The customer is the row title; the subtitle is the line summary and the delivery
+const subtitleOf = item =>
+  [summaryOf(item, articles.value), item.fulfilment === 'shipping' ? 'Ship' : 'Pickup'].filter(Boolean).join(' · ')
 
 const load = async () => {
   loading.value = true

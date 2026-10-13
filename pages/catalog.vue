@@ -212,7 +212,7 @@
       :commission="null"
       :articles="products"
       :deals="deals"
-      :preset-article-id="commissionArticleId"
+      :preset-items="commissionItems"
     />
   </div>
 </template>
@@ -386,10 +386,10 @@ const onStockChanged = (id, stock) => {
 }
 
 const isCommissionOpen = ref(false)
-const commissionArticleId = ref('')
+const commissionItems = ref([])
 
 const openCommission = (product) => {
-  commissionArticleId.value = product.id
+  commissionItems.value = [{ article: product.id, name: product.name, quantity: 1 }]
   isCommissionOpen.value = true
 }
 

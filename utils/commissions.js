@@ -116,13 +116,16 @@ export function suggestedPriceFor (items, articles, deals = []) {
   return priceCart(cartLines, deals).total
 }
 
-export const incomeFor = (commission, articleName) => ({
-  description: `Commission: ${articleName} × ${commission.quantity} (${commission.customer_name})`,
+// The income always writes "× n", so the booked description reads the same whatever the quantity
+export const incomeFor = (commission, articles = []) => ({
+  description: `Commission: ${itemsOf(commission, articles).map(lineText).join(', ')} (${commission.customer_name})`,
   amount: Number(commission.agreed_price)
 })
 
 const parseNumber = value => Number(String(value).trim().replace(',', '.'))
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const isWholeAtLeastOne = value => /^\d+$/.test(String(value ?? '').trim()) && Number(String(value).trim()) >= 1
 
 export function validateCommission (form) {
   // An anonymised commission has no customer data left to require
@@ -130,10 +133,10 @@ export function validateCommission (form) {
     if (!String(form.customerName ?? '').trim()) return "Enter the customer's name"
     if (!EMAIL.test(String(form.email ?? '').trim())) return 'Enter a valid email address'
   }
-  if (!form.article) return 'Choose an article'
+  const items = Array.isArray(form.items) ? form.items : []
+  if (!items.length) return 'Add at least one article'
   if (!form.anonymised && form.fulfilment === 'shipping' && !String(form.address ?? '').trim()) return 'Enter an address for shipping'
-  const quantityText = String(form.quantity ?? '').trim()
-  if (!/^\d+$/.test(quantityText) || Number(quantityText) < 1) return 'Quantity must be a whole number of 1 or more'
+  if (!items.every(line => isWholeAtLeastOne(line.quantity))) return 'Quantity must be a whole number of 1 or more'
   const priceText = String(form.price ?? '').trim()
   if (!/^\d+([.,]\d{1,2})?$/.test(priceText) || !(parseNumber(priceText) > 0)) return 'Agreed price must be above 0'
   return ''

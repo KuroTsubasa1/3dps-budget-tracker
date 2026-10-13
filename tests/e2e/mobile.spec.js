@@ -128,4 +128,18 @@ test.describe('phone layout sweep', () => {
     expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
     expect(await smallTargets(page)).toEqual([])
   })
+
+  test('the commission form fits at 375px with long lines', async ({ page, api }) => {
+    api.seed({ articles: longProducts })
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Add article').selectOption({ label: longProducts[0].name })
+    await dialog.getByLabel('Add article').selectOption({ label: 'Phone Stand' })
+    await expect(dialog.getByRole('group', { name: `Quantity of ${longProducts[0].name}` })).toBeVisible()
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
+    expect(await dialog.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
+    expect(await smallTargets(page)).toEqual([])
+  })
 })

@@ -21,23 +21,36 @@
           <textarea id="commission-address" v-model="form.address" rows="3" class="input py-2" />
         </div>
       </template>
+      <ul v-if="form.items.length" class="divide-y divide-line rounded-lg border border-line" aria-label="Articles">
+        <li v-for="(line, index) in form.items" :key="line.article" class="flex items-center gap-2 py-2 pl-3 pr-1">
+          <p class="min-w-0 flex-1 break-words text-sm font-medium text-ink">{{ line.name }}</p>
+          <QuantityStepper
+            :quantity="Number(line.quantity)"
+            :name="line.name"
+            :label="`Quantity of ${line.name}`"
+            @increment="form.items = setLineQuantity(form.items, index, Number(line.quantity) + 1)"
+            @decrement="form.items = setLineQuantity(form.items, index, Number(line.quantity) - 1)"
+          />
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted hover:text-expense"
+            :aria-label="`Remove ${line.name}`"
+            @click="form.items = removeLine(form.items, index)"
+          >
+            <AppIcon name="trash" class="h-4 w-4" />
+          </button>
+        </li>
+      </ul>
       <div>
-        <label for="commission-article" class="label">Article</label>
-        <select id="commission-article" v-model="form.article" class="input pr-9">
-          <option value="" disabled>Choose an article</option>
-          <option v-if="archivedArticleId" :value="archivedArticleId" disabled>{{ archivedArticleName }}</option>
+        <label for="commission-add-article" class="label">Add article</label>
+        <select id="commission-add-article" class="input pr-9" @change="onAddArticle">
+          <option value="" disabled selected>Choose an article</option>
           <option v-for="article in articles" :key="article.id" :value="article.id">{{ article.name }}</option>
         </select>
       </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label for="commission-quantity" class="label">Quantity</label>
-          <input id="commission-quantity" v-model="form.quantity" type="text" inputmode="numeric" class="input">
-        </div>
-        <div>
-          <label for="commission-price" class="label">Agreed price</label>
-          <input id="commission-price" v-model="form.price" type="text" inputmode="decimal" class="input" @input="priceTouched = true">
-        </div>
+      <div>
+        <label for="commission-price" class="label">Agreed price</label>
+        <input id="commission-price" v-model="form.price" type="text" inputmode="decimal" class="input" @input="priceTouched = true">
       </div>
       <div>
         <label for="commission-notes" class="label">Notes <span class="font-normal text-ink-muted">(optional)</span></label>
@@ -70,7 +83,14 @@
         <div v-if="commission.customer_email" class="flex justify-between gap-3"><dt class="text-ink-muted">Email</dt><dd class="min-w-0 break-all text-right text-ink">{{ commission.customer_email }}</dd></div>
         <div class="flex justify-between gap-3"><dt class="text-ink-muted">Delivery</dt><dd class="text-right text-ink">{{ commission.fulfilment === 'shipping' ? 'Shipping' : 'Pickup' }}</dd></div>
         <div v-if="commission.fulfilment === 'shipping'" class="flex justify-between gap-3"><dt class="text-ink-muted">Address</dt><dd class="whitespace-pre-line text-right text-ink">{{ commission.address }}</dd></div>
-        <div class="flex justify-between gap-3"><dt class="text-ink-muted">Article</dt><dd class="text-right text-ink">{{ articleName }} × {{ commission.quantity }}</dd></div>
+        <div class="flex justify-between gap-3">
+          <dt class="text-ink-muted">Articles</dt>
+          <dd class="min-w-0 text-right text-ink">
+            <ul>
+              <li v-for="(line, index) in lines" :key="index" class="break-words">{{ line.name }} × {{ line.quantity }}</li>
+            </ul>
+          </dd>
+        </div>
         <div class="flex justify-between gap-3"><dt class="text-ink-muted">Agreed price</dt><dd class="text-right font-semibold tabular-nums text-ink">{{ formatCurrency(Number(commission.agreed_price)) }}</dd></div>
         <div v-if="commission.notes" class="flex justify-between gap-3"><dt class="text-ink-muted">Notes</dt><dd class="whitespace-pre-line text-right text-ink">{{ commission.notes }}</dd></div>
       </dl>
@@ -116,7 +136,6 @@ import { useCommissions } from '~/composables/useCommissions'
 import { useTransactions } from '~/composables/useTransactions'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
-import { priceCart } from '~/utils/deals'
 import {
   STATUS_LABEL,
   NEXT,
@@ -125,8 +144,13 @@ import {
   isFinal,
   canCancel,
   transitionPatch,
+  itemsOf,
   incomeFor,
-  validateCommission
+  validateCommission,
+  addLine,
+  setLineQuantity,
+  removeLine,
+  suggestedPriceFor
 } from '~/utils/commissions'
 
 const props = defineProps({
@@ -134,7 +158,8 @@ const props = defineProps({
   commission: { type: Object, default: null },
   articles: { type: Array, required: true },
   deals: { type: Array, default: () => [] },
-  presetArticleId: { type: String, default: '' }
+  // Lines a new commission starts with ([{ article, name, quantity }]); copied, never changed in place
+  presetItems: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['update:open', 'saved', 'changed'])
 
@@ -149,7 +174,7 @@ const { addTransaction } = useTransactions()
 const { toast } = useToast()
 
 const mode = ref('view')
-const form = ref({})
+const form = ref({ items: [] })
 const priceTouched = ref(false)
 const error = ref('')
 const busy = ref(false)
@@ -157,15 +182,16 @@ const confirming = ref('')
 
 const toPriceText = amount => (Number(amount) > 0 ? Number(amount).toFixed(2).replace('.', ',') : '')
 const parseNumber = value => Number(String(value).trim().replace(',', '.'))
+const copyLines = lines => lines.map(line => ({ article: line.article, name: line.name, quantity: Number(line.quantity) }))
 
-const blankForm = () => ({ customerName: '', email: '', fulfilment: 'pickup', address: '', article: props.presetArticleId, quantity: '1', price: '', notes: '' })
+const blankForm = () => ({ customerName: '', email: '', fulfilment: 'pickup', address: '', items: copyLines(props.presetItems), price: '', notes: '' })
 const formFrom = commission => ({
   customerName: commission.customer_name,
   email: commission.customer_email,
   fulfilment: commission.fulfilment,
   address: commission.address,
-  article: commission.article,
-  quantity: String(commission.quantity),
+  // A legacy record (article × quantity) becomes its one line here and is saved as items
+  items: copyLines(itemsOf(commission, props.articles)),
   price: toPriceText(commission.agreed_price),
   notes: commission.notes
 })
@@ -176,27 +202,12 @@ const title = computed(() => {
 })
 
 const articleById = id => props.articles.find(article => article.id === id)
-const articleName = computed(() => props.commission?.expand?.article?.name ?? articleById(props.commission?.article)?.name ?? 'Unknown article')
-// An edited commission may point at an article that was archived since: keep it selectable-looking but not choosable
-const archivedArticleId = computed(() => (form.value.article && !articleById(form.value.article) ? form.value.article : ''))
-const archivedArticleName = computed(() => props.commission?.expand?.article?.name ?? 'Archived article')
+const lines = computed(() => (props.commission ? itemsOf(props.commission, props.articles) : []))
 const anonymised = computed(() => !!props.commission?.anonymised_at)
 const customerLabel = computed(() => (props.commission?.anonymised_at ? 'Anonymised' : props.commission?.customer_name))
 
-// Deal-aware suggestion for the chosen article and quantity
-const suggestedPrice = computed(() => {
-  const article = articleById(form.value.article)
-  const quantity = parseNumber(form.value.quantity)
-  if (!article || !Number.isInteger(quantity) || quantity < 1) return 0
-  return priceCart([{
-    articleId: article.id,
-    name: article.name,
-    quantity,
-    categoryId: article.category,
-    basePrice: article.expand?.category?.base_price ?? 0,
-    override: Number(article.price) > 0 ? Number(article.price) : 0
-  }], props.deals).total
-})
+// Deal-aware suggestion over every line; it follows the lines until the price is edited
+const suggestedPrice = computed(() => suggestedPriceFor(form.value.items ?? [], props.articles, props.deals))
 
 watch(suggestedPrice, (price) => {
   if (mode.value === 'form' && !priceTouched.value) form.value.price = toPriceText(price)
@@ -213,10 +224,17 @@ watch(() => props.open, (isOpen) => {
     mode.value = 'form'
     form.value = blankForm()
     priceTouched.value = false
-    // Re-opening for the same article leaves suggestedPrice unchanged, so its watcher would not fire
+    // Re-opening with the same lines leaves suggestedPrice unchanged, so its watcher would not fire
     form.value.price = toPriceText(suggestedPrice.value)
   }
 }, { immediate: true })
+
+// The select is an action, not a value: it adds the chosen article (or one more of it) and resets
+const onAddArticle = (event) => {
+  const article = articleById(event.target.value)
+  if (article) form.value.items = addLine(form.value.items, article)
+  event.target.value = ''
+}
 
 const stepClass = (step) => {
   const reached = STEPS.indexOf(props.commission.status) >= STEPS.indexOf(step)
@@ -253,10 +271,10 @@ const save = async () => {
         fulfilment: form.value.fulfilment,
         address: shipping ? form.value.address.trim() : ''
       }
+  // article / quantity belong to records from before items: left untouched on edit, empty on create
   const fields = {
     ...customer,
-    article: form.value.article,
-    quantity: parseNumber(form.value.quantity),
+    items: copyLines(form.value.items),
     agreed_price: parseNumber(form.value.price),
     notes: form.value.notes.trim()
   }
@@ -284,7 +302,7 @@ const save = async () => {
 // The commission is updated first; income is only booked once the server has accepted "delivered"
 const bookDelivery = (record) => {
   emit('changed', record)
-  const income = incomeFor(record, record.expand?.article?.name ?? articleName.value)
+  const income = incomeFor(record, props.articles)
   addTransaction({ ...income, date: new Date().toISOString().split('T')[0] })
   toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
 }

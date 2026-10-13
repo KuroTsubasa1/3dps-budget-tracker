@@ -46,7 +46,10 @@
         >
           <div class="min-w-0">
             <h3 class="break-words text-sm font-semibold text-ink">{{ titleOf(card) }}</h3>
-            <p class="break-words text-xs text-ink-muted">{{ detailOf(card) }}</p>
+            <p v-if="card.kind !== 'commission'" class="break-words text-xs text-ink-muted">{{ detailOf(card) }}</p>
+            <ul v-else class="text-xs text-ink-muted">
+              <li v-for="(line, index) in card.lines" :key="index" class="break-words">{{ line.name }} × {{ line.quantity }}</li>
+            </ul>
             <p v-if="card.kind === 'commission' && card.commission.notes" class="mt-1 whitespace-pre-line break-words text-xs text-ink-muted">{{ card.commission.notes }}</p>
           </div>
 
@@ -128,11 +131,9 @@ const keyOf = (card) => {
 }
 const customerOf = commission => (commission.anonymised_at ? 'Anonymised' : commission.customer_name)
 const titleOf = card => (card.kind === 'commission' ? `Commission · ${customerOf(card.commission)}` : (card.article?.name ?? 'Unknown article'))
-const detailOf = (card) => {
-  if (card.kind === 'stock') return `${Number(card.article.stock) || 0} left · target ${targetFor(card.article)}`
-  if (card.kind === 'job') return `Stock print × ${card.job.quantity}`
-  return `${card.commission.expand?.article?.name ?? 'Unknown article'} × ${card.commission.quantity}`
-}
+const detailOf = card => (card.kind === 'stock'
+  ? `${Number(card.article.stock) || 0} left · target ${targetFor(card.article)}`
+  : `Stock print × ${card.job.quantity}`)
 
 const quantityFor = card => quantities.value[card.article.id] ?? card.quantity
 // A print job always prints at least one

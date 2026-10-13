@@ -28,6 +28,8 @@ const ARTICLES = [
 ]
 const DEALS = [{ id: 'd1', name: 'Keychain 2 for 7', type: 'bundle', categories: ['cat-keychain'], min_qty: 2, price: 7 }]
 const TWO_LINES = [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }, { article: 't1', name: 'Totoro', quantity: 1 }]
+const QUANTITY = 'Quantity must be a whole number of 1 or more'
+const PRICE = 'Agreed price must be above 0'
 
 test('forward, back and cancel moves follow the lifecycle', () => {
   assert.deepEqual(NEXT, { open: 'printing', printing: 'ready', ready: 'delivered' })
@@ -89,14 +91,20 @@ test('the anonymised patch wipes name, email and address', () => {
   assert.deepEqual(anonymisedPatch(NOW), { customer_name: '—', customer_email: '', address: '—', anonymised_at: NOW.toISOString() })
 })
 
-test('delivery income names the article, quantity and customer', () => {
+test('delivery income names every line with its quantity, and the customer', () => {
   assert.deepEqual(
-    incomeFor({ quantity: 2, customer_name: 'Ash Ketchum', agreed_price: 7 }, 'Pikachu Keychain'),
-    { description: 'Commission: Pikachu Keychain × 2 (Ash Ketchum)', amount: 7 }
+    incomeFor({ items: TWO_LINES, customer_name: 'Ash Ketchum', agreed_price: 15 }),
+    { description: 'Commission: Pikachu Keychain × 2, Totoro × 1 (Ash Ketchum)', amount: 15 }
+  )
+  assert.deepEqual(
+    incomeFor({ article: 'f1', quantity: 1, expand: { article: { name: 'Glurak Figure' } }, customer_name: 'Ash Ketchum', agreed_price: 30 }),
+    { description: 'Commission: Glurak Figure × 1 (Ash Ketchum)', amount: 30 }
   )
 })
 
-const VALID = { customerName: 'Misty', email: 'misty@example.com', article: 'k1', fulfilment: 'pickup', address: '', quantity: '2', price: '7,00' }
+const LINE = { article: 'k1', name: 'Pikachu Keychain', quantity: 2 }
+const VALID = { customerName: 'Misty', email: 'misty@example.com', items: [LINE], fulfilment: 'pickup', address: '', price: '7,00' }
+const withQuantity = quantity => ({ ...VALID, items: [{ ...LINE, quantity }] })
 
 test('a complete commission is valid', () => {
   assert.equal(validateCommission(VALID), '')
@@ -106,19 +114,22 @@ test('a complete commission is valid', () => {
 test('validation names the first problem in a fixed order', () => {
   assert.equal(validateCommission({ ...VALID, customerName: '  ' }), "Enter the customer's name")
   assert.equal(validateCommission({ ...VALID, email: 'nope' }), 'Enter a valid email address')
-  assert.equal(validateCommission({ ...VALID, article: '' }), 'Choose an article')
+  assert.equal(validateCommission({ ...VALID, items: [] }), 'Add at least one article')
   assert.equal(validateCommission({ ...VALID, fulfilment: 'shipping', address: ' ' }), 'Enter an address for shipping')
-  assert.equal(validateCommission({ ...VALID, quantity: '0' }), 'Quantity must be a whole number of 1 or more')
-  assert.equal(validateCommission({ ...VALID, quantity: '1.5' }), 'Quantity must be a whole number of 1 or more')
-  assert.equal(validateCommission({ ...VALID, price: '0' }), 'Agreed price must be above 0')
-  assert.equal(validateCommission({ ...VALID, price: '' }), 'Agreed price must be above 0')
+  assert.equal(validateCommission(withQuantity(0)), QUANTITY)
+  assert.equal(validateCommission(withQuantity('1.5')), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, price: '0' }), PRICE)
+  assert.equal(validateCommission({ ...VALID, price: '' }), PRICE)
+  // The order holds: an empty list comes after the email and before the address, quantity and price
+  assert.equal(validateCommission({ ...VALID, email: 'nope', items: [] }), 'Enter a valid email address')
+  assert.equal(validateCommission({ ...VALID, items: [], fulfilment: 'shipping', address: '', price: '' }), 'Add at least one article')
 })
 
 test('an anonymised commission skips the customer data checks but keeps the rest', () => {
   const anonymised = { ...VALID, anonymised: true, customerName: '', email: '', fulfilment: 'shipping', address: '' }
   assert.equal(validateCommission(anonymised), '')
-  assert.equal(validateCommission({ ...anonymised, quantity: '0' }), 'Quantity must be a whole number of 1 or more')
-  assert.equal(validateCommission({ ...anonymised, article: '' }), 'Choose an article')
+  assert.equal(validateCommission({ ...anonymised, items: [{ ...LINE, quantity: 0 }] }), QUANTITY)
+  assert.equal(validateCommission({ ...anonymised, items: [] }), 'Add at least one article')
 })
 
 test('moving to ready stamps ready_at and moving back clears it', () => {
@@ -135,12 +146,10 @@ test('a missing or unknown target is a disallowed move', () => {
 })
 
 test('quantity and price accept plain numbers only', () => {
-  const QUANTITY = 'Quantity must be a whole number of 1 or more'
-  const PRICE = 'Agreed price must be above 0'
-  assert.equal(validateCommission({ ...VALID, quantity: '1e0' }), QUANTITY)
-  assert.equal(validateCommission({ ...VALID, quantity: 'Infinity' }), QUANTITY)
-  assert.equal(validateCommission({ ...VALID, quantity: '0x10' }), QUANTITY)
-  assert.equal(validateCommission({ ...VALID, quantity: ' 3 ' }), '')
+  assert.equal(validateCommission(withQuantity('1e0')), QUANTITY)
+  assert.equal(validateCommission(withQuantity('Infinity')), QUANTITY)
+  assert.equal(validateCommission(withQuantity('0x10')), QUANTITY)
+  assert.equal(validateCommission(withQuantity(' 3 ')), '')
   assert.equal(validateCommission({ ...VALID, price: '1e1' }), PRICE)
   assert.equal(validateCommission({ ...VALID, price: 'Infinity' }), PRICE)
   assert.equal(validateCommission({ ...VALID, price: '1,234' }), PRICE)
@@ -216,4 +225,10 @@ test('the suggested price runs every line through the deals', () => {
   // A line whose article is no longer active has no price to suggest
   assert.equal(suggestedPriceFor([...TWO_LINES, { article: 'gone', name: 'Retired Dino', quantity: 1 }], ARTICLES, DEALS), 15)
   assert.equal(suggestedPriceFor([], ARTICLES, DEALS), 0)
+})
+
+test('a bad quantity on any line is refused', () => {
+  assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 0 }] }), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 2.5 }] }), QUANTITY)
+  assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 1 }] }), '')
 })

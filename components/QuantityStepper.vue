@@ -1,5 +1,9 @@
 <template>
-  <div class="flex shrink-0 items-center rounded-lg border border-line bg-card">
+  <div
+    class="flex shrink-0 items-center rounded-lg border border-line bg-card"
+    :role="label ? 'group' : undefined"
+    :aria-label="label || undefined"
+  >
     <button
       type="button"
       class="flex h-11 w-11 items-center justify-center text-ink-muted hover:text-ink"
@@ -23,7 +27,9 @@
 <script setup>
 defineProps({
   quantity: { type: Number, required: true },
-  name: { type: String, required: true }
+  name: { type: String, required: true },
+  // Names the whole stepper (a group) where several sit together, e.g. "Quantity of <name>"
+  label: { type: String, default: '' }
 })
 defineEmits(['increment', 'decrement'])
 </script>

@@ -281,6 +281,19 @@ test.describe('the print board', () => {
     expect(api.db.print_jobs).toHaveLength(0)
   })
 
+  test('a multi-line commission card lists every line', async ({ page, api }) => {
+    const items = [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }, { article: 'f1', name: 'Glurak Figure', quantity: 1 }]
+    seedBoard(api, { commissions: [commission({ article: '', quantity: 0, items })] })
+    await gotoReady(page, '/print-board')
+    const card = (await openColumn(page, 'To print')).getByRole('article', { name: COMMISSION_CARD })
+    await expect(card.getByRole('listitem')).toHaveText(['Pikachu Keychain × 2', 'Glurak Figure × 1'])
+    await card.getByRole('button', { name: 'Start' }).click()
+    await expect.poll(() => api.db.commissions[0].status).toBe('printing')
+    const printing = await openColumn(page, 'Printing')
+    await expect(printing.getByRole('article', { name: COMMISSION_CARD }).getByRole('listitem')).toHaveText(['Pikachu Keychain × 2', 'Glurak Figure × 1'])
+    expect(loggedMovements(api)).toHaveLength(0)
+  })
+
   test('a commission changed on another device refreshes the board', async ({ page, api }) => {
     seedBoard(api, { commissions: [commission()] })
     await gotoReady(page, '/print-board')

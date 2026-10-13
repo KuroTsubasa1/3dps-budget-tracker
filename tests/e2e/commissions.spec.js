@@ -2,17 +2,22 @@ import { test, expect, gotoReady } from './fixtures.js'
 
 export const COMMISSION_CATEGORIES = [
   { id: 'cat-keychain', name: 'Keychain', base_price: 4, sort_order: 0 },
-  { id: 'cat-figure', name: 'Big Figure', base_price: 30, sort_order: 1 }
+  { id: 'cat-figure', name: 'Big Figure', base_price: 30, sort_order: 1 },
+  { id: 'cat-mini', name: 'Mini Figure', base_price: 8, sort_order: 2 }
 ]
 export const COMMISSION_DEALS = [
   { id: 'deal-keychain00', name: 'Keychain 2 for 7', type: 'bundle', categories: ['cat-keychain'], min_qty: 2, price: 7 }
 ]
 export const COMMISSION_ARTICLES = [
   { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain' },
-  { id: 'f1', name: 'Glurak Figure', category: 'cat-figure' }
+  { id: 'f1', name: 'Glurak Figure', category: 'cat-figure' },
+  { id: 't1', name: 'Totoro', category: 'cat-mini' }
 ]
 
 const sheet = page => page.getByRole('dialog')
+const addArticle = (page, name) => sheet(page).getByLabel('Add article').selectOption({ label: name })
+// A form line is found by its quantity stepper, a group labelled "Quantity of <name>"
+const line = (page, name) => sheet(page).getByRole('group', { name: `Quantity of ${name}` })
 const monthsAgo = (months) => {
   const date = new Date()
   date.setMonth(date.getMonth() - months)
@@ -36,38 +41,60 @@ export const commission = overrides => ({
   ...overrides
 })
 
+const TWO_LINES = [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }, { article: 't1', name: 'Totoro', quantity: 1 }]
+
 const seedWith = (api, commissions = []) =>
   api.seed({ categories: COMMISSION_CATEGORIES, articles: COMMISSION_ARTICLES, deals: COMMISSION_DEALS, commissions })
 
 test.describe('the commissions page', () => {
-  test('a new commission pre-fills the deal price and saves', async ({ page, api }) => {
+  test('a new commission pre-fills the deal price and saves its lines', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
     await page.getByRole('button', { name: '+ New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Pikachu Keychain' })
-    await sheet(page).getByLabel('Quantity').fill('2')
-    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('7,00')
+    await addArticle(page, 'Pikachu Keychain')
+    await addArticle(page, 'Pikachu Keychain')
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
+    await addArticle(page, 'Totoro')
+    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('15,00')
     await sheet(page).getByLabel('Notes').fill('Shiny colours')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
 
     await expect(page.getByText('Commission created')).toBeVisible()
     expect(api.db.commissions[0]).toMatchObject({
       customer_name: 'Misty', customer_email: 'misty@example.com', fulfilment: 'pickup', address: '',
-      article: 'k1', quantity: 2, agreed_price: 7, notes: 'Shiny colours', status: 'open'
+      items: TWO_LINES, agreed_price: 15, notes: 'Shiny colours', status: 'open'
     })
-    await expect(page.getByRole('button', { name: /Misty/ })).toBeVisible()
+    const created = api.requests.find(request => request.method === 'POST' && request.path.endsWith('/commissions/records')).body
+    expect(created).not.toHaveProperty('article')
+    expect(created).not.toHaveProperty('quantity')
+    await expect(page.getByRole('button', { name: /Misty/ })).toContainText('Pikachu Keychain × 2, Totoro · Pickup')
   })
 
-  test('the price stops following the suggestion once edited', async ({ page, api }) => {
+  test('stepping and removing lines updates the price until it is edited', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
     await page.getByRole('button', { name: '+ New commission' }).click()
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Pikachu Keychain' })
-    await sheet(page).getByLabel('Agreed price').fill('9,50')
-    await sheet(page).getByLabel('Quantity').fill('3')
-    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('9,50')
+    const price = sheet(page).getByLabel('Agreed price')
+    await addArticle(page, 'Pikachu Keychain')
+    await expect(price).toHaveValue('4,00')
+    await addArticle(page, 'Glurak Figure')
+    await expect(price).toHaveValue('34,00')
+    await line(page, 'Pikachu Keychain').getByRole('button', { name: 'Add one Pikachu Keychain' }).click()
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
+    await expect(price).toHaveValue('37,00')
+    await sheet(page).getByRole('button', { name: 'Remove Glurak Figure', exact: true }).click()
+    await expect(line(page, 'Glurak Figure')).toHaveCount(0)
+    await expect(price).toHaveValue('7,00')
+    // The stepper never goes below 1
+    await line(page, 'Pikachu Keychain').getByRole('button', { name: 'Remove one Pikachu Keychain' }).click()
+    await line(page, 'Pikachu Keychain').getByRole('button', { name: 'Remove one Pikachu Keychain' }).click()
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
+    await expect(price).toHaveValue('4,00')
+    await price.fill('9,50')
+    await addArticle(page, 'Glurak Figure')
+    await expect(price).toHaveValue('9,50')
   })
 
   test('saving while offline says so and keeps the form open', async ({ page, api }) => {
@@ -76,7 +103,7 @@ test.describe('the commissions page', () => {
     await page.getByRole('button', { name: '+ New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
+    await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 'drop')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText("You're offline — commissions need a connection")
@@ -109,7 +136,7 @@ test.describe('the commissions page', () => {
     await page.getByRole('button', { name: '+ New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Brock')
     await sheet(page).getByLabel('Email').fill('brock@example.com')
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
+    await addArticle(page, 'Glurak Figure')
     await expect(sheet(page).getByLabel('Address')).toHaveCount(0)
     await sheet(page).getByRole('radio', { name: 'Shipping' }).click()
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
@@ -125,23 +152,24 @@ test.describe('the commissions page', () => {
     await gotoReady(page, '/commissions')
     await page.getByRole('button', { name: '+ New commission' }).click()
     const save = () => sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    const alert = sheet(page).getByRole('alert')
     await save()
-    await expect(sheet(page).getByRole('alert')).toHaveText("Enter the customer's name")
+    await expect(alert).toHaveText("Enter the customer's name")
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('nope')
     await save()
-    await expect(sheet(page).getByRole('alert')).toHaveText('Enter a valid email address')
+    await expect(alert).toHaveText('Enter a valid email address')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
     await save()
-    await expect(sheet(page).getByRole('alert')).toHaveText('Choose an article')
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
-    await sheet(page).getByLabel('Quantity').fill('0')
+    await expect(alert).toHaveText('Add at least one article')
+    await addArticle(page, 'Glurak Figure')
+    await sheet(page).getByRole('button', { name: 'Remove Glurak Figure', exact: true }).click()
     await save()
-    await expect(sheet(page).getByRole('alert')).toHaveText('Quantity must be a whole number of 1 or more')
-    await sheet(page).getByLabel('Quantity').fill('1')
+    await expect(alert).toHaveText('Add at least one article')
+    await addArticle(page, 'Glurak Figure')
     await sheet(page).getByLabel('Agreed price').fill('0')
     await save()
-    await expect(sheet(page).getByRole('alert')).toHaveText('Agreed price must be above 0')
+    await expect(alert).toHaveText('Agreed price must be above 0')
     expect(api.db.commissions).toHaveLength(0)
   })
 
@@ -222,16 +250,27 @@ test.describe('the commissions page', () => {
     await expect(page.getByRole('button', { name: /Ash Ketchum/ })).toBeVisible()
   })
 
-  test('editing keeps the agreed price', async ({ page, api }) => {
+  test('editing a legacy commission keeps the price and its article, and saves it as a line', async ({ page, api }) => {
     seedWith(api, [commission({ article: 'k1', quantity: 2, agreed_price: 6.5 })])
     await gotoReady(page, '/commissions')
+    await expect(page.getByRole('button', { name: /Ash Ketchum/ })).toContainText('Pikachu Keychain × 2 · Pickup')
     await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await expect(sheet(page)).toContainText('Pikachu Keychain × 2')
     await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
     await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('6,50')
     await sheet(page).getByLabel('Notes').fill('Gold paint')
     await sheet(page).getByRole('button', { name: 'Save changes' }).click()
     await expect.poll(() => api.db.commissions[0].notes).toBe('Gold paint')
-    expect(api.db.commissions[0].agreed_price).toBe(6.5)
+    expect(api.db.commissions[0]).toMatchObject({
+      agreed_price: 6.5,
+      article: 'k1',
+      quantity: 2,
+      items: [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }]
+    })
+    const update = api.requests.filter(request => request.method === 'PATCH' && request.path.endsWith('/commissions/records/c1')).at(-1).body
+    expect(update).not.toHaveProperty('article')
+    expect(update).not.toHaveProperty('quantity')
   })
 
   test('finished commissions older than six months lose their customer data on load', async ({ page, api }) => {
@@ -301,7 +340,7 @@ test.describe('the commissions page', () => {
     await page.getByRole('button', { name: '+ New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
+    await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 400, { customer_email: { code: 'validation_is_email', message: 'Must be a valid email address.' } })
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('Enter a valid email address')
@@ -316,13 +355,14 @@ test.describe('the commissions page', () => {
     })
     await gotoReady(page, '/commissions')
     await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await expect(sheet(page)).toContainText('Retired Dino × 1')
     await sheet(page).getByRole('button', { name: 'Edit' }).click()
-    await expect(sheet(page).getByLabel('Article')).toHaveValue('old1')
-    await expect(sheet(page).getByLabel('Article').locator('option:checked')).toHaveText('Retired Dino')
+    await expect(line(page, 'Retired Dino')).toHaveText('1')
+    await expect(sheet(page).getByLabel('Add article').locator('option', { hasText: 'Retired Dino' })).toHaveCount(0)
     await sheet(page).getByLabel('Notes').fill('Still the dino')
     await sheet(page).getByRole('button', { name: 'Save changes' }).click()
     await expect.poll(() => api.db.commissions[0].notes).toBe('Still the dino')
-    expect(api.db.commissions[0].article).toBe('old1')
+    expect(api.db.commissions[0]).toMatchObject({ article: 'old1', items: [{ article: 'old1', name: 'Retired Dino', quantity: 1 }] })
     await expect(sheet(page).getByRole('alert')).toHaveCount(0)
   })
 
@@ -336,6 +376,31 @@ test.describe('the commissions page', () => {
     expect(api.db.commissions[0]).toMatchObject({ customer_email: '', status: 'open' })
     await expect(sheet(page).getByRole('button', { name: 'Delete customer data' })).toHaveCount(0)
   })
+
+  test('a multi-line commission lists its lines and books one income naming them', async ({ page, api }) => {
+    seedWith(api, [commission({ article: '', quantity: 0, items: TWO_LINES, agreed_price: 15, status: 'ready' })])
+    await api.mockTransactions()
+    await gotoReady(page, '/commissions')
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Ready/ }).click()
+    const row = page.getByRole('button', { name: /Ash Ketchum/ })
+    await expect(row).toContainText('Pikachu Keychain × 2, Totoro · Pickup')
+    await row.click()
+    await expect(sheet(page)).toContainText('Pikachu Keychain × 2')
+    await expect(sheet(page)).toContainText('Totoro × 1')
+    await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
+
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: 15, description: 'Commission: Pikachu Keychain × 2, Totoro × 1 (Ash Ketchum)' })
+    expect(api.db.commissions[0].status).toBe('delivered')
+    await expect(page.getByText(/added to balance/)).toBeVisible()
+    expect(api.posted).toHaveLength(1)
+  })
+
+  test('a row folds more than two lines into "+n more"', async ({ page, api }) => {
+    seedWith(api, [commission({ article: '', quantity: 0, items: [...TWO_LINES, { article: 'f1', name: 'Glurak Figure', quantity: 1 }] })])
+    await gotoReady(page, '/commissions')
+    await expect(page.getByRole('button', { name: /Ash Ketchum/ })).toContainText('Pikachu Keychain × 2, Totoro +1 more · Pickup')
+  })
 })
 
 test.describe('entry points', () => {
@@ -343,13 +408,13 @@ test.describe('entry points', () => {
     seedWith(api)
     await gotoReady(page, '/catalog')
     await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
-    await expect(sheet(page).getByLabel('Article')).toHaveValue('k1')
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
     await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('4,00')
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(page.getByText('Commission created')).toBeVisible()
-    expect(api.db.commissions[0]).toMatchObject({ article: 'k1', quantity: 1, agreed_price: 4 })
+    expect(api.db.commissions[0]).toMatchObject({ items: [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }], agreed_price: 4 })
   })
 
   test('the catalog header links to the commissions page', async ({ page, api }) => {
@@ -389,7 +454,7 @@ test.describe('entry points', () => {
     seedWith(api)
     await gotoReady(page, '/catalog')
     await page.getByRole('button', { name: 'Commission Pikachu Keychain' }).click()
-    await expect(sheet(page).getByLabel('Article')).toHaveValue('k1')
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
     await page.keyboard.press('Escape')
     await expect(sheet(page)).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Add Pikachu Keychain to cart' })).toBeVisible()
