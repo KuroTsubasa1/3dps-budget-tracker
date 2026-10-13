@@ -54,6 +54,8 @@ const email = (name, required = false) =>
   ({ name, type: 'email', required, presentable: false, options: { exceptDomains: null, onlyDomains: null } })
 const date = name =>
   ({ name, type: 'date', required: false, presentable: false, options: { min: '', max: '' } })
+const json = name =>
+  ({ name, type: 'json', required: false, presentable: false, options: { maxSize: 2000000 } })
 
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const findField = (collection, name) => collection?.schema.find(field => field.name === name)
@@ -149,8 +151,10 @@ export function planSchema (collections) {
           email('customer_email'),
           select('fulfilment', ['pickup', 'shipping'], true),
           text('address'),
-          relation('article', articles.id, true),
-          number('quantity', { required: true, min: 1, noDecimal: true }),
+          // Lines of a multi-article commission; article/quantity remain for records from before them
+          json('items'),
+          relation('article', articles.id),
+          number('quantity', { min: 1, noDecimal: true }),
           number('agreed_price', { required: true, min: 0 }),
           text('notes'),
           select('status', ['open', 'printing', 'ready', 'delivered', 'cancelled'], true),
@@ -163,9 +167,17 @@ export function planSchema (collections) {
         ...LOCKED
       }
     })
-  } else if (!findField(commissions, 'ready_at')) {
+  } else {
+    const added = []
     // Servers migrated before the print board need the date behind "Done today"
-    ops.push({ op: 'addFields', collection: 'commissions', fields: [date('ready_at')] })
+    if (!findField(commissions, 'ready_at')) added.push(date('ready_at'))
+    // Servers migrated before multi-article commissions need the line list
+    if (!findField(commissions, 'items')) added.push(json('items'))
+    if (added.length) ops.push({ op: 'addFields', collection: 'commissions', fields: added })
+    // New commissions keep their lines in items and leave article/quantity empty
+    for (const name of ['article', 'quantity']) {
+      if (findField(commissions, name)?.required) ops.push({ op: 'updateField', collection: 'commissions', field: name, patch: { required: false } })
+    }
   }
 
   if (!byName(collections, 'print_jobs')) {
@@ -206,6 +218,25 @@ export function planRequireCategory (collections) {
   return category && !category.required
     ? [{ op: 'updateField', collection: ARTICLES, field: 'category', patch: { required: true } }]
     : []
+}
+
+export const UNKNOWN_ARTICLE = 'Unknown article'
+
+// Data conversion: every legacy commission (an article, no items yet) gets its one line.
+// Commissions that already have items are skipped, so a re-run changes nothing.
+export function planCommissionItems (commissions, articles) {
+  return commissions
+    .filter(commission => !(Array.isArray(commission.items) && commission.items.length) && commission.article)
+    .map(commission => ({
+      id: commission.id,
+      patch: {
+        items: [{
+          article: commission.article,
+          name: articles.find(article => article.id === commission.article)?.name ?? UNKNOWN_ARTICLE,
+          quantity: Number(commission.quantity)
+        }]
+      }
+    }))
 }
 
 export function planRules (collections, ownerId) {

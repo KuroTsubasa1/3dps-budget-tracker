@@ -1,6 +1,6 @@
-// PocketBase 0.22 migration for categories, deals, stock, commissions, print jobs and owner-only rules.
+// PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
-//   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping (old rules stay; deployed app keeps working)
+//   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping + commission items (old rules stay)
 //   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -12,6 +12,7 @@ import {
   planDealSeed,
   planRequireCategory,
   planRules,
+  planCommissionItems,
   resolveField,
   resolveOwner,
   guessCategory,
@@ -38,7 +39,14 @@ async function api (method, path, body) {
 }
 
 const listCollections = async () => (await api('GET', '/collections?perPage=500')).items
-const listRecords = async (collection) => (await api('GET', `/collections/${collection}/records?perPage=500`)).items
+const listRecords = async (collection) => {
+  const items = []
+  for (let page = 1; ; page++) {
+    const result = await api('GET', `/collections/${collection}/records?perPage=500&page=${page}`)
+    items.push(...result.items)
+    if (page >= result.totalPages) return items
+  }
+}
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const argValue = flag => { const index = process.argv.indexOf(flag); return index > -1 ? process.argv[index + 1] : undefined }
 
@@ -125,6 +133,10 @@ async function migrateSchema () {
   const mapping = await loadMapping(articles)
   console.log(`Article → category (edit ${MAPPING_FILE} to change):`)
   for (const entry of Object.values(mapping)) console.log(`  - ${entry.name} → ${entry.category ?? 'UNMAPPED'}`)
+  const legacyCommissions = planCommissionItems(byName(collections, 'commissions') ? await listRecords('commissions') : [], articles)
+  console.log(legacyCommissions.length
+    ? `Commissions to convert to items: ${legacyCommissions.length}`
+    : 'Commissions: all converted to items')
 
   console.log(`Accounts in "users": ${await accountCount()} (the owner is chosen with --owner when running --apply-rules)`)
 
@@ -134,6 +146,10 @@ async function migrateSchema () {
   }
 
   for (const op of ops) await applyOp(op)
+  // After the schema ops, items exists. Planned again from fresh records, so a re-run skips converted ones.
+  const converting = planCommissionItems(await listRecords('commissions'), articles)
+  for (const { id, patch } of converting) await api('PATCH', `/collections/commissions/records/${id}`, patch)
+  if (converting.length) console.log(`Converted ${converting.length} commissions to items`)
   for (const item of seed) await api('POST', '/collections/categories/records', item)
 
   const categories = await listRecords('categories')

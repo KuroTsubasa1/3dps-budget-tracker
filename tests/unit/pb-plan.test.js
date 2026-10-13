@@ -13,7 +13,8 @@ import {
   simulate,
   guessCategory,
   describeOp,
-  planDealSeed
+  planDealSeed,
+  planCommissionItems
 } from '../../scripts/lib/pb-plan.mjs'
 
 const OWNER_ID = 'owner0000000001'
@@ -278,4 +279,64 @@ test('a server migrated for commissions gains ready_at, print_jobs and target_st
   assert.deepEqual(ops[0].fields.map(field => [field.name, field.type]), [['ready_at', 'date']])
   assert.deepEqual(ops[2].fields.map(field => field.name), ['target_stock'])
   assert.deepEqual(planSchema(simulate(afterCommissions(), ops)), [])
+})
+
+const ITEMS_FIELD = { name: 'items', type: 'json', required: false, presentable: false, options: { maxSize: 2000000 } }
+
+test('a fresh install creates commissions with items and an optional article and quantity', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === 'commissions')
+  const field = name => op.body.schema.find(f => f.name === name)
+  assert.deepEqual(field('items'), ITEMS_FIELD)
+  assert.equal(field('article').required, false)
+  assert.equal(field('article').options.collectionId, 'i1f9o7q6bnjx6k8')
+  assert.equal(field('quantity').required, false)
+  assert.deepEqual(field('quantity').options, { min: 1, max: null, noDecimal: true })
+})
+
+// The live server after the print board: commissions without items, article and quantity still required
+const afterPrintBoard = () => {
+  const collections = simulate(current(), planSchema(current()))
+  const commissions = collections.find(c => c.name === 'commissions')
+  commissions.schema = commissions.schema
+    .filter(f => f.name !== 'items')
+    .map(f => (f.name === 'article' || f.name === 'quantity' ? { ...f, required: true } : f))
+  return collections
+}
+
+test('a server migrated for the print board gains items and an optional article and quantity exactly once', () => {
+  const ops = planSchema(afterPrintBoard())
+  assert.deepEqual(opKeys(ops), ['addFields:commissions', 'updateField:commissions.article', 'updateField:commissions.quantity'])
+  assert.deepEqual(ops[0].fields, [ITEMS_FIELD])
+  assert.deepEqual(ops.slice(1).map(op => op.patch), [{ required: false }, { required: false }])
+  assert.equal(describeOp(ops[1]), 'change "commissions.article": {"required":false}')
+  assert.deepEqual(planSchema(simulate(afterPrintBoard(), ops)), [])
+})
+
+const PLAN_ARTICLES = [{ id: 'k1', name: 'Pikachu Keychain' }, { id: 'f1', name: 'Glurak Figure' }]
+
+test('legacy commissions convert to one line and converted ones are skipped', () => {
+  const commissions = [
+    { id: 'c1', article: 'k1', quantity: 2, items: null },
+    { id: 'c2', article: 'f1', quantity: 1, items: [] },
+    { id: 'c3', article: 'k1', quantity: 1, items: [{ article: 't1', name: 'Totoro', quantity: 1 }] },
+    { id: 'c4', article: '', quantity: 0, items: [{ article: 'k1', name: 'Pikachu Keychain', quantity: 3 }] }
+  ]
+  assert.deepEqual(planCommissionItems(commissions, PLAN_ARTICLES), [
+    { id: 'c1', patch: { items: [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }] } },
+    { id: 'c2', patch: { items: [{ article: 'f1', name: 'Glurak Figure', quantity: 1 }] } }
+  ])
+})
+
+test('a legacy commission whose article is gone converts as Unknown article', () => {
+  assert.deepEqual(planCommissionItems([{ id: 'c1', article: 'zzzzzzzzzzzzzzz', quantity: 4 }], PLAN_ARTICLES), [
+    { id: 'c1', patch: { items: [{ article: 'zzzzzzzzzzzzzzz', name: 'Unknown article', quantity: 4 }] } }
+  ])
+})
+
+test('converting again after applying changes nothing', () => {
+  const commissions = [{ id: 'c1', article: 'k1', quantity: 2, items: null }, { id: 'c2', article: '', quantity: 0, items: null }]
+  const patches = planCommissionItems(commissions, PLAN_ARTICLES)
+  assert.equal(patches.length, 1)
+  const applied = commissions.map(commission => ({ ...commission, ...patches.find(item => item.id === commission.id)?.patch }))
+  assert.deepEqual(planCommissionItems(applied, PLAN_ARTICLES), [])
 })
