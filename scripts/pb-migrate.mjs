@@ -60,7 +60,13 @@ async function adminToken () {
   return (await response.json()).token
 }
 
+// With automigrate on, PocketBase writes a <unix seconds>_<action>_<collection>.js migration for every schema change;
+// two changes in the same second collide on _migrations.file, so schema writes are spaced a little over a second apart
+const MIGRATION_GAP_MS = 1500
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+
 async function applyOp (op) {
+  await pause(MIGRATION_GAP_MS)
   const collections = await listCollections()
   if (op.op === 'createCollection') {
     return api('POST', '/collections', { ...op.body, schema: op.body.schema.map(field => resolveField(field, collections)) })
@@ -165,14 +171,17 @@ async function migrateRules () {
   console.log('Rules applied. Only the logged-in owner can write now.')
 }
 
+// fetch only says "fetch failed"; the network reason (ECONNRESET, ETIMEDOUT, a TLS error …) is in error.cause
+const reason = error => error.cause ? `${error.message} (${error.cause.code || error.cause.message})` : error.message
+
 try {
   ADMIN_TOKEN = await adminToken()
 } catch (error) {
-  console.error(error.message)
+  console.error(reason(error))
   process.exit(1)
 }
 
 await (MODE === 'rules' ? migrateRules() : migrateSchema()).catch((error) => {
-  console.error(error.message)
+  console.error(reason(error))
   process.exit(1)
 })
