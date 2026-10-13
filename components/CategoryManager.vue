@@ -147,6 +147,8 @@ const remove = async () => {
   } catch (err) {
     if (err.inUse) {
       error.value = `Move the ${err.inUse} ${editing.value.name} ${err.inUse === 1 ? 'article' : 'articles'} first`
+    } else if (err.deal) {
+      error.value = `Remove ${editing.value.name} from the deal "${err.deal.name}" first`
     } else if (err.status === 400) {
       error.value = 'Deleted articles still use this category, so it has to stay.'
     } else {

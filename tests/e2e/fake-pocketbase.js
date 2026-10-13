@@ -169,7 +169,7 @@ export function createFakePocketBase () {
     if (method === 'PATCH') return done(200, withExpand(applyChanges(record, { ...body, updated: stamp() }), expand))
     if (method === 'DELETE') {
       // Mirrors PocketBase: a required relation blocks deleting the referenced record
-      if (name === 'categories' && db.budget_tracket_catalog.some(article => article.category === id)) {
+      if (name === 'categories' && (db.budget_tracket_catalog.some(article => article.category === id) || db.deals.some(deal => deal.categories.includes(id)))) {
         return reply(400, { code: 400, message: 'Failed to delete record. Make sure that the record is not part of a required relation reference.', data: {} })
       }
       records.splice(records.indexOf(record), 1)

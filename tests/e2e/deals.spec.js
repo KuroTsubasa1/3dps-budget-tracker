@@ -75,3 +75,103 @@ test.describe('cart deals', () => {
     await expect(cart(page).getByRole('list', { name: 'Deals applied' })).toHaveCount(0)
   })
 })
+
+test.describe('managing deals', () => {
+  const editor = page => page.getByRole('dialog')
+  const dealList = page => page.getByRole('list', { name: 'Deals' })
+
+  test.beforeEach(async ({ page, api }) => {
+    api.seed({ categories: DEAL_CATEGORIES, articles: [], deals: DEALS })
+    await gotoReady(page, '/settings#deals')
+  })
+
+  test('lists deals with their terms and categories', async ({ page }) => {
+    await expect(dealList(page)).toContainText('Keychain 2 for 7')
+    await expect(dealList(page)).toContainText('2 for 7,00')
+    await expect(dealList(page)).toContainText('Big Figure, Pokeball')
+  })
+
+  test('creating an "N for X" deal shows a live example', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByLabel('Name').fill('Coaster 2 for 15')
+    await editor(page).getByLabel('Coaster').check()
+    await editor(page).getByLabel('Number of items (N)').fill('2')
+    await editor(page).getByLabel('Price', { exact: true }).fill('15')
+    await expect(editor(page).getByTestId('deal-example')).toContainText('3 items')
+    await expect(editor(page).getByTestId('deal-example')).toContainText('23,00')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+
+    await expect(dealList(page)).toContainText('Coaster 2 for 15')
+    expect(api.db.deals.find(deal => deal.name === 'Coaster 2 for 15'))
+      .toMatchObject({ type: 'bundle', categories: ['cat-coaster'], min_qty: 2, price: 15 })
+  })
+
+  test('a category can only be in one deal', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByLabel('Name').fill('Second keychain deal')
+    await editor(page).getByLabel('Keychain').check()
+    await editor(page).getByLabel('Number of items (N)').fill('3')
+    await editor(page).getByLabel('Price', { exact: true }).fill('10')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Keychain is already in the deal "Keychain 2 for 7"')
+    expect(api.db.deals).toHaveLength(2)
+  })
+
+  test('an "N for X" deal needs exactly one category', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByLabel('Name').fill('Paper goods')
+    await editor(page).getByLabel('Coaster').check()
+    await editor(page).getByLabel('Bookmark').check()
+    await editor(page).getByLabel('Number of items (N)').fill('2')
+    await editor(page).getByLabel('Price', { exact: true }).fill('12')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Choose exactly one category for an "N for X €" deal')
+  })
+
+  test('a group deal can span categories', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByLabel('Name').fill('Paper goods')
+    await editor(page).getByRole('radio', { name: 'Each X € from N' }).click()
+    await editor(page).getByLabel('Coaster').check()
+    await editor(page).getByLabel('Bookmark').check()
+    await editor(page).getByLabel('Number of items (N)').fill('2')
+    await editor(page).getByLabel('Price', { exact: true }).fill('4')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(dealList(page)).toContainText('Paper goods')
+    expect(api.db.deals.find(deal => deal.name === 'Paper goods'))
+      .toMatchObject({ type: 'group', categories: ['cat-coaster', 'cat-bookmark'], min_qty: 2, price: 4 })
+  })
+
+  test('editing a deal price keeps its categories', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Edit Big items' }).click()
+    await editor(page).getByLabel('Price', { exact: true }).fill('24')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(dealList(page)).toContainText('24,00')
+    expect(api.db.deals.find(deal => deal.name === 'Big items')).toMatchObject({ price: 24, categories: ['cat-figure', 'cat-pokeball'] })
+  })
+
+  test('deleting a deal', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Edit Keychain 2 for 7' }).click()
+    await editor(page).getByRole('button', { name: 'Delete deal' }).click()
+    await editor(page).getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(dealList(page)).not.toContainText('Keychain 2 for 7')
+    expect(api.db.deals.map(deal => deal.name)).toEqual(['Big items'])
+  })
+
+  test('validation names the missing piece', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add deal' }).click()
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Enter a name')
+    await editor(page).getByLabel('Name').fill('Nothing')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Choose a category')
+    await editor(page).getByLabel('Coaster').check()
+    await editor(page).getByLabel('Number of items (N)').fill('1')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('N must be a whole number of 2 or more')
+    await editor(page).getByLabel('Number of items (N)').fill('2')
+    await editor(page).getByLabel('Price', { exact: true }).fill('0')
+    await editor(page).getByRole('button', { name: 'Save' }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Price must be above 0')
+  })
+})

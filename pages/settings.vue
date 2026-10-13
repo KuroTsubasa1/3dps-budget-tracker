@@ -86,6 +86,7 @@
         </BaseCard>
 
         <CategoryManager v-if="activeCategory === 'categories'" />
+        <DealManager v-if="activeCategory === 'deals'" />
 
         <BaseCard v-if="activeCategory === 'notifications'" title="Notification Settings" subtitle="Configure when and how you receive alerts" icon="bell">
           <form class="space-y-5" @submit.prevent="handleSaveNotificationSettings">
@@ -196,6 +197,7 @@ const SETTINGS_CATEGORIES = [
   { id: 'api', name: 'API Configuration', description: 'Server and owner login', icon: 'code' },
   { id: 'display', name: 'Display Settings', description: 'Customize appearance', icon: 'desktop' },
   { id: 'categories', name: 'Categories', description: 'Base prices and order', icon: 'bag' },
+  { id: 'deals', name: 'Deals', description: 'Cart prices for several items', icon: 'cash' },
   { id: 'notifications', name: 'Notifications', description: 'Configure alerts and reminders', icon: 'bell' },
   { id: 'data', name: 'Data Management', description: 'Export, backup or clear data', icon: 'database' }
 ]

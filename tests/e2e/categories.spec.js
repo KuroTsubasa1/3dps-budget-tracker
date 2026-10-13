@@ -72,6 +72,15 @@ test.describe('categories', () => {
     await editor(page).getByRole('button', { name: 'Save' }).click()
     await expect(editor(page).getByRole('alert')).toHaveText('A category with this name already exists')
   })
+
+  test('a category used by a deal names the deal when deleting', async ({ page, api }) => {
+    api.db.deals.push({ id: 'deal-coasters00', name: 'Coaster 2 for 15', type: 'bundle', categories: ['cat-coaster'], min_qty: 2, price: 15 })
+    await page.getByRole('button', { name: 'Edit Coaster' }).click()
+    await editor(page).getByRole('button', { name: 'Delete category' }).click()
+    await editor(page).getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(editor(page).getByRole('alert')).toHaveText('Remove Coaster from the deal "Coaster 2 for 15" first')
+    expect(api.db.categories.map(category => category.name)).toContain('Coaster')
+  })
 })
 
 test.describe('category order', () => {
