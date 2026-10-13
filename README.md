@@ -169,6 +169,9 @@ npm run pb:migrate -- --apply-rules --owner you@example.com  # if users has more
 Order matters:
 1. Run `--apply`. The deployed app keeps working.
 2. Deploy the new app.
-3. Run `--apply-rules`. The old shared API token then stops working.
+3. Run `--apply-rules` (add `--owner <email>` if `users` has more than one account). The old shared API token then stops working.
+
+Run `--apply-rules` right after the new app is live, before selling or editing anything. Until then the new app cannot save sales, stock or categories.
+Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.
