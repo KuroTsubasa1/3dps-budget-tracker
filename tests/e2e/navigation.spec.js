@@ -22,6 +22,6 @@ for (const { path, heading } of pages) {
 
 test('business card renders its QR code in the browser', async ({ page }) => {
   await page.goto('/business-card')
-  await expect(page.getByText('Scan QR Code')).toBeVisible()
+  await expect(page.getByRole('figure', { name: 'Website' })).toBeVisible()
   await expect(page.locator('img[src^="data:image"], canvas').first()).toBeVisible()
 })

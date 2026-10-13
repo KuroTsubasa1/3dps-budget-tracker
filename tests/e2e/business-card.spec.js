@@ -18,7 +18,7 @@ test.describe('business card', () => {
       await expect(block.locator('img[src^="data:image"], canvas').first()).toBeVisible()
     }
     await expect(page.getByRole('link', { name: 'etsy.com/shop/3DPrintShopHarm' })).toHaveAttribute('href', 'https://www.etsy.com/shop/3DPrintShopHarm')
-    await expect(page.getByRole('link', { name: 'instagram.com/3d.print.shop.harm' })).toHaveAttribute('href', 'https://www.instagram.com/stories/3d.print.shop.harm/')
+    await expect(page.getByRole('link', { name: 'instagram.com/3d.print.shop.harm' })).toHaveAttribute('href', 'https://www.instagram.com/3d.print.shop.harm/')
     await expect(page.getByRole('link', { name: 'Pay with PayPal' })).toHaveAttribute('href', 'https://www.paypal.com/qrcodes/managed/53e0745c-52ea-4922-a33c-04d1c29908eb?utm_source=hawk_quick_link')
   })
 
