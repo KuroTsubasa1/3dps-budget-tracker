@@ -2,22 +2,25 @@
   <BottomSheet :open="open" :title="title" @update:open="$emit('update:open', $event)">
     <form v-if="mode === 'form'" class="space-y-4" novalidate @submit.prevent="save">
       <p v-if="error" role="alert" class="rounded-lg bg-expense/10 px-3 py-2 text-sm text-expense">{{ error }}</p>
-      <div>
-        <label for="commission-name" class="label">Customer name</label>
-        <input id="commission-name" v-model="form.customerName" type="text" class="input" autocomplete="off">
-      </div>
-      <div>
-        <label for="commission-email" class="label">Email</label>
-        <input id="commission-email" v-model="form.email" type="email" inputmode="email" class="input" autocomplete="off">
-      </div>
-      <div>
-        <p class="label">Delivery</p>
-        <SegmentedControl v-model="form.fulfilment" label="Delivery" :options="FULFILMENT_OPTIONS" />
-      </div>
-      <div v-if="form.fulfilment === 'shipping'">
-        <label for="commission-address" class="label">Address</label>
-        <textarea id="commission-address" v-model="form.address" rows="3" class="input py-2" />
-      </div>
+      <p v-if="anonymised" class="rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted">Customer data deleted</p>
+      <template v-else>
+        <div>
+          <label for="commission-name" class="label">Customer name</label>
+          <input id="commission-name" v-model="form.customerName" type="text" class="input" autocomplete="off">
+        </div>
+        <div>
+          <label for="commission-email" class="label">Email</label>
+          <input id="commission-email" v-model="form.email" type="email" inputmode="email" class="input" autocomplete="off">
+        </div>
+        <div>
+          <p class="label">Delivery</p>
+          <SegmentedControl v-model="form.fulfilment" label="Delivery" :options="FULFILMENT_OPTIONS" />
+        </div>
+        <div v-if="form.fulfilment === 'shipping'">
+          <label for="commission-address" class="label">Address</label>
+          <textarea id="commission-address" v-model="form.address" rows="3" class="input py-2" />
+        </div>
+      </template>
       <div>
         <label for="commission-article" class="label">Article</label>
         <select id="commission-article" v-model="form.article" class="input pr-9">
@@ -75,11 +78,11 @@
         <BaseButton v-if="PREVIOUS[commission.status]" variant="secondary" block :disabled="busy" @click="move(PREVIOUS[commission.status])">
           Back to {{ STATUS_LABEL[PREVIOUS[commission.status]] }}
         </BaseButton>
-        <BaseButton v-if="!isFinal(commission.status)" variant="secondary" block @click="startEdit">Edit</BaseButton>
+        <BaseButton v-if="!isFinal(commission.status)" variant="secondary" block :disabled="busy" @click="startEdit">Edit</BaseButton>
       </div>
 
       <div v-if="canCancel(commission.status)" class="border-t border-line pt-4">
-        <BaseButton v-if="confirming !== 'cancel'" variant="ghost" block @click="confirming = 'cancel'">Cancel commission</BaseButton>
+        <BaseButton v-if="confirming !== 'cancel'" variant="ghost" block :disabled="busy" @click="confirming = 'cancel'">Cancel commission</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Cancel this commission? It moves to Done and can't be reopened.</p>
           <div class="grid grid-cols-2 gap-2">
@@ -90,7 +93,7 @@
       </div>
 
       <div v-if="!commission.anonymised_at" class="border-t border-line pt-4">
-        <BaseButton v-if="confirming !== 'delete'" variant="ghost" block icon="trash" @click="confirming = 'delete'">Delete customer data</BaseButton>
+        <BaseButton v-if="confirming !== 'delete'" variant="ghost" block icon="trash" :disabled="busy" @click="confirming = 'delete'">Delete customer data</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Remove the name, email and address for good? The article, price and status stay.</p>
           <div class="grid grid-cols-2 gap-2">
@@ -170,6 +173,7 @@ const title = computed(() => {
 
 const articleById = id => props.articles.find(article => article.id === id)
 const articleName = computed(() => props.commission?.expand?.article?.name ?? articleById(props.commission?.article)?.name ?? 'Unknown article')
+const anonymised = computed(() => !!props.commission?.anonymised_at)
 const customerLabel = computed(() => (props.commission?.anonymised_at ? 'Anonymised' : props.commission?.customer_name))
 
 // Deal-aware suggestion for the chosen article and quantity
@@ -223,15 +227,22 @@ const startEdit = () => {
 }
 
 const save = async () => {
-  error.value = validateCommission(form.value)
+  if (busy.value) return
+  error.value = validateCommission({ ...form.value, anonymised: anonymised.value })
   if (error.value) return
   busy.value = true
   const shipping = form.value.fulfilment === 'shipping'
+  // Anonymised records keep their wiped customer fields untouched
+  const customer = anonymised.value
+    ? {}
+    : {
+        customer_name: form.value.customerName.trim(),
+        customer_email: form.value.email.trim(),
+        fulfilment: form.value.fulfilment,
+        address: shipping ? form.value.address.trim() : ''
+      }
   const fields = {
-    customer_name: form.value.customerName.trim(),
-    customer_email: form.value.email.trim(),
-    fulfilment: form.value.fulfilment,
-    address: shipping ? form.value.address.trim() : '',
+    ...customer,
     article: form.value.article,
     quantity: parseNumber(form.value.quantity),
     agreed_price: parseNumber(form.value.price),
@@ -257,6 +268,7 @@ const save = async () => {
 
 // The commission is updated first; income is only booked once the server has accepted "delivered"
 const move = async (target) => {
+  if (busy.value) return
   busy.value = true
   error.value = ''
   try {
@@ -276,6 +288,7 @@ const move = async (target) => {
 }
 
 const deleteData = async () => {
+  if (busy.value) return
   busy.value = true
   error.value = ''
   try {

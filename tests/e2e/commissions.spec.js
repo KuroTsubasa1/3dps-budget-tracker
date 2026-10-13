@@ -60,6 +60,45 @@ test.describe('the commissions page', () => {
     await expect(page.getByRole('button', { name: /Misty/ })).toBeVisible()
   })
 
+  test('the price stops following the suggestion once edited', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Article').selectOption({ label: 'Pikachu Keychain' })
+    await sheet(page).getByLabel('Agreed price').fill('9,50')
+    await sheet(page).getByLabel('Quantity').fill('3')
+    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('9,50')
+  })
+
+  test('saving while offline says so and keeps the form open', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: '+ New commission' }).click()
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    await sheet(page).getByLabel('Email').fill('misty@example.com')
+    await sheet(page).getByLabel('Article').selectOption({ label: 'Glurak Figure' })
+    api.fail('commissions', 'drop')
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText("You're offline — commissions need a connection")
+    await expect(sheet(page).getByLabel('Customer name')).toHaveValue('Misty')
+  })
+
+  test('an anonymised open commission can still be edited', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await gotoReady(page, '/commissions')
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await sheet(page).getByRole('button', { name: 'Delete customer data' }).click()
+    await sheet(page).getByRole('button', { name: 'Delete data' }).click()
+    await expect.poll(() => api.db.commissions[0].anonymised_at).toBeTruthy()
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await expect(sheet(page).getByText('Customer data deleted')).toBeVisible()
+    await sheet(page).getByLabel('Notes').fill('Gold paint')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect.poll(() => api.db.commissions[0].notes).toBe('Gold paint')
+    expect(api.db.commissions[0]).toMatchObject({ customer_name: '—', customer_email: '' })
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+  })
+
   test('the address is only asked for, and required, when shipping', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
@@ -118,6 +157,7 @@ test.describe('the commissions page', () => {
     expect(api.db.commissions[0].status).toBe('delivered')
     expect(api.db.commissions[0].delivered_at).toBeTruthy()
     await expect(page.getByText(/added to balance/)).toBeVisible()
+    expect(api.posted).toHaveLength(1)
   })
 
   test('a failed delivery update books no income', async ({ page, api }) => {
@@ -125,6 +165,7 @@ test.describe('the commissions page', () => {
     await api.mockTransactions()
     api.fail('commissions', 500)
     await gotoReady(page, '/commissions')
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Ready/ }).click()
     await page.getByRole('button', { name: /Ash Ketchum/ }).click()
     await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
     await expect(sheet(page).getByRole('alert')).toBeVisible()
@@ -146,7 +187,7 @@ test.describe('the commissions page', () => {
     await page.keyboard.press('Escape')
 
     const chips = page.getByRole('group', { name: 'Commission status' })
-    await expect(chips.getByRole('button', { name: /Done/ })).toContainText('1')
+    await expect(chips.getByRole('button', { name: /Done/ })).toHaveText(/Done\s*1$/)
     await chips.getByRole('button', { name: /Done/ }).click()
     await expect(page.getByRole('button', { name: /Ash Ketchum/ })).toBeVisible()
   })

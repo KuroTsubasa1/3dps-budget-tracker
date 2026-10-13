@@ -77,7 +77,7 @@ const { listDeals } = useDeals()
 const commissions = ref([])
 const articles = ref([])
 const deals = ref([])
-const loading = ref(false)
+const loading = ref(true)
 const loadError = ref('')
 const activeTab = ref('open')
 const sheetOpen = ref(false)
@@ -101,8 +101,6 @@ const load = async () => {
     deals.value = dealList
     const changed = await anonymiseDue(list)
     commissions.value = changed.length ? await listCommissions() : list
-    // Land on the first stage that has work in it rather than an empty Open tab
-    if (!counts.value[activeTab.value]) activeTab.value = TABS.find(tab => counts.value[tab.id])?.id ?? 'open'
   } catch (err) {
     loadError.value = 'Could not load commissions. Check your connection and try again.'
   } finally {

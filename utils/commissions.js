@@ -65,10 +65,13 @@ const parseNumber = value => Number(String(value).trim().replace(',', '.'))
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function validateCommission (form) {
-  if (!String(form.customerName ?? '').trim()) return "Enter the customer's name"
-  if (!EMAIL.test(String(form.email ?? '').trim())) return 'Enter a valid email address'
+  // An anonymised commission has no customer data left to require
+  if (!form.anonymised) {
+    if (!String(form.customerName ?? '').trim()) return "Enter the customer's name"
+    if (!EMAIL.test(String(form.email ?? '').trim())) return 'Enter a valid email address'
+  }
   if (!form.article) return 'Choose an article'
-  if (form.fulfilment === 'shipping' && !String(form.address ?? '').trim()) return 'Enter an address for shipping'
+  if (!form.anonymised && form.fulfilment === 'shipping' && !String(form.address ?? '').trim()) return 'Enter an address for shipping'
   const quantity = parseNumber(form.quantity)
   if (!Number.isInteger(quantity) || quantity < 1) return 'Quantity must be a whole number of 1 or more'
   if (String(form.price ?? '').trim() === '' || !(parseNumber(form.price) > 0)) return 'Agreed price must be above 0'

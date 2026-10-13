@@ -99,3 +99,10 @@ test('validation names the first problem in a fixed order', () => {
   assert.equal(validateCommission({ ...VALID, price: '0' }), 'Agreed price must be above 0')
   assert.equal(validateCommission({ ...VALID, price: '' }), 'Agreed price must be above 0')
 })
+
+test('an anonymised commission skips the customer data checks but keeps the rest', () => {
+  const anonymised = { ...VALID, anonymised: true, customerName: '', email: '', fulfilment: 'shipping', address: '' }
+  assert.equal(validateCommission(anonymised), '')
+  assert.equal(validateCommission({ ...anonymised, quantity: '0' }), 'Quantity must be a whole number of 1 or more')
+  assert.equal(validateCommission({ ...anonymised, article: '' }), 'Choose an article')
+})
