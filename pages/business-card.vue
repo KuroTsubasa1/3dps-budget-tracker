@@ -23,15 +23,19 @@
           </li>
         </ul>
 
-        <div class="mt-5 border-t border-line pt-5">
-          <h3 class="mb-3 text-sm font-semibold text-ink">Scan QR Code</h3>
-          <!-- The QR library renders a fixed 300px canvas; let it shrink on narrow phones -->
-          <div class="inline-block max-w-full rounded-lg bg-white p-3 [&_canvas]:!h-auto [&_canvas]:max-w-full [&_img]:h-auto [&_img]:max-w-full">
-            <ClientOnly>
-              <QRCode :value="websiteUrl" v-bind="qrcodeOptions" class="mx-auto" />
-            </ClientOnly>
-          </div>
-          <p class="mt-3 text-sm text-ink-muted">Scan this QR code to visit our website</p>
+        <div class="mt-5 space-y-6 border-t border-line pt-5">
+          <figure v-for="code in QR_CODES" :key="code.name" :aria-label="code.name">
+            <h3 class="mb-3 text-sm font-semibold text-ink">{{ code.name }}</h3>
+            <!-- The QR library renders a fixed 300px canvas; let it shrink on narrow phones -->
+            <div class="inline-block max-w-full rounded-lg bg-white p-3 [&_canvas]:!h-auto [&_canvas]:max-w-full [&_img]:h-auto [&_img]:max-w-full">
+              <ClientOnly>
+                <QRCode :value="code.url" v-bind="qrcodeOptions" class="mx-auto" />
+              </ClientOnly>
+            </div>
+            <figcaption class="mt-2">
+              <a :href="code.url" target="_blank" rel="noopener" class="inline-flex min-h-[44px] items-center text-sm text-ink-muted hover:text-accent">{{ code.label }}</a>
+            </figcaption>
+          </figure>
         </div>
       </div>
 
@@ -49,6 +53,12 @@ import QRCode from 'qrcode-vue3'
 import qrcodeOptions from '@/assets/options.json'
 
 const websiteUrl = 'https://3dps.space/'
+
+const QR_CODES = [
+  { name: 'Website', url: websiteUrl, label: '3dps.space' },
+  { name: 'Etsy', url: 'https://www.etsy.com/shop/3DPrintShopHarm', label: 'etsy.com/shop/3DPrintShopHarm' },
+  { name: 'Instagram', url: 'https://www.instagram.com/stories/3d.print.shop.harm/', label: 'instagram.com/3d.print.shop.harm' }
+]
 
 const canShare = ref(false)
 onMounted(() => { canShare.value = typeof navigator.share === 'function' })
