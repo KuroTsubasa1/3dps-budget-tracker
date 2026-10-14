@@ -2,6 +2,11 @@
 export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
+  nitro: {
+    // The server shares utils/calendar with the app. In nuxt dev Nitro would load files outside server/ as
+    // external modules from a wrong path, so they are bundled like the server's own files
+    externals: { inline: [/[\\/]utils[\\/]calendar[\\/]/] }
+  },
   app: {
     head: {
       title: 'Akinai · 商い',
@@ -67,7 +72,11 @@ export default defineNuxtConfig({
     },
     workbox: {
       navigateFallback: '/',
-      globPatterns: ['**/*.{js,css,html,png,svg,ico,json}']
+      // Server routes (the calendar feed, the push routes) are never answered with the app shell
+      navigateFallbackDenylist: [/^\/api\//],
+      globPatterns: ['**/*.{js,css,html,png,svg,ico,json}'],
+      // Push and notification taps (public/push-sw.js)
+      importScripts: ['push-sw.js']
     },
     registerWebManifestInRouteRules: true,
     writePlugin: true,
