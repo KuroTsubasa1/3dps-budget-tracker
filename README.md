@@ -17,200 +17,95 @@
 
 ---
 
-## Features
+## What Akinai does
 
-### Core Functionality
-- 💰 Track income and expenses with a beautiful, intuitive interface
-- 📊 Real-time balance updates and transaction history
-- 🗾 Automatic calculation of Japan savings (10% of total balance)
-- 📱 Touch-friendly numpad for easy amount input
-- 📝 Notes field for recording transaction details
-- 📆 Date tracking for all transactions
+Akinai is an installable web app for one owner. It runs on the phone at the market stall and on the laptop at home, and keeps its data in PocketBase.
 
-### Advanced Features
-- 🌐 Offline functionality with automatic sync when connection is restored
-- 🔄 Synchronization with Pocketbase backend
-- 🌙 Dark mode with customizable appearance
-- 🔔 Notification system for important events
-- 📱 Progressive Web App (PWA) support for mobile installation
-- 📈 Reports and analytics dashboard
-- 💱 Multiple currency support (EUR, USD, GBP)
-- 🗓️ Customizable date formats
+| | |
+|---|---|
+| **Sales** | The dashboard shows the balance, today's takings and the Japan savings (10%). A sale can be typed in with the numpad or rung up from the catalog. Sales made offline are queued and sync once the connection is back. |
+| **Catalog and deals** | Articles with photos, categories with base prices, and the stock of each article. Cart deals ("Keychain 2 for 7", "Big items") are applied at checkout. Every stock change is recorded as a movement. |
+| **Commissions** | Made-to-order prints with several articles, from Open to Printing, Ready and Delivered. Delivering books the income. Customer data is wiped six months after a commission is finished. |
+| **Print board** | What to print next: articles at or below their low-stock threshold, and open commissions. It also shows what is printing and what was done today. |
+| **Reports** | Sales by article and category, a market day hour by hour, money over time and stock (what runs out soonest, printed vs sold), for any period. Each tab exports as CSV. |
+| **Calendar and reminders** | Conventions from application to setup: open applications with their deadlines, an Upcoming list, a month grid, the stand fee (booked as an expense) and reminders. Reminders arrive as push notifications, and a private calendar link puts every convention in the phone's Calendar. |
+| **Business card** | A digital business card with a QR code, to show or print. |
 
-### Product Management
-- 📦 Browse through a catalog of 3D printing products
-- 🔍 Filter and search functionality
-- 🛒 Cart functionality for easy ordering
-- 🏷️ Product categorization and sorting
+Everything works at 375 px with 44 px tap targets, in light and dark mode.
 
-### Business Tools
-- 💼 Customizable digital business card creator
-- 🎨 Color picker and design options
-- 📱 Mobile-responsive design for all devices
-- 🖨️ Print and share functionality
-- 📊 Financial reports with graphical visualization
+## How it works
 
-## Installation
+```mermaid
+flowchart LR
+    Phone([Phone / laptop<br/>Akinai PWA]) -- PocketBase SDK --> PB[(PocketBase 0.22)]
+    Phone -- push status, test, calendar link --> Nuxt[Nuxt server<br/>pm2 on the VPS]
+    Nuxt -- akinai-notifier account --> PB
+    Nuxt -- web-push every 5 min --> Push[Browser push service]
+    Push --> Phone
+    Calendar([Phone Calendar]) -- private .ics link --> Nuxt
+```
 
-1. Clone the repository:
+- The app talks to PocketBase directly with the owner's login. PocketBase rules let only the owner write.
+- The Nuxt server also runs the reminder job. Every 5 minutes it logs in as `akinai-notifier`, a second account that may only read conventions, read and delete push subscriptions, and mark reminders as sent. It sends the due reminders with `web-push`, and it serves the calendar feed.
+- Rules that are worth testing live in plain modules under `utils/` (and `server/utils/` for the server). `node --test` runs them, and Playwright checks the pages against an in-memory fake PocketBase.
+
+## Setup
+
+You need Node 20 or newer.
+
 ```bash
 git clone https://github.com/KuroTsubasa1/akinai.git
 cd akinai
-```
-
-2. Install dependencies:
-```bash
 npm install
+cp .env.example .env     # the PocketBase address, plus your admin login for the migration script
+npm run dev              # http://localhost:3000
 ```
 
-3. Configure environment variables:
-Create a `.env` file based on `.env.example` with your Pocketbase API details.
+`nuxt dev` never starts the reminder job. Without the server env (see [The env file](#the-env-file)), Settings → Notifications shows "Notifications aren't configured on the server".
 
-4. Start the development server:
-```bash
-npm run dev
-```
-
-## Usage
-
-### Adding Transactions
-1. Select transaction type (Income/Expense)
-2. Enter a description for the transaction
-3. Input the amount using either keyboard or the touch-friendly numpad
-4. Add optional notes for context
-5. Click "Add to Balance" to save
-
-### Viewing Balances
-- The main balance card shows your current available balance
-- The Japan savings amount (10% of total) is automatically calculated and displayed
-- Recent transactions are listed below with their details
-- Toggle between today's balance and all-time balance
-
-### Using the Catalog
-- Browse through available 3D printing items in the catalog
-- View detailed information about each item including price and specifications
-- Use the catalog to quickly add common expenses to your budget tracker
-- Filter and search functionality to easily find specific items
-
-### Creating Business Cards
-- Design custom digital business cards for your 3D printing business
-- Customize colors, layout, and information
-- Include QR codes linking to your website
-- Save, print, or share your business card
-
-### Customizing Settings
-- Change appearance with dark/light mode
-- Configure API connection to Pocketbase
-- Set currency and date formats
-- Manage notification preferences
-- Export or backup your data
-
-## Project Structure
-
-```
-akinai/
-├── pages/              # Application pages (index, settings, catalog, business-card, reports)
-├── components/         # Vue components (PWAInstall, etc.)
-├── composables/        # Vue composables (hooks for transactions, settings, offline queue)
-├── utils/              # Utility functions (currency, date formatting)
-├── assets/             # Static assets and CSS
-├── public/             # Public files (favicon, icons)
-├── plugins/            # Nuxt plugins (darkMode.client.js)
-└── server/             # Server-side code
-```
-
-## Technologies Used
-
-- Vue.js 3 with Composition API
-- Nuxt.js 3
-- Tailwind CSS
-- Pocketbase backend
-- Vite PWA plugin
-- LocalStorage for offline persistence
-- QR code generation
-- Chart.js for data visualization
-
-## Offline Functionality
-
-The app is designed to work offline:
-1. Transactions are stored locally first
-2. When offline, they're added to a sync queue
-3. When connection is restored, the app automatically syncs pending transactions
-4. Visual indicators show sync status and pending items
-
-## Customization Options
-
-### Theme
-- Dark mode / Light mode
-- Customizable business card colors
-- Consistent design system throughout the app
-
-### Data
-- Multiple currency formats
-- Different date formats
-- Configurable API endpoints
-- Data export/import capabilities
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Thanks to all contributors who have helped shape this project
-- Inspired by the need for a comprehensive budget tracking solution for 3D printing businesses
-
-## PocketBase setup: categories, stock and owner login
-
-The app needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads your PocketBase admin login from your local `.env`. Set `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` there (`POCKETBASE_ADMIN_TOKEN` is an optional alternative). Never prefix these with `NUXT_PUBLIC_`.
+**Tests**
 
 ```bash
-npm run pb:migrate                  # dry run: prints the plan, writes scripts/category-mapping.json
-npm run pb:migrate -- --apply       # create collections (incl. deals), seed categories and deals, assign article categories
-npm run pb:migrate -- --apply-rules # pin owner-only writes and close public sign-up on users
-npm run pb:migrate -- --apply-rules --owner you@example.com  # if users has more than one account
+npm run test:unit                      # node --test, every rule module and the server job with fakes
+npx playwright test                    # e2e against the dev server and a fake PocketBase (Chromium and a Pixel 7)
+npx playwright test --project=mobile   # the phone layout only
 ```
 
-`--apply-rules` picks the owner from `users`: the only account, or the one named with `--owner`. Public sign-up on `users` is closed by the same step.
+## PocketBase and migrations
 
-Order matters:
-1. Run `--apply`. The deployed app keeps working.
-2. Deploy the new app.
-3. Run `--apply-rules` (add `--owner <email>` if `users` has more than one account). The old shared API token then stops working.
+Akinai needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads your PocketBase admin login from your local `.env`. Set `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` there (`POCKETBASE_ADMIN_TOKEN` is an optional alternative). Never prefix them with `NUXT_PUBLIC_`.
 
-Run `--apply-rules` right after the new app is live, before selling or editing anything. Until then the new app cannot save sales, stock or categories.
-Updating from an earlier version: re-run `npm run pb:migrate -- --apply` (creates and seeds `deals`) before deploying this build, then `--apply-rules` to open deal editing to the owner.
+```bash
+npm run pb:migrate                       # dry run: prints the plan, writes scripts/category-mapping.json
+npm run pb:migrate -- --apply            # create collections and fields, seed categories and deals, map articles to categories
+npm run pb:migrate -- --apply-rules --owner you@example.com --notifier akinai-notifier@example.com
+```
 
-Rollout for the multi-article commissions release: run `npm run pb:migrate` (dry run, it should list the commissions to convert), then `npm run pb:migrate -- --apply`, then deploy right away. Don't edit commissions on a device until it has loaded the new app (reload an installed PWA once).
+- **Collections:** `budget_tracket_catalog` (articles), `budget_tracker_transactions`, `categories`, `deals`, `stock_movements`, `commissions`, `print_jobs`, `conventions` and `push_subscriptions`.
+- **New collections start locked.** Only the admin can use them until `--apply-rules` opens them to the owner.
+- **`--apply-rules`** closes public sign-up on `users` and pins every write to the owner's record id. It prints that id: `Owner: you@example.com (abc123…)`.
+  - `--owner` names the owner. It is required once `users` holds more than one account, which is the case as soon as the notifier exists.
+  - `--notifier` lets the reminder account read and update conventions and read and delete push subscriptions. Without it those two collections stay owner-only, and the reminder job can't read them.
+  - **Every later `--apply-rules` must repeat both** `--owner <email>` and `--notifier <email>`. Once the notifier exists, a run without `--notifier` stops with an error rather than silently cutting the notifier off.
+- **The snapshot:** every run writes the resulting schema to `pocketbase/schema.json`. The unit tests check the plan against it.
+- **Order:** run `--apply` before deploying a release that needs new fields, and `--apply-rules` right after the release is live.
 
-Rollout for the sale date release: run `npm run pb:migrate` (the dry run should show only `add to "budget_tracker_transactions": date`), then `npm run pb:migrate -- --apply`. Deploy before or after, the order doesn't matter: until the field exists PocketBase ignores the `date` the app sends, and records without one are dated by `created` as before. From then on a sale queued offline or uploaded later keeps the day it was made.
+**Earlier releases**, for a server that is behind:
+- **Multi-article commissions:** `--apply` converts the old commissions to lines. Deploy right after it.
+- **Sale date, and the reports (`items`, `sold_at`):** these fields are optional. Deploy before or after `--apply`; until a field exists, PocketBase ignores what the app sends.
 
-Rollout for the reports release: run `npm run pb:migrate` (the dry run should show only `add to "budget_tracker_transactions": items, sold_at`), then `npm run pb:migrate -- --apply`. Deploy before or after, the order doesn't matter: until the fields exist PocketBase ignores the `items` and `sold_at` the app sends, and those sales count as older sales in the reports (their units come from stock movements). Migrate first to keep the lines of every sale made with the new app.
-
-Afterwards, make one test sale and check it appears in PocketBase.
-
-Each run writes the resulting schema to `pocketbase/schema.json`.
-
-## Deployment (GitHub Actions → VPS)
+## Deploy
 
 Every push to `main` runs `.github/workflows/deploy.yml`, which can also be started by hand under Actions → Deploy → Run workflow. It does the following:
 1. Installs the dependencies, runs the unit tests and builds the app.
 2. Uploads the build to `/opt/budget-tracker/releases/<commit>` on the VPS and points `/opt/budget-tracker/current` at it.
-3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker`, listening on `127.0.0.1:3668`).
+3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker` on `127.0.0.1:3668`, `TZ=Europe/Berlin`, and the env file when it exists).
 4. Checks that https://akinai.lasseharm.space answers.
 
 The 5 newest releases are kept on the server.
 
 **One-time server setup** (as root, for the `deploy` user):
-1. Install Node 20 or newer and pm2 for `deploy`:
+1. Install Node 20.6 or newer (for `--env-file`) and pm2 for `deploy`:
    ```bash
    npm i -g pm2
    ```
@@ -240,6 +135,74 @@ pm2 save
 
 Schema changes are not part of the deploy: run `npm run pb:migrate` yourself first, as described above.
 
+### The env file
+
+Reminders run only in the built server (never in `nuxt dev`), every 5 minutes. They and the calendar feed need secrets that only the server knows. They live in `/opt/budget-tracker/shared/akinai.env` (mode 600, owned by `deploy`), outside the releases, so a deploy never overwrites them. `ecosystem.config.cjs` passes the file to Node with `--env-file` whenever it exists. Without it the app runs as before, with reminders and the feed switched off.
+
+| Variable | What it is |
+|---|---|
+| `POCKETBASE_URL` | **required**: the PocketBase address, starting with `https://` (for example `https://pocket.lasseharm.space`). There is no fallback, so the notifier's password never goes to a guessed or plain-http address. |
+| `OWNER_ID` | the owner's record id in `users`: the 15-character id that `--apply-rules` prints. The server's push and calendar-link routes accept only this account (and the notifier). |
+| `NOTIFIER_EMAIL`, `NOTIFIER_PASSWORD` | the `akinai-notifier` account's login |
+| `NUXT_PUBLIC_VAPID_PUBLIC_KEY` | the VAPID public key (public by design) |
+| `VAPID_PRIVATE_KEY` | the VAPID private key |
+| `VAPID_SUBJECT` | a `mailto:` address that push services can contact |
+| `CALENDAR_SECRET` | the random part of the private calendar link: at least 32 characters of `A-Z a-z 0-9 _ -` (otherwise the feed stays off). `openssl rand -hex 32` works. |
+
+Push goes only to the real push services (Apple, Google FCM, Mozilla and Microsoft), and only over https.
+
+None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. None of them go into the repository or a local `.env` that is committed.
+
+pm2 reads the file when the process starts. After editing it, restart from the current release:
+```bash
+pm2 delete budget-tracker
+pm2 start /opt/budget-tracker/current/ecosystem.config.cjs
+pm2 save
+```
+
+### Rollout: convention calendar
+
+Run these yourself, in this order. Each step names what to check.
+
+1. **Schema.** Run `npm run pb:migrate`. The dry run should list `create collection "conventions" (…)` and `create collection "push_subscriptions" (endpoint, keys, device)`, plus `add to "budget_tracker_transactions": items, sold_at` if the reports release is not migrated yet. Then run `npm run pb:migrate -- --apply`.
+2. **The notifier account.** In the PocketBase admin, create a user in `users` named `akinai-notifier`, with its own email address and a long random password (for example `openssl rand -base64 32`). Then run:
+   ```bash
+   npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>
+   ```
+   Note the owner id that it prints (`Owner: … (<id>)`). From now on, every `--apply-rules` run needs both `--owner` and `--notifier`.
+3. **The env file.** Make the keys and the feed secret:
+   ```bash
+   npx web-push generate-vapid-keys
+   openssl rand -hex 32
+   ```
+   Then write the file on the server, as `deploy`:
+   ```bash
+   install -d -m 700 /opt/budget-tracker/shared
+   install -m 600 /dev/null /opt/budget-tracker/shared/akinai.env
+   nano /opt/budget-tracker/shared/akinai.env
+   ```
+   ```bash
+   POCKETBASE_URL=https://pocket.lasseharm.space
+   OWNER_ID=<owner id from step 2>
+   NOTIFIER_EMAIL=<notifier email>
+   NOTIFIER_PASSWORD=<notifier password>
+   NUXT_PUBLIC_VAPID_PUBLIC_KEY=<public key>
+   VAPID_PRIVATE_KEY=<private key>
+   VAPID_SUBJECT=mailto:<your email>
+   CALENDAR_SECRET=<random hex>
+   ```
+4. **Deploy.** Push to `main`. The deploy restarts pm2 from the new release, which loads the file. Within a minute, `pm2 logs budget-tracker` should show no `[reminders] off` line.
+5. **On each phone:**
+   - Open Settings → Notifications → *Turn on notifications on this device*. On an iPhone, add Akinai to the Home Screen first and open it from there; this needs iOS 16.4 or newer.
+   - Tap *Send test notification*. Logging out turns notifications off on that device; turn them on again after you log back in.
+   - Tap *Copy calendar link* and add it in the Calendar app as a subscribed calendar.
+
+   The status line then reads `Reminders last checked <time>` (or shows the last error).
+
+The calendar link contains `CALENDAR_SECRET`, so it shows up in nginx access logs, and anyone who has the link can read the whole feed. Treat it like a password. A new `CALENDAR_SECRET` ends every existing calendar subscription; add the new link on each phone again.
+
 ## Credits
 
 The 商 in the Akinai logo is drawn from [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP) (SIL Open Font License 1.1). `node scripts/make-icons.mjs` renders the app icons from `public/logo.svg`.
+
+Push notifications use [web-push](https://github.com/web-push-libs/web-push) (MPL 2.0).
