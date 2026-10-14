@@ -213,8 +213,13 @@ export function planSchema (collections) {
   // The sale's local day (YYYY-MM-DD): a sale queued offline or uploaded later keeps it instead of
   // taking the day it reached the server. Optional, because older records only have `created`.
   const transactions = byName(collections, TRANSACTIONS)
-  if (transactions && !findField(transactions, 'date')) {
-    ops.push({ op: 'addFields', collection: TRANSACTIONS, fields: [text('date', false, '^\\d{4}-\\d{2}-\\d{2}$')] })
+  if (transactions) {
+    const added = []
+    if (!findField(transactions, 'date')) added.push(text('date', false, '^\\d{4}-\\d{2}-\\d{2}$'))
+    // Reports: the sale's lines and its time. Optional, because older records have neither
+    if (!findField(transactions, 'items')) added.push(json('items'))
+    if (!findField(transactions, 'sold_at')) added.push(date('sold_at'))
+    if (added.length) ops.push({ op: 'addFields', collection: TRANSACTIONS, fields: added })
   }
   return ops
 }
