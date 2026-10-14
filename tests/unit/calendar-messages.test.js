@@ -89,3 +89,15 @@ test('a reminder whose day was cleared still reads well', () => {
     url: '/calendar?c=conv00000000001'
   })
 })
+
+test('days already passed never read as a negative count', () => {
+  assert.deepEqual(messageFor({ convention: convention({ status: 'interested' }), reminder: reminder('deadline'), now: local(10, 22, 9) }), {
+    title: 'Applications closed',
+    body: 'Dokomi · closes Wed 21 Oct',
+    url: '/calendar?c=conv00000000001'
+  })
+  const running = local(11, 8, 9)
+  assert.equal(messageFor({ convention: convention(), reminder: reminder('pack'), now: running }).title, 'Dokomi is on now')
+  assert.equal(messageFor({ convention: convention(), reminder: reminder('stock'), articles: [], now: running }).title, 'Dokomi is on now')
+  assert.equal(messageFor({ convention: convention(), reminder: reminder('setup'), now: running }).title, 'Setup: Dokomi')
+})

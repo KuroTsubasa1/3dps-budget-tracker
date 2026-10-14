@@ -50,7 +50,7 @@ export const parseInstant = (value) => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-// 'Tue 21 Oct'
+// 'Wed 21 Oct'
 export const formatDay = (key) => {
   const [year, month, day] = partsOf(key)
   return `${WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]} ${day} ${MONTHS[month - 1]}`
@@ -59,7 +59,7 @@ export const formatDay = (key) => {
 // '09:00' in local time
 export const formatTime = date => `${pad(date.getHours())}:${pad(date.getMinutes())}`
 
-// 'Tue 21 Oct, 09:00' in local time
+// 'Wed 21 Oct, 09:00' in local time
 export const formatMoment = date => `${formatDay(localDayKey(date))}, ${formatTime(date)}`
 
 // 'November 2026'; month is 0-based like Date

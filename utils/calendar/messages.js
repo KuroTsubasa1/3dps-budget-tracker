@@ -5,8 +5,10 @@ import { lowStockArticles, suggestedQuantity } from '../printBoard.js'
 // The stock check names at most this many articles, then "+N more"
 export const STOCK_LIST_LIMIT = 5
 
-// ' in 5 days', or nothing when the day is not set
-const when = days => (Number.isFinite(days) ? ` ${inDays(days)}` : '')
+// ' in 5 days', or nothing when the day is not set or has passed
+const when = days => (Number.isFinite(days) && days >= 0 ? ` ${inDays(days)}` : '')
+// Title of an event reminder: 'Dokomi in 2 days', or 'Dokomi is on now' once the start has passed
+const eventTitle = (name, days) => (days < 0 ? `${name} is on now` : `${name}${when(days)}`)
 const placeOf = convention => [convention.hall, convention.table ? `Table ${convention.table}` : ''].filter(Boolean).join(', ')
 
 function stockBody (articles) {
@@ -27,14 +29,14 @@ export function messageFor ({ convention, reminder, articles = [], now = new Dat
   if (reminder.kind === 'deadline') {
     const close = dayKey(convention.applications_close)
     const days = until('applications_close')
-    return { title: `Applications close${when(days)}`, body: close ? `${name} · closes ${formatDay(close)}` : name, url }
+    return { title: days < 0 ? 'Applications closed' : `Applications close${when(days)}`, body: close ? `${name} · closes ${formatDay(close)}` : name, url }
   }
   if (reminder.kind === 'stock') {
-    return { title: `${name}${when(until('starts_on'))}`, body: stockBody(articles), url }
+    return { title: eventTitle(name, until('starts_on')), body: stockBody(articles), url }
   }
   if (reminder.kind === 'pack') {
     const place = placeOf(convention)
-    return { title: `${name}${when(until('starts_on'))}`, body: place ? `Time to pack · ${place}` : 'Time to pack', url }
+    return { title: eventTitle(name, until('starts_on')), body: place ? `Time to pack · ${place}` : 'Time to pack', url }
   }
   if (reminder.kind === 'setup') {
     const setup = parseInstant(convention.setup_at)

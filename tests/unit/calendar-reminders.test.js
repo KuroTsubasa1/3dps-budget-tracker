@@ -228,3 +228,21 @@ test('a reminder reads Sent, Skipped, Missed or nothing', () => {
   assert.equal(stateOf({ sent_at: 'x', skipped: true }), 'Skipped')
   assert.equal(stateOf({ sent_at: 'x', missed: true }), 'Missed')
 })
+
+test('a reminder both not allowed and over 24 hours late is skipped, not missed', () => {
+  const stale = convention({ status: 'applied', reminders: [{ id: 'auto-deadline-1', kind: 'deadline', at: iso(10, 20, 9), auto: true }] })
+  assert.deepEqual(dueReminders([stale], local(10, 29, 9)).map(item => item.action), ['skip'])
+})
+
+test('editing a sent reminder re-arms it for its new time', () => {
+  const sent = { id: 'custom-1', kind: 'custom', at: iso(10, 20, 9), text: 'Hotel', auto: false, sent_at: iso(10, 20, 9, 1), missed: true }
+  const edited = editReminder([sent], 'custom-1', { at: iso(10, 30, 9), text: 'Hotel' })
+  assert.deepEqual(edited, [{ id: 'custom-1', kind: 'custom', at: iso(10, 30, 9), text: 'Hotel', auto: false }])
+  const c = convention({ reminders: edited })
+  assert.deepEqual(dueReminders([c], local(10, 30, 8)), [])
+  assert.deepEqual(dueReminders([c], local(10, 30, 9, 1)).map(item => item.action), ['send'])
+  // No text given leaves the text alone, and never writes undefined
+  const kept = editReminder([sent], 'custom-1', { at: iso(10, 30, 9) })[0]
+  assert.equal(kept.text, 'Hotel')
+  assert.ok(!('text' in editReminder([{ ...sent, text: undefined }].map(({ text, ...rest }) => rest), 'custom-1', { at: iso(10, 30, 9) })[0]))
+})

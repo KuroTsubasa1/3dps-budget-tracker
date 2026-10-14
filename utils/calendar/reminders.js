@@ -104,9 +104,12 @@ export function withSentMarks (reminders, marked) {
 
 // The owner's changes. An edited default loses `auto` and keeps its id; a removed default stays as a
 // `removed` marker so it does not come back; a removed custom reminder is gone.
-export const editReminder = (reminders, id, { at, text }) => reminders.map(reminder => (reminder.id === id
-  ? { ...reminder, at, auto: false, ...(reminder.kind === 'custom' ? { text } : {}) }
-  : reminder))
+// Editing re-arms a reminder: its sent, skipped and missed marks are dropped so it goes out at the new time.
+export const editReminder = (reminders, id, { at, text }) => reminders.map((reminder) => {
+  if (reminder.id !== id) return reminder
+  const { sent_at: _sent, skipped: _skipped, missed: _missed, ...rest } = reminder
+  return { ...rest, at, auto: false, ...(reminder.kind === 'custom' && text !== undefined ? { text } : {}) }
+})
 
 export const removeReminder = (reminders, id) => reminders.flatMap((reminder) => {
   if (reminder.id !== id) return [reminder]
