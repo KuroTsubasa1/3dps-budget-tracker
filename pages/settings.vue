@@ -192,6 +192,7 @@ import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useAuth } from '~/composables/useAuth'
 import { useOfflineQueue } from '~/composables/useOfflineQueue'
+import { usePushNotifications } from '~/composables/usePushNotifications'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
@@ -220,10 +221,13 @@ const {
 } = useAppSettings()
 const { toast } = useToast()
 const { user, logout } = useAuth()
+const { releaseDevice } = usePushNotifications()
 const pocketbaseUrl = useRuntimeConfig().public.pocketbaseUrl
 
-const logOutNow = () => {
+const logOutNow = async () => {
   showLogoutConfirm.value = false
+  // Notifications stop on this device; needs the token, so before it is cleared
+  await releaseDevice()
   forgetLocalData()
   logout()
   navigateTo('/login')

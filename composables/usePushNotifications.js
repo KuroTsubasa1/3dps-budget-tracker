@@ -27,6 +27,22 @@ export const usePushNotifications = () => {
   const registration = () => navigator.serviceWorker.getRegistration()
   const currentSubscription = async () => (await registration())?.pushManager.getSubscription() ?? null
 
+  // Whether the subscription was made with the server's current VAPID key (a rotated key needs a new one).
+  // Browsers that don't report the key count as matching.
+  const usesCurrentKey = (subscription) => {
+    const key = subscription.options?.applicationServerKey
+    const publicKey = status.value?.publicKey
+    if (!key || !publicKey) return true
+    const expected = urlBase64ToUint8Array(publicKey)
+    const actual = new Uint8Array(key)
+    return actual.length === expected.length && actual.every((byte, index) => byte === expected[index])
+  }
+
+  const deleteRecords = async (endpoint) => {
+    const records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+    for (const record of records) await pb.collection(SUBSCRIPTIONS).delete(record.id)
+  }
+
   // Works out this device's state; never throws
   const refreshState = async () => {
     const supported = support()
@@ -39,7 +55,8 @@ export const usePushNotifications = () => {
       return
     }
     try {
-      state.value = (await currentSubscription()) && Notification.permission === 'granted' ? 'on' : 'off'
+      const subscription = await currentSubscription()
+      state.value = subscription && usesCurrentKey(subscription) && Notification.permission === 'granted' ? 'on' : 'off'
     } catch {
       state.value = 'off'
     }
@@ -59,14 +76,27 @@ export const usePushNotifications = () => {
     }
     const worker = await registration()
     if (!worker) throw new Error('Akinai is still being set up on this device. Reload the page and try again.')
-    const subscription = await worker.pushManager.getSubscription() ??
-      await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(status.value.publicKey) })
+    let subscription = await worker.pushManager.getSubscription()
+    // Made with an older server key: its pushes would be refused, so start over (the old record goes too, best effort)
+    if (subscription && !usesCurrentKey(subscription)) {
+      await deleteRecords(subscription.endpoint).catch(() => {})
+      await subscription.unsubscribe()
+      subscription = null
+    }
+    const created = !subscription
+    if (created) {
+      subscription = await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(status.value.publicKey) })
+    }
     const { endpoint, keys } = subscription.toJSON()
     try {
       await pb.collection(SUBSCRIPTIONS).create({ endpoint, keys, device: deviceName(navigator.userAgent) })
     } catch (error) {
       // The endpoint is unique: this device is already on the server
-      if (!(error?.status === 400 && error.response?.data?.endpoint)) throw error
+      if (!(error?.status === 400 && error.response?.data?.endpoint)) {
+        // Not stored, so not on: don't leave a browser subscription the server doesn't know
+        if (created) await subscription.unsubscribe().catch(() => {})
+        throw error
+      }
     }
     state.value = 'on'
   }
@@ -75,8 +105,7 @@ export const usePushNotifications = () => {
   const turnOff = async () => {
     const subscription = await currentSubscription()
     if (subscription) {
-      const records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint: subscription.endpoint }) })
-      for (const record of records) await pb.collection(SUBSCRIPTIONS).delete(record.id)
+      await deleteRecords(subscription.endpoint)
       await subscription.unsubscribe()
     }
     state.value = 'off'
@@ -85,7 +114,30 @@ export const usePushNotifications = () => {
   const sendTest = async () => {
     const subscription = await currentSubscription()
     if (!subscription) throw new Error('This device has to turn notifications on again')
-    await $fetch('/api/push/test', { method: 'POST', headers: auth(), body: { endpoint: subscription.endpoint } })
+    try {
+      await $fetch('/api/push/test', { method: 'POST', headers: auth(), body: { endpoint: subscription.endpoint } })
+    } catch (error) {
+      // The push service no longer knows this subscription: drop it so the device can turn notifications on afresh
+      if (error?.statusCode === 404 || error?.statusCode === 410) {
+        await deleteRecords(subscription.endpoint).catch(() => {})
+        await subscription.unsubscribe().catch(() => {})
+        state.value = 'off'
+      }
+      throw error
+    }
+  }
+
+  // Logging out turns notifications off on this device. Best effort and bounded: it never blocks or breaks the logout.
+  const releaseDevice = async () => {
+    const work = async () => {
+      if (!navigator.onLine || support() !== 'ok') return
+      const subscription = await currentSubscription()
+      if (!subscription) return
+      // While the token is still valid
+      await deleteRecords(subscription.endpoint).catch(() => {})
+      await subscription.unsubscribe()
+    }
+    await Promise.race([work().catch(() => {}), new Promise(resolve => setTimeout(resolve, 3000))])
   }
 
   // The full https link of the private calendar feed
@@ -94,5 +146,5 @@ export const usePushNotifications = () => {
     return new URL(path, window.location.origin).href
   }
 
-  return { state, status, refreshState, loadStatus, turnOn, turnOff, sendTest, calendarLink }
+  return { state, status, refreshState, loadStatus, turnOn, turnOff, sendTest, calendarLink, releaseDevice }
 }

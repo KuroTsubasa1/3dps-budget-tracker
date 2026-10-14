@@ -66,10 +66,13 @@ const statusLine = computed(() => (offline.value && !status.value ? '' : statusT
 
 const load = async () => {
   offline.value = !navigator.onLine
+  error.value = ''
   await refreshState()
   if (offline.value) return
   try {
     const current = await loadStatus()
+    // The server's key is known now: a subscription made with another key is not "on"
+    await refreshState()
     if (current.feed) link.value = await calendarLink()
   } catch (err) {
     error.value = err?.statusCode === 401 ? 'Log in again to manage notifications' : 'Could not reach the server. Try again later.'
@@ -84,7 +87,7 @@ const run = async (name, action, done = '') => {
     await action()
     if (done) toast(done)
   } catch (err) {
-    error.value = err?.statusCode === 410
+    error.value = err?.statusCode === 410 || err?.statusCode === 404
       ? 'This device has to turn notifications on again'
       : err?.data?.message || err?.message || 'Something went wrong. Try again.'
     await refreshState()

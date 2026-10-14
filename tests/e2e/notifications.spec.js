@@ -7,7 +7,7 @@ const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/test-device'
 
 // Stand-ins for the browser's Notification, PushManager and service worker registration (Playwright blocks
 // real service workers). window.__push holds the permission, the subscription and what subscribe() got.
-const stubPush = (page, { permission = 'default', answer = 'granted' } = {}) => page.addInitScript(({ permission, answer, endpoint }) => {
+const stubPush = (page, { permission = 'default', answer = 'granted', existingKey = null } = {}) => page.addInitScript(({ permission, answer, endpoint, existingKey }) => {
   const push = { permission, answer, subscription: null, keyLength: 0, copied: '' }
   window.__push = push
   window.Notification = class Notification {
@@ -18,8 +18,9 @@ const stubPush = (page, { permission = 'default', answer = 'granted' } = {}) => 
     }
   }
   window.PushManager = class PushManager {}
-  const subscription = () => ({
+  const subscription = (key = []) => ({
     endpoint,
+    options: { applicationServerKey: Uint8Array.from(key).buffer },
     toJSON: () => ({ endpoint, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } }),
     unsubscribe: async () => { push.subscription = null; return true }
   })
@@ -27,10 +28,13 @@ const stubPush = (page, { permission = 'default', answer = 'granted' } = {}) => 
     getSubscription: async () => push.subscription,
     subscribe: async (options) => {
       push.keyLength = options.applicationServerKey.length
-      push.subscription = subscription()
+      push.subscribed = (push.subscribed ?? 0) + 1
+      push.subscription = subscription([...options.applicationServerKey])
       return push.subscription
     }
   }
+  // A subscription made earlier, with another application server key (the VAPID key was rotated)
+  if (existingKey) push.subscription = subscription(existingKey)
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
     value: {
@@ -44,7 +48,7 @@ const stubPush = (page, { permission = 'default', answer = 'granted' } = {}) => 
     }
   })
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { push.copied = text } } })
-}, { permission, answer, endpoint: ENDPOINT })
+}, { permission, answer, endpoint: ENDPOINT, existingKey })
 
 const open = page => gotoReady(page, '/settings#notifications')
 const status = page => page.getByTestId('push-status')
@@ -122,14 +126,114 @@ test.describe('notifications', () => {
     expect(api.db.push_subscriptions).toEqual([])
   })
 
-  test('a device the push service forgot is asked to turn notifications on again', async ({ page, api }) => {
+  for (const code of [410, 404]) {
+    test(`a device the push service forgot (${code}) is asked to turn notifications on again`, async ({ page, api }) => {
+      api.enable()
+      Object.assign(api.notifier, { configured: true, testStatus: code })
+      await stubPush(page)
+      await open(page)
+      await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+      await page.getByRole('button', { name: 'Send test notification' }).click()
+      await expect(page.getByRole('alert')).toHaveText('This device has to turn notifications on again')
+      // The dead subscription is dropped, so the device can turn notifications on afresh
+      await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
+      expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
+    })
+  }
+
+  test('another failure of the test shows the server message and keeps notifications on', async ({ page, api }) => {
     api.enable()
-    Object.assign(api.notifier, { configured: true, testStatus: 410 })
+    Object.assign(api.notifier, { configured: true, testStatus: 502 })
     await stubPush(page)
     await open(page)
     await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
     await page.getByRole('button', { name: 'Send test notification' }).click()
-    await expect(page.getByRole('alert')).toHaveText('This device has to turn notifications on again')
+    await expect(page.getByRole('alert')).toHaveText('Push server answered 502')
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+  })
+
+  test('a failed save after subscribing leaves notifications off and the subscription dropped', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page)
+    await open(page)
+    api.failOnce('push_subscriptions', 500)
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByRole('alert')).toBeVisible()
+    await expect(page.getByText('Notifications are on for this device')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
+    expect(api.db.push_subscriptions).toEqual([])
+    expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
+  })
+
+  test('a subscription made with an old key is replaced when the server key changed', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page, { existingKey: [1, 2, 3] })
+    await open(page)
+    // Another application server key: it is not "on" with the current one
+    await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    expect(await page.evaluate(() => window.__push.subscribed)).toBe(1)
+    expect(await page.evaluate(() => window.__push.keyLength)).toBe(65)
+  })
+
+  test('a rejected login on load asks to log in again', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page)
+    await page.route('**/api/push/status', route => route.fulfill({ status: 401, json: { statusCode: 401, message: 'Log in again' } }))
+    await open(page)
+    await expect(page.getByRole('alert')).toHaveText('Log in again to manage notifications')
+  })
+
+  test('the error from a failed load goes away when the connection comes back', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page)
+    let fail = true
+    await page.route('**/api/push/status', route => (fail ? route.fulfill({ status: 500, json: { statusCode: 500 } }) : route.fallback()))
+    await open(page)
+    await expect(page.getByRole('alert')).toHaveText('Could not reach the server. Try again later.')
+    fail = false
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await expect(page.getByTestId('push-status')).toHaveText("Reminders haven't been checked yet")
+  })
+
+  test('logging out turns notifications off on this device', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page)
+    await open(page)
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    expect(api.db.push_subscriptions).toHaveLength(1)
+    // Client-side, so the stubbed subscription survives
+    const back = page.getByRole('button', { name: 'All settings' })
+    if (await back.isVisible()) await back.click()
+    await page.getByRole('button', { name: /^API Configuration/ }).click()
+    await page.getByRole('button', { name: 'Log out' }).click()
+    await expect(page).toHaveURL(/\/login/)
+    expect(api.db.push_subscriptions).toEqual([])
+    expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
+  })
+
+  test('logging out still works when the server record cannot be deleted', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page)
+    await open(page)
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    api.failOnce('push_subscriptions', 500)
+    const back = page.getByRole('button', { name: 'All settings' })
+    if (await back.isVisible()) await back.click()
+    await page.getByRole('button', { name: /^API Configuration/ }).click()
+    await page.getByRole('button', { name: 'Log out' }).click()
+    await expect(page).toHaveURL(/\/login/)
+    expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
   })
 
   test('the calendar link is shown and copied', async ({ page, api, baseURL }) => {

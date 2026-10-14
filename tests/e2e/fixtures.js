@@ -136,7 +136,7 @@ export const test = base.extend({
         return state.feed ? json(200, { path: `/api/calendar/${state.secret}.ics` }) : json(503, { statusCode: 503, message: "The calendar feed isn't configured on the server" })
       }
       state.tests.push(request.postDataJSON())
-      return json(state.testStatus, state.testStatus === 200 ? { sent: true } : { statusCode: state.testStatus, message: 'This device has to turn notifications on again' })
+      return json(state.testStatus, state.testStatus === 200 ? { sent: true } : { statusCode: state.testStatus, message: `Push server answered ${state.testStatus}` })
     })
     await use(api)
 
