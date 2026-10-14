@@ -43,10 +43,10 @@ test.describe('convention calendar', () => {
   test('an edited reminder stays put, a removed one stays gone and a custom one is added', async ({ page, api }) => {
     await openCalendar(page, api, { conventions: [convention('c1', { name: 'Dokomi', applications_close: '2026-10-30 00:00:00.000Z' })] })
     await openRow(page, 'Dokomi')
-    await sheet(page).getByRole('button', { name: 'Edit Applications close' }).last().click()
+    await sheet(page).getByRole('button', { name: 'Edit Applications close, Thu 29 Oct, 09:00' }).click()
     await sheet(page).getByLabel('Time', { exact: true }).fill('20:00')
     await sheet(page).getByRole('button', { name: 'Save reminder' }).click()
-    await sheet(page).getByRole('button', { name: 'Remove Applications close' }).first().click()
+    await sheet(page).getByRole('button', { name: 'Remove Applications close, Fri 23 Oct, 09:00' }).click()
     await sheet(page).getByRole('button', { name: 'Add reminder' }).click()
     await sheet(page).getByLabel('Remind me to').fill('Book the hotel')
     await sheet(page).getByLabel('Date', { exact: true }).fill('2026-10-20')
@@ -117,10 +117,118 @@ test.describe('convention calendar', () => {
     await openRow(page, 'Dokomi')
     // The other device got there first
     Object.assign(stored(api, DOKOMI.id), { fee_paid_at: '2026-10-14 09:00:00.000Z', fee_transaction: 'tx0000000000099' })
+    api.db.budget_tracker_transactions.push({ id: 'tx0000000000099', description: 'Stand fee: Dokomi', amount: -45, date: '2026-10-14' })
     await sheet(page).getByRole('button', { name: 'Mark fee paid' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('The fee was already marked paid on another device')
     await expect(sheet(page).getByTestId('fee-paid')).toHaveText('Paid Wed 14 Oct')
+    expect(api.posted.map(item => item.id)).toEqual(['tx0000000000099'])
+  })
+
+  test('a lost reply to Mark fee paid still books the expense on the next tap, once', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await openRow(page, 'Dokomi')
+    // The update reaches the server, its reply is lost
+    api.fail('conventions', 'drop')
+    await sheet(page).getByRole('button', { name: 'Mark fee paid' }).click()
+    await expect(page.getByText('Could not save the convention. Check your connection and try again.')).toBeVisible()
+    expect(stored(api, DOKOMI.id).fee_transaction).toBeTruthy()
     expect(api.posted).toEqual([])
+
+    await sheet(page).getByRole('button', { name: 'Mark fee paid' }).click()
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ id: stored(api, DOKOMI.id).fee_transaction, description: 'Stand fee: Dokomi', amount: -45 })
+    await expect(sheet(page).getByTestId('fee-paid')).toHaveText('Paid Wed 14 Oct')
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+  })
+
+  test('a stand fee with cents is booked with the cents', async ({ page, api }) => {
+    await openCalendar(page, api, { conventions: [{ ...DOKOMI, stand_fee: 45.5 }] })
+    await openRow(page, 'Dokomi')
+    await expect(sheet(page).getByText(/Books 45,50\s€ as an expense/)).toBeVisible()
+    await sheet(page).getByRole('button', { name: 'Mark fee paid' }).click()
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: -45.5 })
+  })
+
+  test('the status buttons save the form and the reminders with the new status', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await openRow(page, 'Hanami Fest')
+    await sheet(page).getByLabel('Start', { exact: true }).fill('2026-12-12')
+    await sheet(page).getByLabel('End', { exact: true }).fill('2026-12-13')
+    await sheet(page).getByRole('button', { name: 'Add reminder' }).click()
+    await sheet(page).getByLabel('Remind me to').fill('Book the hotel')
+    await sheet(page).getByLabel('Date', { exact: true }).fill('2026-10-20')
+    await sheet(page).getByRole('button', { name: 'Add', exact: true }).click()
+    await sheet(page).getByRole('button', { name: 'Mark booked' }).click()
+    await expect.poll(() => stored(api, HANAMI.id).status).toBe('booked')
+    expect(stored(api, HANAMI.id)).toMatchObject({ starts_on: '2026-12-12', ends_on: '2026-12-13' })
+    expect(stored(api, HANAMI.id).reminders.map(item => item.text).filter(Boolean)).toEqual(['Book the hotel'])
+  })
+
+  test('Enter in a reminder field saves the reminder, not the convention', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await openRow(page, 'Hanami Fest')
+    await sheet(page).getByRole('button', { name: 'Add reminder' }).click()
+    await sheet(page).getByLabel('Remind me to').fill('Book the hotel')
+    await sheet(page).getByLabel('Date', { exact: true }).fill('2026-10-20')
+    await sheet(page).getByLabel('Remind me to').press('Enter')
+    await expect(remindersIn(page).filter({ hasText: 'Book the hotel' })).toHaveCount(1)
+    expect(stored(api, HANAMI.id).reminders).toEqual([])
+  })
+
+  test('/calendar?c=<id> opens that convention', async ({ page, api }) => {
+    await openCalendar(page, api, { path: `/calendar?c=${DOKOMI.id}` })
+    await expect(sheet(page).getByLabel('Name', { exact: true })).toHaveValue('Dokomi')
+  })
+
+  test('a convention can be deleted after confirming', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await openRow(page, 'Hanami Fest')
+    await sheet(page).getByRole('button', { name: 'Delete convention' }).click()
+    await sheet(page).getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect.poll(() => api.db.conventions.some(item => item.id === HANAMI.id)).toBe(false)
+    await expect(upcoming(page).getByRole('button', { name: /^Hanami Fest/ })).toHaveCount(0)
+  })
+
+  test('going offline while asked to confirm a delete disables it', async ({ page, api, context }) => {
+    await openCalendar(page, api)
+    await openRow(page, 'Hanami Fest')
+    await sheet(page).getByRole('button', { name: 'Delete convention' }).click()
+    await context.setOffline(true)
+    await expect(sheet(page).getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
+    await context.setOffline(false)
+  })
+
+  test('Clear All Local Data removes the saved copy', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await expect(section(page, 'November 2026')).toBeVisible()
+    await gotoReady(page, '/settings#data')
+    await page.getByRole('button', { name: 'Clear All Local Data' }).click()
+    await page.getByRole('dialog', { name: 'Clear All Data' }).getByRole('button', { name: 'Delete All Data' }).click()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('akinai-conventions'))).toBeNull()
+  })
+
+  test('a reload in the background keeps the open convention and what was typed', async ({ page, api, context, isMobile }) => {
+    test.skip(isMobile, 'The panel sits beside the list on large screens only')
+    await openCalendar(page, api)
+    await openRow(page, 'Hanami Fest')
+    await sheet(page).getByLabel('City').fill('Typed city')
+    await context.setOffline(true)
+    await expect(sheet(page).getByText('Needs a connection')).toBeVisible()
+    await context.setOffline(false)
+    await expect(sheet(page).getByText('Needs a connection')).toHaveCount(0)
+    await expect(sheet(page).getByLabel('City')).toHaveValue('Typed city')
+  })
+
+  test('the saved copy banner has Try Again', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await expect(section(page, 'November 2026')).toBeVisible()
+    api.failReads('conventions', 'drop')
+    await page.reload()
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect(page.getByTestId('saved-copy')).toBeVisible()
+    await page.getByTestId('saved-copy').getByRole('button', { name: 'Try Again' }).click()
+    await expect(page.getByTestId('saved-copy')).toHaveCount(0)
   })
 
   test('a reminder the server sent while the sheet was open stays sent when the owner saves', async ({ page, api }) => {

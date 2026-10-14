@@ -6,8 +6,9 @@
       </template>
     </PageHeader>
 
-    <p v-if="savedAt" class="mb-3 rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted" data-testid="saved-copy">
+    <p v-if="savedAt" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted" data-testid="saved-copy">
       Saved copy from {{ formatMoment(savedAt) }} · Needs a connection to edit
+      <BaseButton variant="ghost" icon="refresh" @click="load">Try Again</BaseButton>
     </p>
 
     <div v-if="loading" class="card flex h-32 items-center justify-center text-sm text-ink-muted">Loading calendar...</div>
@@ -31,14 +32,14 @@
                 <AppIcon name="x" class="h-5 w-5" />
               </button>
             </div>
-            <ConventionSheet :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
+            <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
           </section>
         </div>
       </div>
     </template>
 
     <BottomSheet v-if="!isDesktop" v-model:open="panelOpen" :title="panelTitle">
-      <ConventionSheet :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
+      <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
     </BottomSheet>
   </div>
 </template>
@@ -79,8 +80,15 @@ const panelTitle = computed(() => (creating.value ? 'New convention' : selected.
 
 const isOffline = () => typeof navigator !== 'undefined' && !navigator.onLine
 
+let loadingNow = false
+let loadedOnce = false
 const load = async () => {
-  loading.value = true
+  if (loadingNow) return
+  loadingNow = true
+  // Only the first load (or a retry after an error) replaces the page with a spinner; a reload in the
+  // background must not unmount the open convention
+  const background = loadedOnce && !loadError.value
+  if (!background) loading.value = true
   loadError.value = ''
   offline.value = isOffline()
   now.value = new Date()
@@ -89,6 +97,7 @@ const load = async () => {
     conventions.value = list
     savedAt.value = null
     saveCopy(list)
+    loadedOnce = true
   } catch (err) {
     if (err?.status === 404 || err?.status === 403) {
       loadError.value = 'missing'
@@ -97,12 +106,14 @@ const load = async () => {
       if (copy) {
         conventions.value = copy.items
         savedAt.value = new Date(copy.savedAt)
+        loadedOnce = true
       } else {
         loadError.value = isOffline() || err?.status === 0 ? 'offline' : 'failed'
       }
     }
   } finally {
     loading.value = false
+    loadingNow = false
   }
   openFromQuery()
 }

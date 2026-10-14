@@ -124,7 +124,7 @@
         <p class="text-sm text-ink-muted">Delete {{ convention.name }} and its reminders? A booked stand fee stays in the transactions.</p>
         <div class="grid grid-cols-2 gap-2">
           <BaseButton variant="secondary" @click="confirmingDelete = false">Keep it</BaseButton>
-          <BaseButton variant="danger" :loading="busy" @click="remove">Delete</BaseButton>
+          <BaseButton variant="danger" :loading="busy" :disabled="readOnly" @click="remove">Delete</BaseButton>
         </div>
       </div>
     </div>
@@ -207,15 +207,16 @@ const save = async () => {
   }
 }
 
-// Mark applied / Mark booked / Rejected save straight away, with the saved dates (not unsaved edits)
+// Mark applied / Mark booked / Rejected save straight away: the new status together with the form as it
+// stands and its reminders, checked like Save
 const setStatus = async (status) => {
   if (busy.value || props.readOnly) return
-  error.value = status === 'booked' ? validateConvention({ ...formFrom(props.convention), status }) : ''
+  error.value = validateConvention({ ...form.value, status })
   if (error.value) return
   busy.value = true
   try {
-    const record = await updateConvention(props.convention, { status })
-    form.value.status = record.status
+    const record = await updateConvention(props.convention, { ...fieldsFrom(form.value), status }, currentReminders())
+    form.value = formFrom(record)
     reminders.value = record.reminders ?? []
     emit('changed', record)
   } catch {
@@ -241,7 +242,7 @@ const payFee = async () => {
 }
 
 const remove = async () => {
-  if (busy.value) return
+  if (busy.value || props.readOnly) return
   busy.value = true
   try {
     await deleteConvention(props.convention.id)

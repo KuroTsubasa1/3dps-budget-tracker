@@ -9,12 +9,12 @@
             {{ ruleOf(reminder, convention) }} · {{ formatMoment(new Date(reminder.at)) }}<template v-if="stateOf(reminder)"> · {{ stateOf(reminder) }}</template>
           </p>
         </div>
-        <BaseButton v-if="!reminder.sent_at" variant="ghost" :disabled="disabled" :aria-label="`Edit ${labelOf(reminder)}`" @click="startEdit(reminder)">Edit</BaseButton>
+        <BaseButton v-if="!reminder.sent_at" variant="ghost" :disabled="disabled" :aria-label="`Edit ${labelOf(reminder)}, ${formatMoment(new Date(reminder.at))}`" @click="startEdit(reminder)">Edit</BaseButton>
         <button
           type="button"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted hover:text-expense disabled:opacity-50"
           :disabled="disabled"
-          :aria-label="`Remove ${labelOf(reminder)}`"
+          :aria-label="`Remove ${labelOf(reminder)}, ${formatMoment(new Date(reminder.at))}`"
           @click="$emit('remove', reminder.id)"
         >
           <AppIcon name="trash" class="h-4 w-4" />
@@ -28,16 +28,16 @@
       <p v-if="error" role="alert" class="text-sm text-expense">{{ error }}</p>
       <div v-if="draft.custom">
         <label for="reminder-text" class="label">Remind me to</label>
-        <input id="reminder-text" v-model="draft.text" type="text" class="input" autocomplete="off">
+        <input id="reminder-text" v-model="draft.text" type="text" class="input" autocomplete="off" @keydown.enter.prevent="submit">
       </div>
       <div class="grid grid-cols-2 gap-2">
         <div class="min-w-0">
           <label for="reminder-date" class="label">Date</label>
-          <input id="reminder-date" v-model="draft.date" type="date" class="input">
+          <input id="reminder-date" v-model="draft.date" type="date" class="input" @keydown.enter.prevent="submit">
         </div>
         <div class="min-w-0">
           <label for="reminder-time" class="label">Time</label>
-          <input id="reminder-time" v-model="draft.time" type="time" class="input">
+          <input id="reminder-time" v-model="draft.time" type="time" class="input" @keydown.enter.prevent="submit">
         </div>
       </div>
       <div class="grid grid-cols-2 gap-2">
