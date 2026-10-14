@@ -2,7 +2,7 @@
   {
     "id": "i1f9o7q6bnjx6k8",
     "created": "2025-02-23 01:43:03.026Z",
-    "updated": "2026-10-13 22:36:57.316Z",
+    "updated": "2026-10-14 18:03:25.283Z",
     "name": "budget_tracket_catalog",
     "type": "base",
     "system": false,
@@ -159,6 +159,22 @@
           "min": 0,
           "max": null,
           "noDecimal": true
+        }
+      },
+      {
+        "system": false,
+        "id": "mdhuyffx",
+        "name": "prize_categories",
+        "type": "relation",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "collectionId": "1j0mm9cnexqx322",
+          "cascadeDelete": false,
+          "minSelect": null,
+          "maxSelect": null,
+          "displayFields": null
         }
       }
     ],
