@@ -404,10 +404,14 @@ test('the notifier gives up on a PocketBase request that never answers', async (
   globalThis.fetch = (url, options) => new Promise((resolve, reject) => {
     options.signal?.addEventListener('abort', () => reject(options.signal.reason))
   })
+  // AbortSignal.timeout does not keep the process alive; Node 20 (CI and the server) would end the test
+  // before the timeout fires, so hold the event loop open the way a running server does
+  const keepAlive = setInterval(() => {}, 1000)
   try {
     const notifier = createNotifier({ url: 'https://pb.test', email: 'n@example.com', password: 'p', requestTimeoutMs: 20 })
     await assert.rejects(notifier.listConventions())
   } finally {
+    clearInterval(keepAlive)
     globalThis.fetch = realFetch
   }
 })
