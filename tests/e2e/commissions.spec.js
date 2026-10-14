@@ -593,6 +593,60 @@ test.describe('phone and payment', () => {
     expect(await stored(page, 'budget-tracker-offline-queue')).toEqual([])
   })
 
+  test('a refresh while Unpaid waits for the server never turns the income into an orphan', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    // The POST lands but its reply is lost: the income is on the server and still queued here
+    api.fail('budget_tracker_transactions', 'drop')
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(async () => (await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual(['c1'])
+    await page.waitForLoadState('networkidle')
+
+    // The delete goes through at once, its reply comes late; a refresh lands in between
+    api.delayNext('budget_tracker_transactions', 1500)
+    await paidSwitch(page).click()
+    await expect.poll(() => api.requests.some(request => request.method === 'DELETE')).toBe(true)
+    await page.evaluate(() => window.dispatchEvent(new Event('online')))
+    await expect.poll(() => api.requests.filter(request => request.method === 'GET' && request.path.endsWith('/budget_tracker_transactions/records')).length).toBeGreaterThan(0)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    await page.waitForLoadState('networkidle')
+
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    expect(api.posted).toEqual([])
+    expect(await stored(page, 'budget-tracker-orphans')).toEqual([])
+    expect((await stored(page, 'budget-tracker-transactions')).filter(entry => entry.recordId === 'c1')).toEqual([])
+    await page.keyboard.press('Escape')
+    await page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Dashboard', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText(/not on the server/)).toHaveCount(0)
+  })
+
+  test('Unpaid tapped while the open sheet is still checking a missing income books nothing', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    await api.mockTransactions()
+    // The check whether the income exists is slow; its answer is "not found"
+    let slowed = false
+    await page.route(`**/api/collections/budget_tracker_transactions/records/${TX_ID}*`, async (route) => {
+      if (route.request().method() === 'GET' && !slowed) {
+        slowed = true
+        await new Promise(resolve => setTimeout(resolve, 1500))
+      }
+      await route.fallback()
+    })
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    await expect.poll(() => slowed).toBe(true)
+    await page.waitForTimeout(2000)
+    await page.waitForLoadState('networkidle')
+    expect(posts(api)).toHaveLength(0)
+    expect(api.posted).toEqual([])
+  })
+
   test('a failed server delete puts the queued income back and keeps the switch on', async ({ page, api }) => {
     seedWith(api, [commission()])
     await api.mockTransactions({ status: 500 })

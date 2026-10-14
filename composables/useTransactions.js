@@ -21,6 +21,9 @@ const uploadingOrphans = ref([])
 const sending = new Set()
 // The stock movements of those in-flight sales, by record id, so Stock now can tell they are not in yet
 const sendingMovements = new Map()
+// Record ids being taken back right now: off the queue but maybe still on the server. A refresh in that
+// window treats them as pending, so the entry never becomes an orphan (whose upload would book it again)
+const removing = new Set()
 // The refresh under way, so callers (logout) can wait for it; a second call asks it to run again
 let refreshRun = null
 let refreshAgain = false
@@ -156,7 +159,7 @@ export const useTransactions = () => {
   }
 
   // Queued sales by record id, and by local id for items from before record ids, plus sends in flight
-  const pendingIds = () => [...pendingQueueIds(offlineQueue.value), ...sending]
+  const pendingIds = () => [...pendingQueueIds(offlineQueue.value), ...sending, ...removing]
 
   // Queue items from before record ids get one before they are sent, so a retry after a lost reply
   // is recognised instead of creating a second record. Their local entries take the same id, so the
@@ -334,19 +337,24 @@ export const useTransactions = () => {
   // the queue item back and throws. One being sent right now cannot be taken back safely: that throws too.
   const removeTransaction = async (recordId) => {
     const queued = offlineQueue.value.filter(item => item.recordId === recordId && item.status !== 'synced')
-    if (sending.has(recordId) || (queued.length && isSyncing.value)) throw new Error('The entry is being sent right now')
-    if (queued.length) replaceQueue(offlineQueue.value.filter(item => !queued.includes(item)))
+    if (sending.has(recordId) || removing.has(recordId) || (queued.length && isSyncing.value)) throw new Error('The entry is being sent right now')
+    removing.add(recordId)
     try {
-      await pb.collection('budget_tracker_transactions').delete(recordId)
-    } catch (error) {
-      if (error?.status !== 404) {
-        if (queued.length) replaceQueue([...offlineQueue.value, ...queued])
-        throw error
+      if (queued.length) replaceQueue(offlineQueue.value.filter(item => !queued.includes(item)))
+      try {
+        await pb.collection('budget_tracker_transactions').delete(recordId)
+      } catch (error) {
+        if (error?.status !== 404) {
+          if (queued.length) replaceQueue([...offlineQueue.value, ...queued])
+          throw error
+        }
       }
+      transactions.value = transactions.value.filter(entry => entry.recordId !== recordId && entry.id !== recordId)
+      saveTransactions()
+    } finally {
+      removing.delete(recordId)
+      localVersion++
     }
-    transactions.value = transactions.value.filter(entry => entry.recordId !== recordId && entry.id !== recordId)
-    saveTransactions()
-    localVersion++
   }
 
   // Is the entry with this record id on the server, in this device's history or waiting in its queue?
@@ -354,7 +362,7 @@ export const useTransactions = () => {
   const transactionExists = async (recordId) => {
     if (transactions.value.some(item => item.recordId === recordId)) return true
     if (offlineQueue.value.some(item => item.recordId === recordId && item.status !== 'synced')) return true
-    if (sending.has(recordId)) return true
+    if (sending.has(recordId) || removing.has(recordId)) return true
     try {
       await pb.collection('budget_tracker_transactions').getOne(recordId)
       return true

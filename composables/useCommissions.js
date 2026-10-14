@@ -73,11 +73,17 @@ export const useCommissions = () => {
 
   // Run when a paid commission is opened: an income it names that is gone (a booking that never arrived)
   // is booked now with its stored id. Only a plain "not found" counts as gone; it never books on a guess.
-  const repairPayment = async (commission, articles = [], now = new Date()) => {
+  // `stillWanted` lets the caller call it off (an Unpaid started meanwhile); the commission is read once
+  // more after the check and is booked only if it still names the same income.
+  const repairPayment = async (commission, articles = [], { stillWanted = () => true, now = new Date() } = {}) => {
     const fresh = await getCommission(commission.id)
     const plan = paymentStep(fresh)
     if (plan.step !== 'verify' || (await transactionExists(plan.recordId))) return { record: fresh, booked: 0 }
-    return { record: fresh, booked: bookIncome(plan.recordId, fresh, articles, now) }
+    if (!stillWanted()) return { record: fresh, booked: 0 }
+    const current = await getCommission(commission.id)
+    const again = paymentStep(current)
+    if (again.step !== 'verify' || again.recordId !== plan.recordId || !stillWanted()) return { record: current, booked: 0 }
+    return { record: current, booked: bookIncome(plan.recordId, current, articles, now) }
   }
 
   // Turns Paid off: the income is taken back first (queue or server), then the commission forgets it.

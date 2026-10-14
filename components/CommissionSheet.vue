@@ -197,6 +197,8 @@ const priceTouched = ref(false)
 const error = ref('')
 const busy = ref(false)
 const confirming = ref('')
+// Counts Paid / Unpaid actions, so a repair started on open stands down once the owner acts
+let paymentTaps = 0
 // Paying and taking a payment back both need the server: the switch follows the connection
 const online = ref(true)
 const followConnection = () => { online.value = navigator.onLine }
@@ -379,6 +381,7 @@ const PAYMENT_FAILED = 'Could not change the payment. Check your connection and 
 
 // Paid on books the income (see markPaid), Paid off takes it back (see markUnpaid). Any failure leaves the switch as it was.
 const pay = async (choice = '') => {
+  paymentTaps++
   if (busy.value) return
   busy.value = true
   error.value = ''
@@ -399,6 +402,7 @@ const pay = async (choice = '') => {
 }
 
 const unpay = async () => {
+  paymentTaps++
   if (busy.value) return
   busy.value = true
   error.value = ''
@@ -416,8 +420,11 @@ const unpay = async () => {
 // when opened. Quiet in the background: a failure just leaves it for the next time.
 function repairOnOpen () {
   const commission = props.commission
-  if (!commission?.payment_transaction || !isPaid(commission) || typeof navigator === 'undefined' || !navigator.onLine) return
-  repairPayment(commission, props.articles)
+  if (busy.value || !commission?.payment_transaction || !isPaid(commission) || typeof navigator === 'undefined' || !navigator.onLine) return
+  // Any tap on the switch after this calls it off
+  const started = paymentTaps
+  const stillWanted = () => paymentTaps === started && !busy.value
+  repairPayment(commission, props.articles, { stillWanted })
     .then(({ record, booked }) => { if (booked && props.commission?.id === record.id) emit('changed', record) })
     .catch(() => {})
 }
