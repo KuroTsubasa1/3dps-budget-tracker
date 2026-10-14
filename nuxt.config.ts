@@ -4,7 +4,12 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   app: {
     head: {
-      viewport: 'width=device-width, initial-scale=1, viewport-fit=cover'
+      viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
+      link: [
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/icon-32x32.png' },
+        { rel: 'apple-touch-icon', href: '/icons/apple-touch-icon.png' }
+      ],
+      meta: [{ name: 'theme-color', content: '#2563eb' }]
     }
   },
   modules: [
@@ -35,17 +40,12 @@ export default defineNuxtConfig({
       name: 'Budget Tracker',
       short_name: 'Budget',
       description: '3DPS Budget Tracking Application',
-      theme_color: '#ffffff',
+      theme_color: '#2563eb',
       background_color: '#ffffff',
       display: 'standalone',
       orientation: 'portrait',
       start_url: '/',
       icons: [
-        {
-          src: '/icons/icon-72x72.png',
-          sizes: '72x72',
-          type: 'image/png'
-        },
         {
           src: '/icons/icon-192x192.png',
           sizes: '192x192',
@@ -54,30 +54,19 @@ export default defineNuxtConfig({
         {
           src: '/icons/icon-512x512.png',
           sizes: '512x512',
+          type: 'image/png'
+        },
+        {
+          src: '/icons/maskable-512x512.png',
+          sizes: '512x512',
           type: 'image/png',
-          purpose: 'any maskable'
+          purpose: 'maskable'
         }
       ]
     },
     workbox: {
       navigateFallback: '/',
-      globPatterns: ['**/*.{js,css,html,png,svg,ico,json}'],
-      runtimeCaching: [
-        {
-          urlPattern: /^https:\/\/pocket\.lasseharm\.space\/api\//,
-          handler: 'NetworkFirst',
-          options: {
-            cacheName: 'api-cache',
-            expiration: {
-              maxEntries: 100,
-              maxAgeSeconds: 60 * 60 * 24 // 1 day
-            },
-            cacheableResponse: {
-              statuses: [0, 200]
-            }
-          }
-        }
-      ]
+      globPatterns: ['**/*.{js,css,html,png,svg,ico,json}']
     },
     registerWebManifestInRouteRules: true,
     writePlugin: true,

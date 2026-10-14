@@ -1,5 +1,6 @@
 <template>
   <div class="min-h-screen">
+    <NuxtPwaManifest />
     <AppSideNav v-if="!chromeless" />
     <div :class="{ 'md:pl-20 lg:pl-60': !chromeless }">
       <AppTopBar v-if="!chromeless" />
@@ -31,7 +32,7 @@ const { toast } = useToast()
 const isDark = computed(() => !!displaySettings.value.darkMode)
 
 useHead({
-  meta: [{ name: 'theme-color', content: computed(() => (isDark.value ? '#111827' : '#ffffff')) }]
+  meta: [{ name: 'theme-color', content: computed(() => (isDark.value ? '#111827' : '#2563eb')) }]
 })
 
 // The one place sync problems are shown, so catalog sales report them too (the form may be closed)
