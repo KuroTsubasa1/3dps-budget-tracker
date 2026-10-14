@@ -3,9 +3,9 @@ export default defineNuxtConfig({
   compatibilityDate: '2024-11-01',
   devtools: { enabled: true },
   nitro: {
-    // The server shares utils/calendar with the app. In nuxt dev Nitro would load files outside server/ as
+    // The server shares utils/calendar and utils/pushHosts.js with the app. In nuxt dev Nitro would load files outside server/ as
     // external modules from a wrong path, so they are bundled like the server's own files
-    externals: { inline: [/[\\/]utils[\\/]calendar[\\/]/] }
+    externals: { inline: [/[\\/]utils[\\/](calendar[\\/]|pushHosts\.js)/] }
   },
   app: {
     head: {

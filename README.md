@@ -153,6 +153,8 @@ Push goes only to the real push services (Apple, Google FCM, Mozilla and Microso
 
 None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. None of them go into the repository or a local `.env` that is committed.
 
+**Never put the server env (`NOTIFIER_*`, `VAPID_*`, `CALENDAR_SECRET`, `OWNER_ID`, `POCKETBASE_URL`) into a local `.env`, committed or not.** `nuxt preview` loads `.env` (and so does Playwright's webServer when no dev server is running), which would start a second reminder job against production and send every notification twice. These values belong only in `/opt/budget-tracker/shared/akinai.env` on the server.
+
 pm2 reads the file when the process starts. After editing it, restart from the current release:
 ```bash
 pm2 delete budget-tracker

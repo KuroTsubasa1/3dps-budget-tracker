@@ -9,8 +9,14 @@ export default defineEventHandler(async (event) => {
   if (!settings.feed || !feedFileMatches(getRouterParam(event, 'file') ?? '', settings.calendarSecret)) {
     throw createError({ statusCode: 404, statusMessage: 'Not found' })
   }
-  const conventions = await useNotifier(settings).listConventions()
+  let feed
+  try {
+    feed = calendarFeed(await useNotifier(settings).listConventions(), { now: new Date() })
+  } catch {
+    // Not the original error: it can carry the request URL, which holds the secret
+    throw createError({ statusCode: 502, statusMessage: 'Calendar unavailable' })
+  }
   setResponseHeader(event, 'Content-Type', 'text/calendar; charset=utf-8')
   setResponseHeader(event, 'Cache-Control', 'private, max-age=300')
-  return calendarFeed(conventions, { now: new Date() })
+  return feed
 })

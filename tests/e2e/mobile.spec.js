@@ -53,6 +53,9 @@ const smallTargets = page => page.evaluate(() =>
 )
 
 test.describe('phone layout sweep', () => {
+  // The 44px check measures the sheet: without motion it is already settled
+  test.use({ reducedMotion: 'reduce' })
+
   test.beforeEach(async ({ page, isMobile }) => {
     test.skip(!isMobile, 'Runs on the mobile project')
     await page.setViewportSize({ width: 375, height: 812 })

@@ -1,5 +1,6 @@
 // Who may call the owner's routes, and the feed's secret link
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { isPushEndpointAllowed } from '../../utils/pushHosts.js'
 
 // A PocketBase token is a JWT: three base64url parts. Anything else is refused without asking PocketBase.
 const TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
@@ -33,20 +34,5 @@ export async function verifyCaller ({ authorization, pocketbaseUrl, fetch = glob
 // `file` is the last path segment, '<secret>.ics'. Compared in constant time; no secret, no feed
 export const feedFileMatches = (file, secret) => !!secret && sameText(file, `${secret}.ics`)
 
-// A push endpoint is an address the owner's browser handed us and the server will call. Only the real push
-// services are allowed (the ones browsers use), over https on the default port and without credentials, so
-// the server cannot be turned on its own network, whatever a host name resolves to.
-const PUSH_HOST = 'fcm.googleapis.com'
-const PUSH_HOST_SUFFIXES = ['.push.apple.com', '.push.services.mozilla.com', '.notify.windows.com']
-
-export function isPushEndpointAllowed (endpoint) {
-  let url
-  try {
-    url = new URL(endpoint)
-  } catch {
-    return false
-  }
-  if (url.protocol !== 'https:' || url.username || url.password || url.port) return false
-  const host = url.hostname.toLowerCase().replace(/\.+$/, '')
-  return host === PUSH_HOST || PUSH_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
-}
+// The push endpoint rule is shared with the browser (utils/pushHosts.js)
+export { isPushEndpointAllowed }

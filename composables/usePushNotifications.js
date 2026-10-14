@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { usePocketBase } from './usePocketBase'
+import { isPushEndpointAllowed } from '~/utils/pushHosts'
 import { pushSupport, deviceName, urlBase64ToUint8Array } from '~/utils/push'
 
 const SUBSCRIPTIONS = 'push_subscriptions'
@@ -88,6 +89,11 @@ export const usePushNotifications = () => {
       subscription = await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(status.value.publicKey) })
     }
     const { endpoint, keys } = subscription.toJSON()
+    // The server only calls the real push services, so a subscription elsewhere could never receive anything
+    if (!isPushEndpointAllowed(endpoint)) {
+      if (created) await subscription.unsubscribe().catch(() => {})
+      throw new Error("This browser's push service isn't supported. Use Safari on iPhone, or Chrome, Firefox or Edge.")
+    }
     try {
       await pb.collection(SUBSCRIPTIONS).create({ endpoint, keys, device: deviceName(navigator.userAgent) })
     } catch (error) {

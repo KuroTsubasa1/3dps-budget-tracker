@@ -7,7 +7,7 @@ const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/test-device'
 
 // Stand-ins for the browser's Notification, PushManager and service worker registration (Playwright blocks
 // real service workers). window.__push holds the permission, the subscription and what subscribe() got.
-const stubPush = (page, { permission = 'default', answer = 'granted', existingKey = null } = {}) => page.addInitScript(({ permission, answer, endpoint, existingKey }) => {
+const stubPush = (page, { permission = 'default', answer = 'granted', existingKey = null, endpoint: stubEndpoint = ENDPOINT } = {}) => page.addInitScript(({ permission, answer, endpoint, existingKey }) => {
   const push = { permission, answer, subscription: null, keyLength: 0, copied: '' }
   window.__push = push
   window.Notification = class Notification {
@@ -48,7 +48,7 @@ const stubPush = (page, { permission = 'default', answer = 'granted', existingKe
     }
   })
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { push.copied = text } } })
-}, { permission, answer, endpoint: ENDPOINT, existingKey })
+}, { permission, answer, endpoint: stubEndpoint, existingKey })
 
 const open = page => gotoReady(page, '/settings#notifications')
 const status = page => page.getByTestId('push-status')
@@ -84,6 +84,18 @@ test.describe('notifications', () => {
     await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeEnabled()
     expect(api.db.push_subscriptions).toEqual([])
     expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
+  })
+
+  test('a push service that is not allowed is refused: message shown, nothing stored, state off', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true, feed: true })
+    await stubPush(page, { endpoint: 'https://push.example.com/x' })
+    await open(page)
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByRole('alert')).toHaveText("This browser's push service isn't supported. Use Safari on iPhone, or Chrome, Firefox or Edge.")
+    expect(api.db.push_subscriptions ?? []).toEqual([])
+    expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
+    await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeEnabled()
   })
 
   test('a device already on the server turns on without a second record', async ({ page, api }) => {
