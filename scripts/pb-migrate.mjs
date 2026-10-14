@@ -1,7 +1,10 @@
-// PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs, sale lines and owner-only rules.
+// PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs, sale lines,
+// the convention calendar and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
 //   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping + commission items (old rules stay)
-//   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)
+//   npm run pb:migrate -- --apply-rules [--owner <email>] [--notifier <email>]
+//                                      owner-only rules (run after the new app is deployed); --notifier also lets the
+//                                      reminder account read conventions and push subscriptions (needs --owner)
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import {
@@ -14,7 +17,7 @@ import {
   planRules,
   planCommissionItems,
   resolveField,
-  resolveOwner,
+  resolveAccounts,
   guessCategory,
   describeOp
 } from './lib/pb-plan.mjs'
@@ -100,7 +103,7 @@ async function loadMapping (articles) {
 }
 
 async function writeSnapshot () {
-  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', 'print_jobs', ARTICLES, TRANSACTIONS])
+  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions', ARTICLES, TRANSACTIONS])
   const snapshot = (await listCollections()).filter(collection => ours.has(collection.name))
   await mkdir('pocketbase', { recursive: true })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
@@ -191,10 +194,13 @@ async function migrateSchema () {
 
 async function migrateRules () {
   const users = (await api('GET', '/collections/users/records?perPage=200&fields=id,email')).items
-  const owner = resolveOwner(users, argValue('--owner'))
+  const { owner, notifier } = resolveAccounts(users, { owner: argValue('--owner'), notifier: argValue('--notifier') })
   console.log(`Owner: ${owner.email} (${owner.id})`)
+  console.log(notifier
+    ? `Notifier: ${notifier.email} (${notifier.id}), may read conventions and push subscriptions`
+    : 'No --notifier: conventions and push subscriptions stay owner-only (the reminder job cannot read them)')
   // users comes first, so sign-up is closed before the other collections are pinned
-  const ops = planRules(await listCollections(), owner.id)
+  const ops = planRules(await listCollections(), owner.id, notifier?.id)
   if (!ops.length) return console.log('Rules: up to date')
   for (const op of ops) {
     console.log(`  - ${describeOp(op)}`)

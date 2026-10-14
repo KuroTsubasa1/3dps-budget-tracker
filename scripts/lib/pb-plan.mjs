@@ -54,15 +54,21 @@ const email = (name, required = false) =>
   ({ name, type: 'email', required, presentable: false, options: { exceptDomains: null, onlyDomains: null } })
 const date = name =>
   ({ name, type: 'date', required: false, presentable: false, options: { min: '', max: '' } })
-const json = name =>
-  ({ name, type: 'json', required: false, presentable: false, options: { maxSize: 2000000 } })
+const json = (name, { required = false, maxSize = 2000000 } = {}) =>
+  ({ name, type: 'json', required, presentable: false, options: { maxSize } })
+const url = (name, required = false) =>
+  ({ name, type: 'url', required, presentable: false, options: { exceptDomains: null, onlyDomains: null } })
 
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const findField = (collection, name) => collection?.schema.find(field => field.name === name)
 
-// Key order matters: sign-up on "users" is closed before anything else is pinned to the owner
-const rulesFor = (ownerId) => {
+// Key order matters: sign-up on "users" is closed before anything else is pinned to the owner.
+// With a notifier account the reminder job may also read and update conventions and read and delete
+// push subscriptions; without one those two collections are the owner's alone.
+const rulesFor = (ownerId, notifierId = null) => {
   const O = ownerRule(ownerId)
+  if (notifierId && notifierId === ownerId) throw new Error('The notifier must be a different account from the owner')
+  const ON = notifierId ? `(${O}) || (${ownerRule(notifierId)})` : O
   return {
     users: { createRule: null },
     categories: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
@@ -71,7 +77,9 @@ const rulesFor = (ownerId) => {
     [ARTICLES]: { listRule: `active = true || (${O})`, viewRule: `active = true || (${O})`, createRule: O, updateRule: O, deleteRule: O },
     [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
-    print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O }
+    print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
+    conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: ON, deleteRule: O },
+    push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON }
   }
 }
 
@@ -199,6 +207,52 @@ export function planSchema (collections) {
     })
   }
 
+  // Convention calendar: conventions with their reminders, and one record per device that gets push notifications
+  if (!byName(collections, 'conventions')) {
+    ops.push({
+      op: 'createCollection',
+      name: 'conventions',
+      body: {
+        name: 'conventions',
+        type: 'base',
+        // Dates are optional: an application can exist before its dates are known (booking needs both, checked in the app)
+        schema: [
+          text('name', true),
+          text('city'),
+          text('venue'),
+          text('hall'),
+          text('table'),
+          date('starts_on'),
+          date('ends_on'),
+          select('status', ['interested', 'applied', 'booked', 'rejected', 'cancelled'], true),
+          date('applications_open'),
+          date('applications_close'),
+          date('results_expected'),
+          date('setup_at'),
+          number('stand_fee', { min: 0 }),
+          date('fee_paid_at'),
+          text('fee_transaction'),
+          json('reminders', { maxSize: 200000 })
+        ],
+        indexes: [],
+        ...LOCKED
+      }
+    })
+  }
+  if (!byName(collections, 'push_subscriptions')) {
+    ops.push({
+      op: 'createCollection',
+      name: 'push_subscriptions',
+      body: {
+        name: 'push_subscriptions',
+        type: 'base',
+        schema: [url('endpoint', true), json('keys', { required: true }), text('device')],
+        indexes: ['CREATE UNIQUE INDEX `idx_push_subscriptions_endpoint` ON `push_subscriptions` (`endpoint`)'],
+        ...LOCKED
+      }
+    })
+  }
+
   const missing = []
   if (!findField(articles, 'category')) missing.push(relation('category', '@categories'))
   if (!findField(articles, 'stock')) missing.push(number('stock', { min: 0, noDecimal: true }))
@@ -251,8 +305,8 @@ export function planCommissionItems (commissions, articles) {
     }))
 }
 
-export function planRules (collections, ownerId) {
-  return Object.entries(rulesFor(ownerId))
+export function planRules (collections, ownerId, notifierId = null) {
+  return Object.entries(rulesFor(ownerId, notifierId))
     .filter(([name]) => byName(collections, name))
     .filter(([name, rules]) => Object.entries(rules).some(([key, value]) => byName(collections, name)[key] !== value))
     .map(([name, rules]) => ({ op: 'setRules', collection: name, rules }))
@@ -269,6 +323,16 @@ export function resolveOwner (users, email) {
   if (users.length === 0) throw new Error('No owner account in "users". Create it in the PocketBase admin first.')
   if (users.length === 1) return users[0]
   throw new Error(`Several accounts in "users": ${users.map(user => user.email).join(', ')}. Pass --owner <email> to choose the owner account.`)
+}
+
+// --apply-rules with --notifier: the owner must be named too, so the notifier is never taken for the owner
+export function resolveAccounts (users, { owner, notifier } = {}) {
+  if (notifier && !owner) throw new Error('Pass --owner <email> together with --notifier <email>, so the notifier is never taken for the owner.')
+  const ownerAccount = resolveOwner(users, owner)
+  if (!notifier) return { owner: ownerAccount, notifier: null }
+  const notifierAccount = resolveOwner(users, notifier)
+  if (notifierAccount.id === ownerAccount.id) throw new Error('The notifier must be a different account from the owner')
+  return { owner: ownerAccount, notifier: notifierAccount }
 }
 
 export function resolveField (field, collections) {

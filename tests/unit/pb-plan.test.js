@@ -11,6 +11,7 @@ import {
   planRequireCategory,
   planRules,
   resolveOwner,
+  resolveAccounts,
   simulate,
   guessCategory,
   describeOp,
@@ -31,11 +32,13 @@ test('plans the new collections, article fields and optional price', () => {
     'createCollection:deals',
     'createCollection:commissions',
     'createCollection:print_jobs',
+    'createCollection:conventions',
+    'createCollection:push_subscriptions',
     `addFields:${ARTICLES}`,
     `updateField:${ARTICLES}.price`,
     `addFields:${TRANSACTIONS}`
   ])
-  assert.deepEqual(ops[5].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock'])
+  assert.deepEqual(ops[7].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -82,7 +85,9 @@ test('rules pin the owner record id, close sign-up first, and apply only once', 
     `setRules:${ARTICLES}`,
     'setRules:budget_tracker_transactions',
     'setRules:commissions',
-    'setRules:print_jobs'
+    'setRules:print_jobs',
+    'setRules:conventions',
+    'setRules:push_subscriptions'
   ])
   assert.deepEqual(planRules(simulate(afterSchema, ops), OWNER_ID), [])
 })
@@ -354,30 +359,135 @@ test('transactions gain an optional sale date, sale lines and sale time', () => 
   assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date, items, sold_at`)
 })
 
-// The snapshot follows production, so it is checked as it is and as it was before these fields.
-// Both checks hold before and after `npm run pb:migrate -- --apply` refreshes the snapshot.
+
+// The snapshot follows production, so it is checked as it is and as it was before these changes.
+// Every check holds before and after `npm run pb:migrate -- --apply` refreshes the snapshot.
 const REPORT_FIELDS = ['items', 'sold_at']
+const CALENDAR = ['conventions', 'push_subscriptions']
 const withoutFields = (collections, names) => collections.map(collection => collection.name === TRANSACTIONS
   ? { ...collection, schema: collection.schema.filter(field => !names.includes(field.name)) }
   : collection)
+const withoutCalendar = collections => collections.filter(collection => !CALENDAR.includes(collection.name))
 const withoutDate = collections => withoutFields(collections, ['date', ...REPORT_FIELDS])
+const CALENDAR_KEYS = CALENDAR.map(name => `createCollection:${name}`)
 
-test('the live schema needs nothing beyond the report fields', () => {
+test('the live schema needs nothing beyond the report fields and the calendar collections', () => {
   const has = name => live().find(collection => collection.name === TRANSACTIONS).schema.some(field => field.name === name)
-  const missing = [ITEMS_FIELD, SOLD_AT_FIELD].filter(field => !has(field.name))
-  assert.deepEqual(planSchema(live()), missing.length ? [{ op: 'addFields', collection: TRANSACTIONS, fields: missing }] : [])
+  const missingFields = [ITEMS_FIELD, SOLD_AT_FIELD].filter(field => !has(field.name))
+  const missingCollections = CALENDAR.filter(name => !live().some(collection => collection.name === name))
+  const ops = planSchema(live())
+  assert.deepEqual(opKeys(ops), [
+    ...missingCollections.map(name => `createCollection:${name}`),
+    ...(missingFields.length ? [`addFields:${TRANSACTIONS}`] : [])
+  ])
+  if (missingFields.length) assert.deepEqual(ops.at(-1).fields, missingFields)
+  assert.deepEqual(planSchema(simulate(live(), ops)), [])
+})
+
+test('without the calendar collections the live schema needs exactly those two, and only once', () => {
+  const before = withoutCalendar(simulate(live(), planSchema(live())))
+  const ops = planSchema(before)
+  assert.deepEqual(opKeys(ops), CALENDAR_KEYS)
+  assert.equal(describeOp(ops[1]), 'create collection "push_subscriptions" (endpoint, keys, device)')
+  assert.deepEqual(planSchema(simulate(before, ops)), [])
 })
 
 test('without the report fields the live schema needs exactly those two, and only once', () => {
-  const before = withoutFields(live(), REPORT_FIELDS)
+  const before = withoutFields(withoutCalendar(live()), REPORT_FIELDS)
   const ops = planSchema(before)
-  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [ITEMS_FIELD, SOLD_AT_FIELD] }])
-  assert.equal(describeOp(ops[0]), `add to "${TRANSACTIONS}": items, sold_at`)
+  assert.deepEqual(opKeys(ops), [...CALENDAR_KEYS, `addFields:${TRANSACTIONS}`])
+  assert.deepEqual(ops[2], { op: 'addFields', collection: TRANSACTIONS, fields: [ITEMS_FIELD, SOLD_AT_FIELD] })
+  assert.equal(describeOp(ops[2]), `add to "${TRANSACTIONS}": items, sold_at`)
   assert.deepEqual(planSchema(simulate(before, ops)), [])
 })
 
 test('before the date field the live schema needs it and the report fields, and only once', () => {
-  const ops = planSchema(withoutDate(live()))
-  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD] }])
-  assert.deepEqual(planSchema(simulate(withoutDate(live()), ops)), [])
+  const before = withoutDate(withoutCalendar(live()))
+  const ops = planSchema(before)
+  assert.deepEqual(opKeys(ops), [...CALENDAR_KEYS, `addFields:${TRANSACTIONS}`])
+  assert.deepEqual(ops[2], { op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD] })
+  assert.deepEqual(planSchema(simulate(before, ops)), [])
+})
+
+const NOTIFIER_ID = 'notifier0000001'
+const NOTIFIER_EXPR = `@request.auth.collectionName = "users" && @request.auth.id = "${NOTIFIER_ID}"`
+const OWNER_OR_NOTIFIER = `(${OWNER_EXPR}) || (${NOTIFIER_EXPR})`
+const LOCKED_RULES = [null, null, null, null, null]
+const rulesOf = collection => [collection.listRule, collection.viewRule, collection.createRule, collection.updateRule, collection.deleteRule]
+
+test('conventions are created locked, with optional dates, a status and a 200 kB reminders field', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === 'conventions')
+  const field = name => op.body.schema.find(f => f.name === name)
+  assert.deepEqual(op.body.schema.map(f => [f.name, f.type, f.required]), [
+    ['name', 'text', true],
+    ['city', 'text', false],
+    ['venue', 'text', false],
+    ['hall', 'text', false],
+    ['table', 'text', false],
+    ['starts_on', 'date', false],
+    ['ends_on', 'date', false],
+    ['status', 'select', true],
+    ['applications_open', 'date', false],
+    ['applications_close', 'date', false],
+    ['results_expected', 'date', false],
+    ['setup_at', 'date', false],
+    ['stand_fee', 'number', false],
+    ['fee_paid_at', 'date', false],
+    ['fee_transaction', 'text', false],
+    ['reminders', 'json', false]
+  ])
+  assert.deepEqual(field('status').options, { maxSelect: 1, values: ['interested', 'applied', 'booked', 'rejected', 'cancelled'] })
+  assert.deepEqual(field('stand_fee').options, { min: 0, max: null, noDecimal: false })
+  assert.deepEqual(field('reminders').options, { maxSize: 200000 })
+  assert.deepEqual(rulesOf(op.body), LOCKED_RULES)
+})
+
+test('push subscriptions are created locked, with a required unique endpoint and keys', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === 'push_subscriptions')
+  assert.deepEqual(op.body.schema, [
+    { name: 'endpoint', type: 'url', required: true, presentable: false, options: { exceptDomains: null, onlyDomains: null } },
+    { name: 'keys', type: 'json', required: true, presentable: false, options: { maxSize: 2000000 } },
+    { name: 'device', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '' } }
+  ])
+  assert.deepEqual(op.body.indexes, ['CREATE UNIQUE INDEX `idx_push_subscriptions_endpoint` ON `push_subscriptions` (`endpoint`)'])
+  assert.deepEqual(rulesOf(op.body), LOCKED_RULES)
+})
+
+test('without a notifier the calendar collections belong to the owner alone', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const ops = planRules(afterSchema, OWNER_ID)
+  assert.deepEqual(ops.find(op => op.collection === 'conventions').rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+  assert.deepEqual(ops.find(op => op.collection === 'push_subscriptions').rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: null, deleteRule: OWNER_EXPR })
+})
+
+test('the notifier may read and update conventions and read and delete subscriptions, nothing else', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const ops = planRules(afterSchema, OWNER_ID, NOTIFIER_ID)
+  assert.deepEqual(ops.find(op => op.collection === 'conventions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: OWNER_OR_NOTIFIER, deleteRule: OWNER_EXPR })
+  assert.deepEqual(ops.find(op => op.collection === 'push_subscriptions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: null, deleteRule: OWNER_OR_NOTIFIER })
+  // Every other collection keeps the owner rules
+  const others = ops.filter(op => !CALENDAR.includes(op.collection))
+  assert.deepEqual(others, planRules(afterSchema, OWNER_ID).filter(op => !CALENDAR.includes(op.collection)))
+  assert.ok(others.every(op => !JSON.stringify(op.rules).includes(NOTIFIER_ID)))
+  // Applied once, the same rules plan nothing; dropping the notifier again plans the two calendar collections
+  const applied = simulate(afterSchema, ops)
+  assert.deepEqual(planRules(applied, OWNER_ID, NOTIFIER_ID), [])
+  assert.deepEqual(opKeys(planRules(applied, OWNER_ID)), ['setRules:conventions', 'setRules:push_subscriptions'])
+})
+
+test('the notifier id is checked like the owner id and must be another account', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  assert.throws(() => planRules(afterSchema, OWNER_ID, 'x" || 1=1'), /Invalid owner id/)
+  assert.throws(() => planRules(afterSchema, OWNER_ID, OWNER_ID), /notifier must be a different account/)
+})
+
+test('--notifier needs --owner, and both are looked up by email', () => {
+  const users = [{ id: 'aaaaaaaaaaaaaaa', email: 'lasse@x.de' }, { id: 'bbbbbbbbbbbbbbb', email: 'akinai-notifier@x.de' }]
+  assert.throws(() => resolveAccounts(users, { notifier: 'akinai-notifier@x.de' }), /Pass --owner <email> together with --notifier <email>/)
+  assert.deepEqual(resolveAccounts(users, { owner: 'lasse@x.de', notifier: 'Akinai-Notifier@x.de' }), { owner: users[0], notifier: users[1] })
+  assert.deepEqual(resolveAccounts(users, { owner: 'lasse@x.de' }), { owner: users[0], notifier: null })
+  assert.throws(() => resolveAccounts(users, { owner: 'lasse@x.de', notifier: 'lasse@x.de' }), /notifier must be a different account/)
+  assert.throws(() => resolveAccounts(users, { owner: 'lasse@x.de', notifier: 'nobody@x.de' }), /No user with email nobody@x.de/)
+  // Two accounts and no --owner: the existing message names them
+  assert.throws(() => resolveAccounts(users), /Pass --owner <email> to choose the owner account/)
 })
