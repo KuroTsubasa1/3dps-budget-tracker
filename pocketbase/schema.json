@@ -533,7 +533,7 @@
   {
     "id": "47ebsejsa31yx0x",
     "created": "2026-10-13 22:24:12.178Z",
-    "updated": "2026-10-14 00:00:14.165Z",
+    "updated": "2026-10-14 19:45:58.066Z",
     "name": "commissions",
     "type": "base",
     "system": false,
@@ -734,6 +734,47 @@
         "unique": false,
         "options": {
           "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "0qfdh7hl",
+        "name": "customer_phone",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "tv0z733y",
+        "name": "paid_at",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "bmprk4lk",
+        "name": "payment_transaction",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
         }
       }
     ],
