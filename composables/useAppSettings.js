@@ -1,4 +1,5 @@
 import { ref, onMounted, watch } from 'vue'
+import { clearLegacyApiCache } from '~/utils/legacyCaches'
 
 const SETTINGS_STORAGE_KEY = 'budget-tracker-settings'
 
@@ -110,9 +111,12 @@ export const useAppSettings = () => {
       // Settings saved by older versions may still hold the shared API token: never export it
       const { api, ...settings } = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}')
       const offlineQueue = JSON.parse(localStorage.getItem('budget-tracker-offline-queue') || '[]')
+      // Entries only this device holds, so the owner can back them up before logging out
+      const orphans = JSON.parse(localStorage.getItem('budget-tracker-orphans') || '[]')
       
       const exportData = {
         transactions,
+        orphans,
         settings,
         offlineQueue,
         exportedAt: new Date().toISOString()
@@ -141,11 +145,14 @@ export const useAppSettings = () => {
         
         return { success: true, format, filename }
       } else if (format === 'csv') {
-        // For CSV, just export transactions
-        const csvHeader = 'ID,Description,Amount,Date,Notes\n'
-        const csvRows = transactions.map(t => 
-          `${t.id},"${t.description.replace(/"/g, '""')}",${t.amount},"${t.date}","${(t.notes || '').replace(/"/g, '""')}"`
-        ).join('\n')
+        // For CSV, export transactions plus the local entries the server does not have
+        const csvHeader = 'ID,Description,Amount,Date,Notes,Status\n'
+        const csvRow = (t, status) =>
+          `${t.id},"${String(t.description).replace(/"/g, '""')}",${t.amount},"${t.date}","${(t.notes || '').replace(/"/g, '""')}","${status}"`
+        const csvRows = [
+          ...transactions.map(t => csvRow(t, '')),
+          ...orphans.map(t => csvRow(t, 'not on server'))
+        ].join('\n')
         
         dataStr = csvHeader + csvRows
         filename = `budget-tracker-transactions-${new Date().toISOString().slice(0, 10)}.csv`
@@ -178,8 +185,10 @@ export const useAppSettings = () => {
     try {
       // Clear all localStorage items
       localStorage.removeItem('budget-tracker-transactions')
+      localStorage.removeItem('budget-tracker-orphans')
       localStorage.removeItem('budget-tracker-offline-queue')
       localStorage.removeItem(SETTINGS_STORAGE_KEY)
+      clearLegacyApiCache()
       
       // Reset settings to defaults
       accountSettings.value = {...defaultSettings.account}

@@ -97,6 +97,7 @@ test('logging out removes the cached transactions but keeps sales that still nee
 
   await gotoReady(page, '/settings#api')
   await page.getByRole('button', { name: 'Log out' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Log out anyway' }).click()
   await page.waitForURL(url => url.pathname === '/login')
 
   const stored = await page.evaluate(() => ({
@@ -107,6 +108,30 @@ test('logging out removes the cached transactions but keeps sales that still nee
   expect(stored.transactions).toBeNull()
   expect(stored.orphans).toBeNull()
   expect(stored.queue.map(item => item.description)).toEqual(['Unsent sale'])
+})
+
+test('logging out with entries only on this device asks first', async ({ page, api }) => {
+  api.seed()
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('orphan-seeded')) return
+    localStorage.setItem('budget-tracker-orphans', JSON.stringify([{ id: 1, description: 'Old stand sale', amount: 4, date: '2026-01-01' }]))
+    sessionStorage.setItem('orphan-seeded', '1')
+  })
+  await gotoReady(page, '/settings#api')
+  await page.getByRole('button', { name: 'Log out' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Log out' })
+  await expect(dialog).toContainText('1 entry is only on this device. Upload or export it first — logging out deletes the ones that are not queued.')
+
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page).toHaveURL(/\/settings/)
+  await expect(page.getByText('owner@example.com')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('budget-tracker-orphans'))).toContain('Old stand sale')
+
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await dialog.getByRole('button', { name: 'Log out anyway' }).click()
+  await page.waitForURL(url => url.pathname === '/login')
+  expect(await page.evaluate(() => localStorage.getItem('budget-tracker-orphans'))).toBeNull()
 })
 
 test('a transaction refresh still loading at logout does not write the data back', async ({ page, api }) => {

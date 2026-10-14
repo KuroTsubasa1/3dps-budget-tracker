@@ -41,8 +41,8 @@ export function planDealSeed (existingDeals, categories) {
   return { create, skipped }
 }
 
-const text = (name, required = false) =>
-  ({ name, type: 'text', required, presentable: false, options: { min: null, max: null, pattern: '' } })
+const text = (name, required = false, pattern = '') =>
+  ({ name, type: 'text', required, presentable: false, options: { min: null, max: null, pattern } })
 const number = (name, { required = false, min = null, noDecimal = false } = {}) =>
   ({ name, type: 'number', required, presentable: false, options: { min, max: null, noDecimal } })
 // collectionId may be '@<name>' for a collection that only exists after an earlier op
@@ -208,6 +208,13 @@ export function planSchema (collections) {
 
   if (findField(articles, 'price')?.required) {
     ops.push({ op: 'updateField', collection: ARTICLES, field: 'price', patch: { required: false } })
+  }
+
+  // The sale's local day (YYYY-MM-DD): a sale queued offline or uploaded later keeps it instead of
+  // taking the day it reached the server. Optional, because older records only have `created`.
+  const transactions = byName(collections, TRANSACTIONS)
+  if (transactions && !findField(transactions, 'date')) {
+    ops.push({ op: 'addFields', collection: TRANSACTIONS, fields: [text('date', false, '^\\d{4}-\\d{2}-\\d{2}$')] })
   }
   return ops
 }

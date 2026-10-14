@@ -176,6 +176,8 @@ Updating from an earlier version: re-run `npm run pb:migrate -- --apply` (create
 
 Rollout for the multi-article commissions release: run `npm run pb:migrate` (dry run, it should list the commissions to convert), then `npm run pb:migrate -- --apply`, then deploy right away. Don't edit commissions on a device until it has loaded the new app (reload an installed PWA once).
 
+Rollout for the sale date release: run `npm run pb:migrate` (the dry run should show only `add to "budget_tracker_transactions": date`), then `npm run pb:migrate -- --apply`. Deploy before or after, the order doesn't matter: until the field exists PocketBase ignores the `date` the app sends, and records without one are dated by `created` as before. From then on a sale queued offline or uploaded later keeps the day it was made.
+
 Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.

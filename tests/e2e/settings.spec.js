@@ -75,4 +75,32 @@ test.describe('settings', () => {
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
   })
+
+  test('clearing data removes local entries, the queue and the old API cache', async ({ page }) => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('data-seeded')) return
+      localStorage.setItem('budget-tracker-transactions', JSON.stringify([{ id: 1, recordId: 'loc000000000001', description: 'Lost sale', amount: 7, date: '2026-10-11', notes: '' }]))
+      localStorage.setItem('budget-tracker-orphans', JSON.stringify([{ id: 2, description: 'Old stand sale', amount: 4, date: '2026-01-01' }]))
+      localStorage.setItem('budget-tracker-offline-queue', JSON.stringify([{ id: 3, recordId: 'pending00000001', description: 'Unsent sale', amount: 5, date: '2026-10-14', status: 'pending', queuedAt: '2026-10-14T10:00:00.000Z' }]))
+      sessionStorage.setItem('data-seeded', '1')
+    })
+    await gotoReady(page, '/settings#data')
+    await expect(page.getByText('Old stand sale')).toBeVisible()
+    await page.evaluate(async () => { await (await caches.open('api-cache')).put('/x', new Response('x')) })
+
+    await page.getByRole('button', { name: 'Clear All Local Data' }).click()
+    await page.getByRole('dialog', { name: 'Clear All Data' }).getByRole('button', { name: 'Delete All Data' }).click()
+    await expect(page.getByText('Old stand sale')).toHaveCount(0)
+    await expect(page.getByText(/\d+ pending/)).toHaveCount(0)
+    const stored = await page.evaluate(async () => ({
+      transactions: localStorage.getItem('budget-tracker-transactions'),
+      orphans: localStorage.getItem('budget-tracker-orphans'),
+      queue: JSON.parse(localStorage.getItem('budget-tracker-offline-queue') || '[]'),
+      cache: await caches.has('api-cache')
+    }))
+    expect(stored).toEqual({ transactions: null, orphans: null, queue: [], cache: false })
+    await gotoReady(page, '/')
+    await expect(page.getByText('Lost sale')).toHaveCount(0)
+    await expect(page.getByText('not on the server')).toHaveCount(0)
+  })
 })

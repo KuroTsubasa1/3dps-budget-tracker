@@ -75,3 +75,80 @@ test('entries are ordered by date, oldest first', () => {
   })
   assert.deepEqual(transactions.map(t => t.recordId), ['a', 'b'])
 })
+
+// Sales from the old app carry the UTC date of the sale; server records are dated by the local date of
+// `created`, and sales queued offline were created on the day they synced. The tests below run in Berlin.
+const inBerlin = (fn) => () => {
+  const previous = process.env.TZ
+  process.env.TZ = 'Europe/Berlin'
+  try { fn() } finally { process.env.TZ = previous }
+}
+const legacy = (id, description, amount, date) => ({ id, description, amount, date, notes: '' })
+
+test('a legacy sale made just after midnight (UTC date one day earlier) matches its record', inBerlin(() => {
+  const { transactions, orphans } = mergeTransactions({
+    server: [record('a', 'Dragon', 15, '2026-07-09 22:30:00.000Z')],
+    local: [legacy(1, 'Dragon', 15, '2026-07-09')],
+    pending: []
+  })
+  assert.deepEqual(orphans, [])
+  assert.equal(transactions.length, 1)
+}))
+
+test('a legacy sale synced two days later matches its record', inBerlin(() => {
+  const { orphans } = mergeTransactions({
+    server: [record('b', 'Keychain', 5, '2026-07-13 09:00:00.000Z')],
+    local: [legacy(2, 'Keychain', 5, '2026-07-11')],
+    pending: []
+  })
+  assert.deepEqual(orphans, [])
+}))
+
+test('two identical legacy sales on different days each match their own record', inBerlin(() => {
+  const server = [record('a', 'Vase', 20, '2026-07-10 12:00:00.000Z'), record('b', 'Vase', 20, '2026-07-13 12:00:00.000Z')]
+  const both = mergeTransactions({ server, local: [legacy(2, 'Vase', 20, '2026-07-12'), legacy(1, 'Vase', 20, '2026-07-09')], pending: [] })
+  assert.deepEqual(both.orphans, [])
+  assert.equal(both.transactions.length, 2)
+
+  // One record cannot absorb two sales: the second identical sale stays an orphan
+  const one = mergeTransactions({ server: [server[1]], local: [legacy(1, 'Vase', 20, '2026-07-12'), legacy(2, 'Vase', 20, '2026-07-11')], pending: [] })
+  assert.deepEqual(one.orphans.map(o => o.id), [2])
+}))
+
+test('a legacy sale is never matched to a record created before it or more than 7 days later', inBerlin(() => {
+  const late = mergeTransactions({ server: [record('a', 'Vase', 20, '2026-07-19 12:00:00.000Z')], local: [legacy(1, 'Vase', 20, '2026-07-11')], pending: [] })
+  assert.deepEqual(late.orphans.map(o => o.id), [1])
+  const early = mergeTransactions({ server: [record('a', 'Vase', 20, '2026-07-10 12:00:00.000Z')], local: [legacy(1, 'Vase', 20, '2026-07-11')], pending: [] })
+  assert.deepEqual(early.orphans.map(o => o.id), [1])
+  const sameDay = mergeTransactions({ server: [record('a', 'Vase', 20, '2026-07-18 12:00:00.000Z')], local: [legacy(1, 'Vase', 20, '2026-07-11')], pending: [] })
+  assert.deepEqual(sameDay.orphans, [])
+}))
+
+test('a record already claimed by its record id is not matched to a legacy sale', inBerlin(() => {
+  const { orphans } = mergeTransactions({
+    server: [record('a', 'Vase', 20, '2026-07-11 12:00:00.000Z')],
+    local: [local('a', 'Vase', 20, '2026-07-11'), legacy(1, 'Vase', 20, '2026-07-11')],
+    pending: []
+  })
+  assert.deepEqual(orphans.map(o => o.id), [1])
+}))
+
+test('a queued legacy entry without record id counts as pending by its id', () => {
+  const queued = legacy(4, 'Queued legacy', 7, '2026-07-11')
+  const { transactions, orphans } = mergeTransactions({ server: [], local: [queued], pending: [4] })
+  assert.deepEqual(orphans, [])
+  assert.deepEqual(transactions, [queued])
+})
+
+test('fromRecord keeps the sale date the record carries', () => {
+  assert.equal(fromRecord({ ...record('a', 'x', 1, '2026-10-14 08:00:00.000Z'), date: '2026-10-12' }).date, '2026-10-12')
+})
+
+test('a record carrying its sale date matches a legacy sale of that date exactly', () => {
+  const { orphans } = mergeTransactions({
+    server: [{ ...record('a', 'Vase', 20, '2026-10-20 12:00:00.000Z'), date: '2026-10-12' }],
+    local: [legacy(1, 'Vase', 20, '2026-10-12')],
+    pending: []
+  })
+  assert.deepEqual(orphans, [])
+})

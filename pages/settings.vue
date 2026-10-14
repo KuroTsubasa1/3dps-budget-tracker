@@ -125,7 +125,7 @@
                 {{ formatCurrency(entry.amount, displaySettings.currencyFormat || 'EUR') }}
               </span>
               <div class="flex shrink-0 gap-2">
-                <BaseButton variant="secondary" @click="uploadOrphan(entry)">Upload</BaseButton>
+                <BaseButton variant="secondary" :loading="isUploadingOrphan(entry)" @click="uploadOrphan(entry)">Upload</BaseButton>
                 <BaseButton variant="danger-ghost" @click="orphanToDiscard = entry">Discard</BaseButton>
               </div>
             </div>
@@ -183,6 +183,14 @@
       </div>
     </BottomSheet>
 
+    <BottomSheet v-model:open="showLogoutConfirm" title="Log out">
+      <p class="mb-4 text-sm text-ink-muted">{{ logoutWarning }}</p>
+      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <BaseButton variant="secondary" @click="showLogoutConfirm = false">Cancel</BaseButton>
+        <BaseButton variant="danger" @click="logOutNow">Log out anyway</BaseButton>
+      </div>
+    </BottomSheet>
+
     <BottomSheet v-model:open="showClearDataConfirm" title="Clear All Data">
       <p class="mb-4 text-sm text-ink-muted">
         Are you sure you want to clear all local data? This action cannot be undone. All of your transactions, settings and offline data will be permanently removed.
@@ -208,7 +216,16 @@ import { formatDate } from '~/utils/date'
 
 definePageMeta({ middleware: 'owner' })
 
-const { syncStatus, syncTransactionsQueue, orphans, uploadOrphan, discardOrphan, forgetLocalData } = useTransactions()
+const {
+  syncStatus,
+  syncTransactionsQueue,
+  orphans,
+  uploadOrphan,
+  isUploadingOrphan,
+  discardOrphan,
+  forgetLocalData,
+  localOnlyCount
+} = useTransactions()
 const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
   accountSettings,
@@ -224,10 +241,26 @@ const { toast } = useToast()
 const { user, logout } = useAuth()
 const pocketbaseUrl = useRuntimeConfig().public.pocketbaseUrl
 
-const handleLogout = () => {
+const logOutNow = () => {
+  showLogoutConfirm.value = false
   forgetLocalData()
   logout()
   navigateTo('/login')
+}
+
+// Orphans and unsynced sales live only on this device, and logging out deletes the orphans: ask first
+const showLogoutConfirm = ref(false)
+const logoutWarning = computed(() => {
+  const count = localOnlyCount.value
+  const entries = count === 1 ? '1 entry is' : `${count} entries are`
+  return `${entries} only on this device. Upload or export ${count === 1 ? 'it' : 'them'} first — logging out deletes the ones that are not queued.`
+})
+const handleLogout = () => {
+  if (localOnlyCount.value > 0) {
+    showLogoutConfirm.value = true
+    return
+  }
+  logOutNow()
 }
 
 const SETTINGS_CATEGORIES = [
@@ -323,6 +356,8 @@ const handleExportData = async (format) => {
 
 const handleClearAllData = async () => {
   const result = await clearAllData()
+  // Also empties what this session holds in memory, queued sales included, as the confirmation promises
+  forgetLocalData({ keepQueue: false })
   showClearDataConfirm.value = false
   if (result) {
     toast('All data cleared successfully')

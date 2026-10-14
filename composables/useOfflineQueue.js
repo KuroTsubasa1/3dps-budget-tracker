@@ -93,6 +93,12 @@ export const useOfflineQueue = () => {
     saveQueue()
   }
 
+  // Drops every queued sale, synced or not ("Clear All Local Data")
+  const clearQueue = () => {
+    offlineQueue.value = []
+    localStorage.removeItem(QUEUE_STORAGE_KEY)
+  }
+
   // Set up network status event listeners
   onMounted(() => {
     loadQueue()
@@ -116,6 +122,7 @@ export const useOfflineQueue = () => {
     addToQueue,
     processQueue,
     clearCompletedItems,
+    clearQueue,
     isOnline
   }
 }

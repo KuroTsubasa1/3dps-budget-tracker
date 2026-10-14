@@ -39,4 +39,16 @@ test.describe('installable PWA', () => {
     expect(pwaBlock).not.toContain('api-cache')
     expect(pwaBlock).not.toContain('pocket')
   })
+
+  test('the old service worker API cache is deleted on start', async ({ page }) => {
+    await gotoReady(page, '/business-card')
+    await page.evaluate(async () => {
+      const cache = await caches.open('api-cache')
+      await cache.put('/api/collections/budget_tracker_transactions/records', new Response('{"items":[{"description":"Anna Example"}]}'))
+    })
+    expect(await page.evaluate(() => caches.has('api-cache'))).toBe(true)
+    await page.reload()
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect.poll(() => page.evaluate(() => caches.has('api-cache'))).toBe(false)
+  })
 })

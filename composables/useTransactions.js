@@ -5,12 +5,16 @@ import { usePocketBase } from './usePocketBase'
 import { useInventory } from './useInventory'
 import { newRecordId } from '~/utils/inventory'
 import { localDate, mergeTransactions } from '~/utils/transactions'
+import { clearLegacyApiCache } from '~/utils/legacyCaches'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
+const SALE_DATE = /^\d{4}-\d{2}-\d{2}$/
 const ORPHANS_KEY = 'budget-tracker-orphans'
 const transactions = ref([])
 // Local entries the server does not know and no queue item will create; the owner reviews them in Settings
 const orphans = ref([])
+// Keys of orphans whose upload is under way, so a double tap cannot post one twice
+const uploadingOrphans = ref([])
 // Record ids whose POST is in flight right now: neither on the server yet nor in the queue
 const sending = new Set()
 let refreshing = false
@@ -41,6 +45,7 @@ export const useTransactions = () => {
     addToQueue, 
     processQueue,
     clearCompletedItems, 
+    clearQueue,
     isSyncing, 
     syncStatus: queueSyncStatus,
     isOnline 
@@ -114,17 +119,22 @@ export const useTransactions = () => {
           refreshAgain = true
           continue
         }
+        // Legacy queue items have no record id; their local id identifies them instead
         const pending = [
-          ...offlineQueue.value.filter(item => item.status !== 'synced').map(item => item.recordId),
+          ...offlineQueue.value.filter(item => item.status !== 'synced').map(item => item.recordId || item.id),
           ...sending
         ].filter(Boolean)
         const merged = mergeTransactions({ server, local: transactions.value, pending })
         transactions.value = merged.transactions
         saveTransactions()
+        // Stored orphans are checked again against the whole server list: once their sale shows up
+        // there (synced from another device, or a false orphan from an older matcher), they go
+        const stillMissing = new Set(mergeTransactions({ server, local: orphans.value, pending: [] }).orphans.map(orphanKey))
+        const kept = orphans.value.filter(entry => stillMissing.has(orphanKey(entry)))
         const known = new Set(orphans.value.map(orphanKey))
         const added = merged.orphans.filter(entry => !known.has(orphanKey(entry)))
-        if (added.length) {
-          orphans.value = [...orphans.value, ...added]
+        if (added.length || kept.length !== orphans.value.length) {
+          orphans.value = [...kept, ...added]
           saveOrphans()
         }
       } while (refreshAgain)
@@ -153,7 +163,15 @@ export const useTransactions = () => {
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: pb.authStore.token },
-        body: JSON.stringify({ id: data.recordId, description: data.description, amount: data.amount, notes: data.notes || '' })
+        // date is the sale's local day, so a sale synced or uploaded later keeps it. The server only
+        // accepts YYYY-MM-DD there; anything else (very old entries) falls back to the created day.
+        body: JSON.stringify({
+          id: data.recordId,
+          description: data.description,
+          amount: data.amount,
+          notes: data.notes || '',
+          date: SALE_DATE.test(data.date || '') ? data.date : undefined
+        })
       })
       const body = await response.json().catch(() => null)
       const alreadyCreated = response.status === 400 && !!data.recordId && !!body?.data?.id
@@ -219,7 +237,8 @@ export const useTransactions = () => {
       ...transaction,
       // Sent as the PocketBase record id and kept in the queue, so a retry can tell it already exists
       recordId: newRecordId(),
-      amount: Number(transaction.amount)
+      amount: Number(transaction.amount),
+      date: transaction.date || localDate()
     }
     
     // Add to local state first
@@ -240,8 +259,9 @@ export const useTransactions = () => {
         apiError.value = 'You are offline. Transaction saved locally and will sync when online.'
       }
     } catch (error) {
-      // If online but error occurred, add to queue
-      if (isOnline()) {
+      // Any failure queues the sale, also when the connection dropped mid-send (offline by now).
+      // The record id makes the retry safe if the server stored it after all.
+      if (!offlineQueue.value.some(item => item.recordId === newTransaction.recordId)) {
         addToQueue(newTransaction)
       }
       // Error already handled in sendToPocketbase
@@ -253,11 +273,22 @@ export const useTransactions = () => {
     refreshTransactions()
   }
 
-  // Re-adds an orphan through the normal path (fresh record id, queued if offline), then drops it
+  // Re-adds an orphan through the normal path (fresh record id, queued if offline). It leaves the
+  // orphan list before the request starts, so a second tap finds nothing left to upload.
+  // addTransaction keeps it in the local list straight away and queues it if the send fails.
   const uploadOrphan = async (entry) => {
-    await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date })
+    const key = orphanKey(entry)
+    if (uploadingOrphans.value.includes(key) || !orphans.value.some(item => orphanKey(item) === key)) return
+    uploadingOrphans.value = [...uploadingOrphans.value, key]
     discardOrphan(entry)
+    try {
+      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date })
+    } finally {
+      uploadingOrphans.value = uploadingOrphans.value.filter(item => item !== key)
+    }
   }
+
+  const isUploadingOrphan = entry => uploadingOrphans.value.includes(orphanKey(entry))
 
   const discardOrphan = (entry) => {
     orphans.value = orphans.value.filter(item => orphanKey(item) !== orphanKey(entry))
@@ -316,14 +347,25 @@ export const useTransactions = () => {
 
   // Logging out must not leave customer names and takings readable on the device. Sales that
   // have not reached the server yet stay queued (they hold no server data) and sync after the next login.
-  const forgetLocalData = () => {
+  // "Clear All Local Data" passes keepQueue: false and drops those as well.
+  const forgetLocalData = ({ keepQueue = true } = {}) => {
     sessionGeneration++
     transactions.value = []
     orphans.value = []
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(ORPHANS_KEY)
-    clearCompletedItems()
+    if (keepQueue) {
+      clearCompletedItems()
+    } else {
+      clearQueue()
+    }
+    clearLegacyApiCache()
   }
+
+  // Entries that exist on this device only: orphans plus sales still waiting to sync
+  const localOnlyCount = computed(() =>
+    orphans.value.length + offlineQueue.value.filter(item => item.status !== 'synced').length
+  )
 
   return {
     transactions,
@@ -331,7 +373,9 @@ export const useTransactions = () => {
     refreshTransactions,
     forgetLocalData,
     uploadOrphan,
+    isUploadingOrphan,
     discardOrphan,
+    localOnlyCount,
     earnings,
     todayEarnings,
     addTransaction,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import {
   ARTICLES,
+  TRANSACTIONS,
   CATEGORY_SEED,
   DEAL_SEED,
   ownerRule,
@@ -31,7 +32,8 @@ test('plans the new collections, article fields and optional price', () => {
     'createCollection:commissions',
     'createCollection:print_jobs',
     `addFields:${ARTICLES}`,
-    `updateField:${ARTICLES}.price`
+    `updateField:${ARTICLES}.price`,
+    `addFields:${TRANSACTIONS}`
   ])
   assert.deepEqual(ops[5].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock'])
 })
@@ -339,4 +341,20 @@ test('converting again after applying changes nothing', () => {
   assert.equal(patches.length, 1)
   const applied = commissions.map(commission => ({ ...commission, ...patches.find(item => item.id === commission.id)?.patch }))
   assert.deepEqual(planCommissionItems(applied, PLAN_ARTICLES), [])
+})
+
+const DATE_FIELD = { name: 'date', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+const live = () => JSON.parse(readFileSync(new URL('../../pocketbase/schema.json', import.meta.url)))
+
+test('transactions gain an optional sale date field', () => {
+  const op = planSchema(current()).find(item => item.op === 'addFields' && item.collection === TRANSACTIONS)
+  assert.deepEqual(op.fields, [DATE_FIELD])
+  assert.ok(new RegExp(DATE_FIELD.options.pattern).test('2026-10-14'))
+  assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date`)
+})
+
+test('the live schema needs exactly the transaction date field, and only once', () => {
+  const ops = planSchema(live())
+  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD] }])
+  assert.deepEqual(planSchema(simulate(live(), ops)), [])
 })
