@@ -60,6 +60,8 @@
           <AppIcon name="chevron-right" class="h-4 w-4 text-ink-muted" />
         </NuxtLink>
 
+        <NextUpCard />
+
         <BaseCard title="Recent Transactions" icon="clipboard" flush>
           <template #actions>
             <NuxtLink to="/reports" class="btn-link">View All</NuxtLink>

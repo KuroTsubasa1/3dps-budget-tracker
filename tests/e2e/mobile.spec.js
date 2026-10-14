@@ -1,5 +1,6 @@
 import { test, expect, gotoReady } from './fixtures.js'
 import { openReports } from './report-data.js'
+import { CONVENTIONS, convention, openCalendar } from './calendar-data.js'
 
 const PAGES = [
   '/',
@@ -8,6 +9,7 @@ const PAGES = [
   '/reports',
   '/commissions',
   '/print-board',
+  '/calendar',
   '/login',
   '/settings',
   '/settings#account',
@@ -192,6 +194,47 @@ test.describe('phone layout sweep', () => {
         expect(scrollWidth, name).toBeLessThanOrEqual(page.viewportSize().width)
         expect(await smallTargets(page), name).toEqual([])
       }
+    })
+  }
+
+  for (const dark of [false, true]) {
+    test(`the calendar fits at 375px with long names, in Upcoming, Month and the sheet${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
+      await page.addInitScript((dark) => {
+        localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))
+      }, dark)
+      const long = 'Supercalifragilisticexpialidocious-International-Convention-Of-Very-Long-Names'
+      await openCalendar(page, api, {
+        conventions: [
+          ...CONVENTIONS,
+          convention('long00000000001', {
+            name: long,
+            city: long,
+            venue: long,
+            hall: long,
+            table: 'B12',
+            status: 'booked',
+            starts_on: '2026-10-30 00:00:00.000Z',
+            ends_on: '2026-11-01 00:00:00.000Z',
+            stand_fee: 1234567.89,
+            reminders: [{ id: 'custom-1', kind: 'custom', at: '2026-10-20T07:00:00.000Z', text: long, auto: false }]
+          })
+        ]
+      })
+      const fits = async (label) => {
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+        expect(scrollWidth, label).toBeLessThanOrEqual(page.viewportSize().width)
+        expect(await smallTargets(page), label).toEqual([])
+      }
+      await page.getByRole('button', { name: 'Past (2)' }).click()
+      await fits('Upcoming')
+      await page.getByRole('radiogroup', { name: 'View' }).getByRole('radio', { name: 'Month' }).click()
+      await page.getByRole('button', { name: `Fri 30 Oct: ${long}` }).click()
+      await fits('Month')
+      await page.getByTestId('day-entries').getByRole('button').first().click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByRole('button', { name: 'Mark fee paid' })).toBeVisible()
+      await fits('sheet')
+      expect(await dialog.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
     })
   }
 })

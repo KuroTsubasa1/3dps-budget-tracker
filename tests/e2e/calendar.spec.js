@@ -8,6 +8,10 @@ const upcoming = page => page.getByTestId('upcoming')
 const section = (page, title) => upcoming(page).locator('section', { has: page.getByRole('heading', { name: title, exact: true }) })
 const remindersIn = page => sheet(page).getByRole('list', { name: 'Reminders' }).getByRole('listitem')
 const openRow = (page, name) => upcoming(page).getByRole('button', { name: new RegExp(`^${name}`) }).click()
+const showMonth = async (page) => {
+  const views = page.getByRole('radiogroup', { name: 'View' })
+  if (await views.isVisible()) await views.getByRole('radio', { name: 'Month' }).click()
+}
 const stored = (api, id) => api.db.conventions.find(item => item.id === id)
 
 test.describe('convention calendar', () => {
@@ -262,6 +266,57 @@ test.describe('convention calendar', () => {
     await expect(upcoming(page).getByRole('list', { name: 'Past conventions' })).toHaveCount(0)
     await past.click()
     await expect(upcoming(page).getByRole('list', { name: 'Past conventions' }).getByRole('listitem')).toHaveText([/Comic Con.*Rejected/, /Animagic.*Done/])
+  })
+
+  test('the month grid starts on Monday, draws bars and dots, and tapping a day lists its entries', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await showMonth(page)
+    const october = page.getByRole('group', { name: 'October 2026' })
+    await expect(october.getByRole('button')).toHaveCount(35)
+    await expect(october.getByRole('button').first()).toHaveAttribute('aria-label', 'Mon 28 Sep')
+    await expect(october.getByRole('button', { name: 'Wed 21 Oct: applications close: Connichi' }).getByTestId('day-dot')).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Next month' }).click()
+    const november = page.getByRole('group', { name: 'November 2026' })
+    await expect(november.getByRole('button')).toHaveCount(42)
+    const booked = november.getByRole('button', { name: 'Sat 7 Nov: Dokomi' }).getByTestId('day-bar')
+    await expect(booked).toHaveAttribute('data-status', 'booked')
+    await expect(booked).toHaveClass(/bg-accent/)
+    await expect(november.getByRole('button', { name: 'Sat 21 Nov: MegaCon' }).getByTestId('day-bar')).toHaveClass(/border-accent/)
+
+    await november.getByRole('button', { name: 'Sat 7 Nov: Dokomi' }).click()
+    const entries = page.getByTestId('day-entries')
+    await expect(entries.getByRole('heading')).toHaveText('Sat 7 Nov')
+    await expect(entries.getByRole('listitem')).toHaveText(['Dokomi (Booked)'])
+    await entries.getByRole('button', { name: 'Dokomi (Booked)' }).click()
+    await expect(sheet(page).getByLabel('Name', { exact: true })).toHaveValue('Dokomi')
+
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await showMonth(page)
+    await page.getByRole('button', { name: 'Previous month' }).click()
+    await expect(page.getByRole('heading', { name: 'October 2026' })).toBeVisible()
+  })
+
+  test('the dashboard shows Next up and opens the convention', async ({ page, api }) => {
+    api.seed({ conventions: [DOKOMI, CONNICHI] })
+    await page.clock.setFixedTime(CALENDAR_NOW)
+    await gotoReady(page, '/')
+    const card = page.locator('section', { has: page.getByRole('heading', { name: 'Next up', exact: true }) })
+    await expect(card.getByRole('link')).toHaveText([/Connichi.*Applications close in 7 days/, /Dokomi.*Starts in 24 days/])
+    await card.getByRole('link', { name: /Dokomi/ }).click()
+    await page.waitForURL(url => url.pathname === '/calendar' && url.searchParams.get('c') === DOKOMI.id)
+    await expect(sheet(page).getByLabel('Name', { exact: true })).toHaveValue('Dokomi')
+  })
+
+  test('the dashboard hides Next up without conventions or without the collection', async ({ page, api }) => {
+    api.seed({ conventions: [] })
+    await gotoReady(page, '/')
+    await expect(page.getByRole('heading', { name: 'Balance Summary' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Next up' })).toHaveCount(0)
+    api.dropCollection('conventions')
+    await gotoReady(page, '/')
+    await expect(page.getByRole('heading', { name: 'Balance Summary' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Next up' })).toHaveCount(0)
   })
 
   test('offline, the calendar shows the saved copy and every change needs a connection', async ({ page, api }) => {

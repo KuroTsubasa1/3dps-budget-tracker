@@ -15,11 +15,12 @@
           <div class="flex justify-center pt-2 md:hidden" aria-hidden="true">
             <span class="h-1.5 w-10 rounded-full bg-line" />
           </div>
-          <div class="flex items-center justify-between px-4 py-1 md:px-6 md:pt-4">
-            <h2 :id="titleId" class="text-base font-semibold text-ink">{{ title }}</h2>
+          <div class="flex items-center justify-between gap-2 px-4 py-1 md:px-6 md:pt-4">
+            <!-- A long title (a convention's name) wraps instead of squeezing the close button -->
+            <h2 :id="titleId" class="min-w-0 break-words text-base font-semibold text-ink">{{ title }}</h2>
             <button
               type="button"
-              class="-mr-2 flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-muted"
+              class="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted"
               aria-label="Close"
               @click="close"
             >

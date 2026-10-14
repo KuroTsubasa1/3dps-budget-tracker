@@ -21,11 +21,13 @@
     </div>
 
     <template v-else>
+      <SegmentedControl v-if="!isDesktop" v-model="view" class="mb-4" label="View" :options="VIEWS" />
       <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <UpcomingList :conventions="conventions" :now="now" @open="openExisting" />
-        <!-- On lg+ the convention opens beside the Upcoming list -->
-        <div v-if="isDesktop" class="min-w-0">
-          <section v-if="panelOpen" class="card p-4 md:p-5" aria-labelledby="convention-panel-title">
+        <UpcomingList v-if="isDesktop || view === 'upcoming'" :conventions="conventions" :now="now" @open="openExisting" />
+        <div v-if="isDesktop || view === 'month'" class="min-w-0">
+          <!-- On lg+ the convention opens in place of the month grid (kept, so it stays on its month);
+               the Upcoming list stays beside it -->
+          <section v-if="isDesktop && panelOpen" class="card p-4 md:p-5" aria-labelledby="convention-panel-title">
             <div class="mb-3 flex items-center justify-between gap-3">
               <h2 id="convention-panel-title" class="min-w-0 break-words text-base font-semibold text-ink">{{ panelTitle }}</h2>
               <button type="button" class="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted" aria-label="Close" @click="closePanel">
@@ -34,6 +36,7 @@
             </div>
             <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
           </section>
+          <MonthGrid v-show="!(isDesktop && panelOpen)" :conventions="conventions" :now="now" @open="openExisting" />
         </div>
       </div>
     </template>
@@ -47,12 +50,18 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import ConventionSheet from '~/components/calendar/ConventionSheet.vue'
+import MonthGrid from '~/components/calendar/MonthGrid.vue'
 import UpcomingList from '~/components/calendar/UpcomingList.vue'
 import { useConventions } from '~/composables/useConventions'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { formatMoment } from '~/utils/calendar/dates'
 
 definePageMeta({ middleware: 'owner' })
+
+const VIEWS = [
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'month', label: 'Month' }
+]
 
 const { listConventions, saveCopy, savedCopy } = useConventions()
 const route = useRoute()
@@ -67,6 +76,7 @@ const loadError = ref('')
 const savedAt = ref(null)
 const offline = ref(false)
 const now = ref(new Date())
+const view = ref('upcoming')
 const selectedId = ref(null)
 const creating = ref(false)
 
