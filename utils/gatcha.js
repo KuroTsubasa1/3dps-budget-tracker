@@ -69,7 +69,9 @@ export function undoPick (outbox, pick, { sending = false, id }) {
 
 const isCount = value => Number.isInteger(value) && value >= 0
 const isMovement = movement => !!movement && typeof movement.id === 'string' && typeof movement.article === 'string' &&
-  [-1, 1].includes(movement.change) && ['sale', 'correction'].includes(movement.reason)
+  (movement.tried === undefined || typeof movement.tried === 'boolean') &&
+  ((movement.change === -1 && movement.reason === 'sale' && movement.note === PRIZE_NOTE) ||
+    (movement.change === 1 && movement.reason === 'correction' && movement.note === UNDO_NOTE))
 
 // A full, blocked or garbled storage only costs what this device kept
 export function readOpenPrizes (storage) {

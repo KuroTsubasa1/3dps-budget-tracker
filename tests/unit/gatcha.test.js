@@ -72,7 +72,8 @@ test('a cart owes one prize per gatcha unit, from the union of the gatchas\' cat
     { ...GATCHA, quantity: 2 },
     { ...coasterGatcha, quantity: 1 },
     { ...ARTICLES[1], quantity: 4 },
-    { ...article('g3', 'Unsold Gatcha', 'cat-gatcha', { prize_categories: ['cat-mini'] }), quantity: 0 }
+    { ...article('g3', 'Unsold Gatcha', 'cat-gatcha', { prize_categories: ['cat-x'] }), quantity: 0 },
+    { ...article('g4', 'Negative Gatcha', 'cat-gatcha', { prize_categories: ['cat-y'] }), quantity: -2 }
   ]), { count: 3, categories: ['cat-keychain', 'cat-mini', 'cat-coaster'] })
   assert.deepEqual(prizesFor([{ ...ARTICLES[1], quantity: 1 }]), { count: 0, categories: [] })
 })
@@ -101,6 +102,11 @@ test('prize choices are active articles in stock from the prize categories, grou
     ['Keychain', ['Pikachu Keychain']]
   ])
   assert.deepEqual(prizeChoices({ articles: ARTICLES, categories: CATEGORIES, prizeCategories: ['cat-keychain'], query: 'nothing' }), [])
+})
+
+test('prize choice groups follow the order of the categories given, not their names', () => {
+  const ordered = [CATEGORIES[2], CATEGORIES[1]]
+  assert.deepEqual(names(prizeChoices({ articles: ARTICLES, categories: ordered, prizeCategories: ['cat-keychain', 'cat-mini'] })).map(group => group[0]), ['Mini Figure', 'Keychain'])
 })
 
 test('a gatcha is never its own prize, even when its category is a prize category', () => {
@@ -143,6 +149,21 @@ test('open prizes and the outbox survive a reload, and garbage reads as nothing'
   assert.deepEqual(readOpenPrizes(storage), NO_PRIZES)
   storage.setItem(PRIZE_OUTBOX_KEY, JSON.stringify([prizeMovement('mv1', 'k1'), { id: 'x', article: 'k1', change: -40, reason: 'sale' }, 'junk']))
   assert.deepEqual(readOutbox(storage), [prizeMovement('mv1', 'k1')])
+
+  // Only the two exact shapes a prize and its undo are written in are kept
+  const undo = undoMovement('mv2', 'k1')
+  const odd = [
+    { ...prizeMovement('a', 'k1'), note: 'other' },
+    { ...prizeMovement('b', 'k1'), reason: 'correction' },
+    { ...undo, reason: 'sale' },
+    { ...undo, note: PRIZE_NOTE },
+    { ...undo, change: 2 },
+    { ...prizeMovement('c', 'k1'), note: undefined },
+    { ...prizeMovement('d', 'k1'), tried: 'yes' },
+    { ...prizeMovement('e', 1) }
+  ]
+  storage.setItem(PRIZE_OUTBOX_KEY, JSON.stringify([...odd, undo, { ...prizeMovement('f', 'k1'), tried: true }]))
+  assert.deepEqual(readOutbox(storage), [undo, { ...prizeMovement('f', 'k1'), tried: true }])
 
   // A blocked storage never throws
   const blocked = memoryStorage(true)
