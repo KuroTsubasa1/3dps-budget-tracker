@@ -65,10 +65,14 @@ const findField = (collection, name) => collection?.schema.find(field => field.n
 // Key order matters: sign-up on "users" is closed before anything else is pinned to the owner.
 // With a notifier account the reminder job may also read and update conventions and read and delete
 // push subscriptions; without one those two collections are the owner's alone.
-const rulesFor = (ownerId, notifierId = null) => {
+// The notifier only marks reminders sent, so its convention updates may set no field but `reminders`;
+// the field list comes from the live collection, so a field added later is refused to it as well.
+const rulesFor = (ownerId, notifierId = null, conventionFields = []) => {
   const O = ownerRule(ownerId)
   if (notifierId && notifierId === ownerId) throw new Error('The notifier must be a different account from the owner')
   const ON = notifierId ? `(${O}) || (${ownerRule(notifierId)})` : O
+  const untouched = conventionFields.filter(name => name !== 'reminders').map(name => `@request.data.${name}:isset = false`)
+  const notifierUpdate = notifierId ? `(${O}) || (${[ownerRule(notifierId), ...untouched].join(' && ')})` : O
   return {
     users: { createRule: null },
     categories: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
@@ -78,7 +82,7 @@ const rulesFor = (ownerId, notifierId = null) => {
     [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
-    conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: ON, deleteRule: O },
+    conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: notifierUpdate, deleteRule: O },
     push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON }
   }
 }
@@ -318,7 +322,8 @@ export function planRules (collections, ownerId, notifierId = null) {
       }
     }
   }
-  return Object.entries(rulesFor(ownerId, notifierId))
+  const conventionFields = (byName(collections, 'conventions')?.schema ?? []).map(field => field.name)
+  return Object.entries(rulesFor(ownerId, notifierId, conventionFields))
     .filter(([name]) => byName(collections, name))
     .filter(([name, rules]) => Object.entries(rules).some(([key, value]) => byName(collections, name)[key] !== value))
     .map(([name, rules]) => ({ op: 'setRules', collection: name, rules }))

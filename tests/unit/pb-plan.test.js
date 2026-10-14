@@ -411,6 +411,10 @@ test('before the date field the live schema needs it and the report fields, and 
 const NOTIFIER_ID = 'notifier0000001'
 const NOTIFIER_EXPR = `@request.auth.collectionName = "users" && @request.auth.id = "${NOTIFIER_ID}"`
 const OWNER_OR_NOTIFIER = `(${OWNER_EXPR}) || (${NOTIFIER_EXPR})`
+// The notifier may only write `reminders`: an update that sets any other convention field is refused
+const CONVENTION_FIELDS = ['name', 'city', 'venue', 'hall', 'table', 'starts_on', 'ends_on', 'status', 'applications_open',
+  'applications_close', 'results_expected', 'setup_at', 'stand_fee', 'fee_paid_at', 'fee_transaction']
+const NOTIFIER_UPDATE = `(${OWNER_EXPR}) || (${NOTIFIER_EXPR} && ${CONVENTION_FIELDS.map(name => `@request.data.${name}:isset = false`).join(' && ')})`
 const LOCKED_RULES = [null, null, null, null, null]
 const rulesOf = collection => [collection.listRule, collection.viewRule, collection.createRule, collection.updateRule, collection.deleteRule]
 
@@ -462,7 +466,7 @@ test('without a notifier the calendar collections belong to the owner alone', ()
 test('the notifier may read and update conventions and read and delete subscriptions, nothing else', () => {
   const afterSchema = simulate(current(), planSchema(current()))
   const ops = planRules(afterSchema, OWNER_ID, NOTIFIER_ID)
-  assert.deepEqual(ops.find(op => op.collection === 'conventions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: OWNER_OR_NOTIFIER, deleteRule: OWNER_EXPR })
+  assert.deepEqual(ops.find(op => op.collection === 'conventions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: NOTIFIER_UPDATE, deleteRule: OWNER_EXPR })
   assert.deepEqual(ops.find(op => op.collection === 'push_subscriptions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: null, deleteRule: OWNER_OR_NOTIFIER })
   // Every other collection keeps the owner rules
   const others = ops.filter(op => !CALENDAR.includes(op.collection))
@@ -497,4 +501,19 @@ test('a later --apply-rules without --notifier does not silently drop an existin
   assert.deepEqual(planRules(withNotifier, OWNER_ID, NOTIFIER_ID), [])
   const ownerOnly = simulate(afterSchema, planRules(afterSchema, OWNER_ID))
   assert.deepEqual(planRules(ownerOnly, OWNER_ID), [])
+})
+
+test('the notifier may write only the reminders of a convention, and a new field is covered automatically', () => {
+  const created = planSchema(withoutCalendar(current())).find(op => op.op === 'createCollection' && op.name === 'conventions')
+  const others = created.body.schema.map(field => field.name).filter(name => name !== 'reminders')
+  assert.deepEqual(others, CONVENTION_FIELDS)
+  const afterSchema = simulate(current(), planSchema(current()))
+  const rule = planRules(afterSchema, OWNER_ID, NOTIFIER_ID).find(op => op.collection === 'conventions').rules.updateRule
+  assert.ok(!rule.includes('@request.data.reminders'))
+  // A field added to the live collection later is refused to the notifier too
+  const grown = afterSchema.map(collection => collection.name === 'conventions'
+    ? { ...collection, schema: [...collection.schema, { name: 'website', type: 'url' }] }
+    : collection)
+  const grownRule = planRules(grown, OWNER_ID, NOTIFIER_ID).find(op => op.collection === 'conventions').rules.updateRule
+  assert.ok(grownRule.includes('@request.data.website:isset = false'))
 })
