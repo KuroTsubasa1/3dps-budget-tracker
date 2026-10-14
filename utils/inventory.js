@@ -19,6 +19,19 @@ export const correctionMovement = (stock, target, note = '') => {
   return change === 0 ? null : { change, reason: 'correction', note }
 }
 
+export const STOCK_NOW_ERROR = 'Enter how many are in stock now'
+const WHOLE_NUMBER = /^\d+$/
+
+// "Stock now" in the inventory panel: a higher count than the current stock is recorded as printed,
+// a lower one as a correction to that count, the same count as nothing (null)
+export const stockNowMovement = (stock, value) => {
+  const text = String(value ?? '').trim()
+  if (!WHOLE_NUMBER.test(text) || !Number.isSafeInteger(Number(text))) throw new Error(STOCK_NOW_ERROR)
+  const target = Number(text)
+  const current = Math.max(0, Number(stock) || 0)
+  return target > current ? printedMovement(target - current) : correctionMovement(current, target)
+}
+
 // Replayed in date order (id breaks ties) and floored at every step: a printed batch after an oversell counts in full
 const byCreated = (a, b) =>
   String(a.created ?? '').localeCompare(String(b.created ?? '')) || String(a.id ?? '').localeCompare(String(b.id ?? ''))

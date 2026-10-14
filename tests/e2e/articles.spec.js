@@ -59,24 +59,60 @@ test.describe('managing articles', () => {
     expect(api.db.budget_tracket_catalog[0].price).toBe(6)
   })
 
-  test('adding printed items and correcting the count are logged', async ({ page, api }) => {
+  test('Stock now records a higher count as printed and a lower one as a correction', async ({ page, api }) => {
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
-    await sheet(page).getByLabel('Add printed').fill('2')
-    await expect(sheet(page).getByRole('button', { name: 'Add', exact: true })).toHaveClass(/btn-primary/)
-    await sheet(page).getByRole('button', { name: 'Add', exact: true }).click()
+    const stockNow = sheet(page).getByLabel('Stock now')
+    const save = sheet(page).getByRole('button', { name: 'Save', exact: true })
+    await expect(stockNow).toHaveValue('5')
+    await expect(save).toHaveClass(/btn-primary/)
+    await stockNow.fill('7')
+    await save.click()
     await expect(sheet(page).getByTestId('article-stock')).toHaveText('7')
+    await expect(stockNow).toHaveValue('7')
 
-    await sheet(page).getByLabel('Correct count').fill('1')
-    await sheet(page).getByLabel('Correction note').fill('recount')
-    await sheet(page).getByRole('button', { name: 'Set' }).click()
+    await stockNow.fill('1')
+    await save.click()
     await expect(sheet(page).getByTestId('article-stock')).toHaveText('1')
-    await expect(sheet(page).getByText('recount')).toBeVisible()
 
     expect(loggedMovements(api).map(m => [m.reason, m.change, m.note])).toEqual([
       ['printed', 2, ''],
-      ['correction', -6, 'recount']
+      ['correction', -6, '']
     ])
     expect(api.db.budget_tracket_catalog[0].stock).toBe(1)
+    // One field: no Add printed, no Set, no note
+    await expect(sheet(page).getByLabel('Add printed')).toHaveCount(0)
+    await expect(sheet(page).getByLabel('Correction note')).toHaveCount(0)
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('1 left')
+  })
+
+  test('Stock now says when nothing changed and refuses what is not a count', async ({ page, api }) => {
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const stockNow = sheet(page).getByLabel('Stock now')
+    const save = sheet(page).getByRole('button', { name: 'Save', exact: true })
+    await save.click()
+    await expect(sheet(page).getByRole('status')).toHaveText('Stock unchanged')
+
+    for (const value of ['', '-1', '2.5', 'abc']) {
+      await stockNow.fill(value)
+      await save.click()
+      await expect(sheet(page).getByRole('alert')).toHaveText('Enter how many are in stock now')
+      await expect(sheet(page).getByRole('status')).toHaveCount(0)
+    }
+    expect(loggedMovements(api)).toEqual([])
+    await expect(sheet(page).getByTestId('article-stock')).toHaveText('5')
+  })
+
+  test('the starting stock of a new article and the history list stay as they were', async ({ page, api }) => {
+    api.db.stock_movements.push({ id: 'mv0000000000001', collectionName: 'stock_movements', article: 'k1', change: -1, reason: 'sale', note: 'Gatcha prize', created: '2026-10-14 10:00:00.000Z' })
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const history = sheet(page).getByRole('list')
+    await expect(history.getByText('Sold')).toBeVisible()
+    await expect(history.getByText(/Gatcha prize/)).toBeVisible()
+    await sheet(page).getByRole('button', { name: 'Close' }).click()
+
+    await page.getByRole('button', { name: 'New article' }).click()
+    await expect(sheet(page).getByLabel('Starting stock')).toBeVisible()
+    await expect(sheet(page).getByLabel('Stock now')).toHaveCount(0)
   })
 
   test('deleting hides the article but keeps the record', async ({ page, api }) => {

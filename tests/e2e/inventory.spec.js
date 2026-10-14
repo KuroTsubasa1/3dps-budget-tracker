@@ -154,8 +154,8 @@ test('printing after a double sale of the last item counts in full', async ({ pa
   await page.getByRole('button', { name: 'Manage' }).click()
   await card(page, 'Pikachu Keychain').click()
   const sheet = page.getByRole('dialog')
-  await sheet.getByLabel('Add printed').fill('3')
-  await sheet.getByRole('button', { name: 'Add', exact: true }).click()
+  await sheet.getByLabel('Stock now').fill('3')
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click()
 
   await expect(sheet.getByTestId('article-stock')).toHaveText('3')
   expect(api.db.budget_tracket_catalog[0].stock).toBe(3)

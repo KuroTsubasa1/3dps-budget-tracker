@@ -4,6 +4,7 @@ import {
   saleMovement,
   printedMovement,
   correctionMovement,
+  stockNowMovement,
   stockFromMovements,
   stockStatus,
   newRecordId
@@ -81,4 +82,25 @@ test('equal timestamps fall back to id order', () => {
     { id: 'b', change: 2, created: '2021-01-01 00:00:00.000Z' },
     { id: 'a', change: -1, created: '2021-01-01 00:00:00.000Z' }
   ]), 2)
+})
+
+test('Stock now records a higher count as printed and a lower one as a correction to it', () => {
+  assert.deepEqual(stockNowMovement(5, '7'), { change: 2, reason: 'printed', note: '' })
+  assert.deepEqual(stockNowMovement(5, '1'), { change: -4, reason: 'correction', note: '' })
+  assert.deepEqual(stockNowMovement(5, '0'), { change: -5, reason: 'correction', note: '' })
+  assert.deepEqual(stockNowMovement(0, ' 3 '), { change: 3, reason: 'printed', note: '' })
+  assert.deepEqual(stockNowMovement(2, '007'), { change: 5, reason: 'printed', note: '' })
+})
+
+test('Stock now at the current count records nothing', () => {
+  assert.equal(stockNowMovement(4, '4'), null)
+  // A missing or negative stock counts as 0
+  assert.equal(stockNowMovement(undefined, '0'), null)
+  assert.equal(stockNowMovement(-2, '0'), null)
+})
+
+test('Stock now accepts only a whole number of 0 or more', () => {
+  for (const value of ['', '   ', '-1', '2.5', '2,5', 'abc', '1e3', '+3', null, undefined, '99999999999999999999']) {
+    assert.throws(() => stockNowMovement(4, value), /^Error: Enter how many are in stock now$/, String(value))
+  }
 })

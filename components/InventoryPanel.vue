@@ -12,23 +12,15 @@
 
     <p v-if="onBoard" class="rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted" data-testid="print-board-hint">This article is on the print board — use Done there to add the batch</p>
 
-    <form class="flex items-end gap-2" novalidate @submit.prevent="addPrinted">
-      <div class="min-w-0 flex-1">
-        <label for="inventory-printed" class="label">Add printed</label>
-        <input id="inventory-printed" v-model="printedCount" type="text" inputmode="numeric" class="input" placeholder="0">
-      </div>
-      <BaseButton type="submit" icon="plus" :loading="busy === 'printed'">Add</BaseButton>
-    </form>
-
-    <form class="space-y-2" novalidate @submit.prevent="correct">
+    <form class="space-y-2" novalidate @submit.prevent="save">
       <div class="flex items-end gap-2">
         <div class="min-w-0 flex-1">
-          <label for="inventory-count" class="label">Correct count</label>
-          <input id="inventory-count" v-model="correctTo" type="text" inputmode="numeric" class="input" placeholder="0">
+          <label for="inventory-now" class="label">Stock now</label>
+          <input id="inventory-now" v-model="stockNow" type="text" inputmode="numeric" class="input" autocomplete="off">
         </div>
-        <BaseButton type="submit" variant="secondary" :loading="busy === 'correction'">Set</BaseButton>
+        <BaseButton type="submit" :loading="busy">Save</BaseButton>
       </div>
-      <input v-model="correctionNote" type="text" class="input" placeholder="Note (optional)" aria-label="Correction note">
+      <p v-if="notice" role="status" class="text-sm text-ink-muted">{{ notice }}</p>
     </form>
 
     <div>
@@ -55,7 +47,7 @@
 import { ref, onMounted } from 'vue'
 import { useInventory } from '~/composables/useInventory'
 import { usePrintJobs } from '~/composables/usePrintJobs'
-import { printedMovement, correctionMovement, newRecordId } from '~/utils/inventory'
+import { stockNowMovement, newRecordId } from '~/utils/inventory'
 import { formatDateTime } from '~/utils/date'
 
 const props = defineProps({
@@ -70,11 +62,11 @@ const { findPrintingJob } = usePrintJobs()
 
 const stock = ref(props.article.stock ?? 0)
 const movements = ref([])
-const printedCount = ref('')
-const correctTo = ref('')
-const correctionNote = ref('')
-const busy = ref('')
+// Starts at the current stock, so the owner only changes the number
+const stockNow = ref(String(stock.value))
+const busy = ref(false)
 const error = ref('')
+const notice = ref('')
 const onBoard = ref(false)
 
 const loadMovements = async () => {
@@ -87,52 +79,34 @@ onMounted(() => {
   loadMovements().catch(() => { error.value = 'Could not load stock history' })
 })
 
-const parseCount = value => (String(value).trim() === '' ? NaN : Number(value))
-
-// Stock changes need the server: they are owner actions in the sheet, not part of offline selling
-const record = async (kind, movement) => {
-  busy.value = kind
+// Stock changes need the server: they are owner actions in the sheet, not part of offline selling.
+// A higher count is recorded as printed, a lower one as a correction.
+const save = async () => {
   error.value = ''
-  try {
-    const stocks = await applyMovements([{ id: newRecordId(), article: props.article.id, ...movement }])
-    stock.value = stocks[props.article.id]
-    emit('changed', stock.value)
-    await loadMovements()
-    return true
-  } catch (err) {
-    error.value = 'Could not save the stock change. Check your connection and try again.'
-    return false
-  } finally {
-    busy.value = ''
-  }
-}
-
-const addPrinted = async () => {
+  notice.value = ''
   let movement
   try {
-    movement = printedMovement(parseCount(printedCount.value))
-  } catch (err) {
-    error.value = err.message
-    return
-  }
-  if (await record('printed', movement)) printedCount.value = ''
-}
-
-const correct = async () => {
-  let movement
-  try {
-    movement = correctionMovement(stock.value, parseCount(correctTo.value), correctionNote.value.trim())
+    movement = stockNowMovement(stock.value, stockNow.value)
   } catch (err) {
     error.value = err.message
     return
   }
   if (!movement) {
-    error.value = `Stock is already ${stock.value}`
+    notice.value = 'Stock unchanged'
     return
   }
-  if (await record('correction', movement)) {
-    correctTo.value = ''
-    correctionNote.value = ''
+  busy.value = true
+  try {
+    const stocks = await applyMovements([{ id: newRecordId(), article: props.article.id, ...movement }])
+    stock.value = stocks[props.article.id]
+    stockNow.value = String(stock.value)
+    emit('changed', stock.value)
+  } catch (err) {
+    error.value = 'Could not save the stock change. Check your connection and try again.'
+    return
+  } finally {
+    busy.value = false
   }
+  loadMovements().catch(() => { error.value = 'Could not load stock history' })
 }
 </script>

@@ -202,7 +202,7 @@ const save = async () => {
         } catch (stockError) {
           emit('saved', article)
           emit('update:open', false)
-          toast('Article created, but its starting stock could not be saved. Set it with Correct count.', { tone: 'warning', duration: 6000 })
+          toast('Article created, but its starting stock could not be saved. Set it with Stock now.', { tone: 'warning', duration: 6000 })
           return
         }
       }

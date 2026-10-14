@@ -232,7 +232,7 @@ test.describe('the print board', () => {
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
     const sheet = page.getByRole('dialog')
     await expect(sheet.getByText('This article is on the print board — use Done there to add the batch')).toBeVisible()
-    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+    await expect(sheet.getByLabel('Stock now')).toBeVisible()
   })
 
   test('no hint when the article only has a finished job', async ({ page, api }) => {
@@ -241,7 +241,7 @@ test.describe('the print board', () => {
     await page.getByRole('button', { name: 'Manage' }).click()
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
     const sheet = page.getByRole('dialog')
-    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+    await expect(sheet.getByLabel('Stock now')).toBeVisible()
     await expect(sheet.getByText(/on the print board/)).toHaveCount(0)
   })
 
@@ -252,7 +252,7 @@ test.describe('the print board', () => {
     await page.getByRole('button', { name: 'Manage' }).click()
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
     const sheet = page.getByRole('dialog')
-    await expect(sheet.getByLabel('Add printed')).toBeVisible()
+    await expect(sheet.getByLabel('Stock now')).toBeVisible()
     await expect(sheet.getByText(/on the print board/)).toHaveCount(0)
     await expect(sheet.getByRole('alert')).toHaveCount(0)
   })
