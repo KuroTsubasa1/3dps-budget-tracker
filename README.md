@@ -182,7 +182,7 @@ Each run writes the resulting schema to `pocketbase/schema.json`.
 
 ## Deployment (GitHub Actions → VPS)
 
-Every push to `master` runs `.github/workflows/deploy.yml`, which can also be started by hand under Actions → Deploy → Run workflow. It does the following:
+Every push to `main` runs `.github/workflows/deploy.yml`, which can also be started by hand under Actions → Deploy → Run workflow. It does the following:
 1. Installs the dependencies, runs the unit tests and builds the app.
 2. Uploads the build to `/opt/budget-tracker/releases/<commit>` on the VPS and points `/opt/budget-tracker/current` at it.
 3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker`, listening on `127.0.0.1:3000`).

@@ -1,4 +1,4 @@
-# Builds the app on every push to master and deploys it to the VPS with pm2.
+# Builds the app on every push to main and deploys it to the VPS with pm2.
 # Each release lands in $DEPLOY_PATH/releases/<commit>; the newest 5 are kept for rollback.
 # Repository secrets (Settings → Secrets and variables → Actions):
 #   DEPLOY_SSH_KEY      private key of the deploy user (a key made only for this workflow)
@@ -9,7 +9,7 @@ name: Deploy
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 # Never run two deploys at once; a newer push waits for the running one
