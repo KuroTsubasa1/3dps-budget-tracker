@@ -55,19 +55,26 @@ export const usePushNotifications = () => {
   }
 
   // The browser can hold a subscription the server never stored (a save that was lost): it would look "on"
-  // and get nothing. Re-creates the missing record; false when this device cannot be registered.
+  // and get nothing. Re-creates the missing record; false when this device cannot be registered, and
+  // 'unknown' when the server could not be asked (nothing is created then). A failed create throws.
   const ensureRegistered = async (subscription) => {
     const { endpoint, keys } = subscription.toJSON()
     if (!isPushEndpointAllowed(endpoint)) return false
-    const records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+    let records
+    try {
+      records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+    } catch {
+      return 'unknown'
+    }
     if (records.length) return true
     await createRecord(endpoint, keys)
     return 'recreated'
   }
 
   // Works out this device's state; never throws. With `checkServer` (Settings, online, as the owner) an
-  // "on" device must also be on the server. Returns 'recreated' when its record was put back, and
-  // 'unregistered' when that failed (the state is then 'off').
+  // "on" device must also be on the server. Returns 'recreated' when its record was put back,
+  // 'unregistered' when that failed (the state is then 'off') and 'unknown' when the server could not be asked
+  // (the state stays the browser's).
   const refreshState = async ({ checkServer = false } = {}) => {
     const supported = support()
     if (supported !== 'ok') {
@@ -92,6 +99,10 @@ export const usePushNotifications = () => {
     }
     try {
       const registered = await ensureRegistered(subscription)
+      if (registered === 'unknown') {
+        state.value = 'on'
+        return 'unknown'
+      }
       state.value = registered ? 'on' : 'off'
       if (!registered) return 'unregistered'
       return registered === 'recreated' ? 'recreated' : ''

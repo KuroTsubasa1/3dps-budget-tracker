@@ -177,11 +177,24 @@ test.describe('notifications', () => {
     expect(api.db.push_subscriptions).toEqual([])
   })
 
+  test('a server that cannot be asked keeps the browser state and creates nothing', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    api.failReads('push_subscriptions', 500)
+    await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY })
+    await open(page)
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveText('Could not reach the server. Try again later.')
+    expect(api.db.push_subscriptions).toEqual([])
+    expect(api.requests.filter(request => request.method === 'POST' && request.path.includes('push_subscriptions'))).toEqual([])
+  })
+
   test('a browser subscription outside the allowed push services is never registered', async ({ page, api }) => {
     api.enable()
     Object.assign(api.notifier, { configured: true })
     await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY, endpoint: 'https://push.example.com/x' })
     await open(page)
+    await expect(page.getByRole('alert')).toHaveText("This device isn't registered on the server. Turn notifications on again.")
     await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
     expect(api.requests.filter(request => request.path.includes('push_subscriptions'))).toEqual([])
   })

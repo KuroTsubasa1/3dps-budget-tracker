@@ -55,6 +55,7 @@ import { statusText } from '~/utils/push'
 const { state, status, refreshState, loadStatus, turnOn, turnOff, sendTest, calendarLink } = usePushNotifications()
 const { toast } = useToast()
 
+const UNREACHABLE = 'Could not reach the server. Try again later.'
 const UNREGISTERED = "This device isn't registered on the server. Turn notifications on again."
 
 const offline = ref(false)
@@ -77,10 +78,11 @@ const load = async () => {
     // must also be registered on the server; a missing record is put back
     const registration = await refreshState({ checkServer: current.configured })
     if (registration === 'unregistered') error.value = UNREGISTERED
+    if (registration === 'unknown') error.value = UNREACHABLE
     if (registration === 'recreated') await loadStatus().catch(() => {})
     if (current.feed) link.value = await calendarLink()
   } catch (err) {
-    error.value = err?.statusCode === 401 ? 'Log in again to manage notifications' : 'Could not reach the server. Try again later.'
+    error.value = err?.statusCode === 401 ? 'Log in again to manage notifications' : UNREACHABLE
   }
 }
 
