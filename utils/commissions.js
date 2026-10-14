@@ -64,9 +64,17 @@ export const anonymisedPatch = (now = new Date()) =>
 // Payment: paid_at marks the commission paid; payment_transaction names the income booked for it
 export const isPaid = commission => !!commission?.paid_at
 
-// Before the Paid switch, delivering booked the income: such a commission has no payment_transaction
-export const bookedOnDelivery = commission =>
-  commission.status === 'delivered' && !!commission.delivered_at && !commission.payment_transaction
+// The Paid switch went live here: deliveries before it booked their income
+export const PAYMENTS_TRACKED_SINCE = '2026-10-15T00:00:00.000Z'
+
+// Before the Paid switch, delivering booked the income: such a commission is an old delivered one
+// (delivered before PAYMENTS_TRACKED_SINCE, no payment_transaction). An unreadable date counts as before,
+// so the owner is asked rather than risk a second income.
+export function bookedOnDelivery (commission) {
+  if (commission.status !== 'delivered' || !commission.delivered_at || commission.payment_transaction) return false
+  const at = parseDate(commission.delivered_at)
+  return Number.isNaN(at.getTime()) || at < new Date(PAYMENTS_TRACKED_SINCE)
+}
 
 // What turning Paid on does, from the commission as the server has it now. `choice` is the owner's
 // answer for an old delivered commission: 'only' marks it paid, 'book' books the income again.

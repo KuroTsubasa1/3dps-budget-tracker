@@ -442,6 +442,8 @@ test.describe('the commissions page', () => {
 })
 
 const PAID_AT = '2026-10-10 10:00:00.000Z'
+// Payments are tracked from 2026-10-15: PAID_AT is before that, so a delivery then booked its income
+const DELIVERED_TRACKED = '2026-10-15 00:00:00.000Z'
 const TX_ID = 'txpaid000000001'
 const income = overrides => ({
   id: TX_ID,
@@ -614,7 +616,7 @@ test.describe('phone and payment', () => {
     await api.mockTransactions()
     await openAsh(page, 'Done')
     await paidSwitch(page).click()
-    await expect(sheet(page).getByText('Income was already booked when this commission was delivered.')).toBeVisible()
+    await expect(sheet(page).getByText('This commission was delivered before payments were tracked, so its income may already be in your balance.')).toBeVisible()
     await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
     expect(api.db.commissions[0].paid_at).toBe('')
     await sheet(page).getByRole('button', { name: 'Only mark paid' }).click()
@@ -641,7 +643,20 @@ test.describe('phone and payment', () => {
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
     expect(api.db.commissions[0].payment_transaction).toBe(api.posted[0].id)
-    await expect(sheet(page).getByText('Income was already booked when this commission was delivered.')).toHaveCount(0)
+    await expect(sheet(page).getByText('This commission was delivered before payments were tracked, so its income may already be in your balance.')).toHaveCount(0)
+  })
+
+  test('a commission delivered once payments were tracked books on Paid without asking', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'delivered', delivered_at: DELIVERED_TRACKED })])
+    await api.mockTransactions()
+    await openAsh(page, 'Done')
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
+    expect(api.db.commissions[0].payment_transaction).toBe(api.posted[0].id)
+    await expect(sheet(page).getByText(/delivered before payments were tracked/)).toHaveCount(0)
+    await expect(sheet(page).getByRole('button', { name: 'Only mark paid' })).toHaveCount(0)
   })
 
   test('offline the switch is disabled and says it needs a connection', async ({ page, api, context }) => {

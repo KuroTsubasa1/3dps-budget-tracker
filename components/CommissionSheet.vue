@@ -107,7 +107,7 @@
           @update:model-value="setPaid"
         />
         <div v-if="confirming === 'pay'" class="mt-2 space-y-3">
-          <p class="text-sm text-ink-muted">Income was already booked when this commission was delivered.</p>
+          <p class="text-sm text-ink-muted">This commission was delivered before payments were tracked, so its income may already be in your balance.</p>
           <div class="grid grid-cols-2 gap-2">
             <BaseButton variant="secondary" :disabled="busy" @click="pay('only')">Only mark paid</BaseButton>
             <BaseButton :loading="busy" @click="pay('book')">Book income again</BaseButton>

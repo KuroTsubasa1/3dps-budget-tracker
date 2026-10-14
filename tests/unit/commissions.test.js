@@ -22,7 +22,8 @@ import {
   paymentStep,
   paidPatch,
   unpaidPatch,
-  PRICE_LOCKED
+  PRICE_LOCKED,
+  PAYMENTS_TRACKED_SINCE
 } from '../../utils/commissions.js'
 
 const NOW = new Date('2026-10-13T12:00:00.000Z')
@@ -256,6 +257,22 @@ test('only a delivered commission without a payment transaction had its income b
   assert.equal(bookedOnDelivery(paid({ status: 'delivered', delivered_at: '' })), false)
   assert.equal(bookedOnDelivery(paid({ status: 'ready' })), false)
   assert.equal(bookedOnDelivery(paid({ status: 'cancelled', delivered_at: '' })), false)
+})
+
+test('only a commission delivered before payments were tracked counts as booked on delivery', () => {
+  assert.equal(PAYMENTS_TRACKED_SINCE, '2026-10-15T00:00:00.000Z')
+  const delivered = at => paid({ status: 'delivered', delivered_at: at })
+  // PocketBase's date format, either side of the cutoff
+  assert.equal(bookedOnDelivery(delivered('2026-10-14 23:59:59.999Z')), true)
+  assert.equal(bookedOnDelivery(delivered('2026-10-15 00:00:00.000Z')), false)
+  assert.equal(bookedOnDelivery(delivered('2026-10-15 00:00:00.001Z')), false)
+  assert.equal(bookedOnDelivery(delivered('2026-11-01 10:00:00.000Z')), false)
+  // ISO format compares as an instant too
+  assert.equal(bookedOnDelivery(delivered('2026-10-14T23:59:59.999Z')), true)
+  assert.equal(bookedOnDelivery(delivered('2026-10-15T00:00:00.000Z')), false)
+  // An unreadable date asks rather than risk a second income
+  assert.equal(bookedOnDelivery(delivered('not a date')), true)
+  assert.deepEqual(paymentStep(delivered('2026-10-20 10:00:00.000Z')), { step: 'book' })
 })
 
 test('the payment step follows the re-read commission', () => {
