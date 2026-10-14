@@ -179,3 +179,44 @@ Rollout for the multi-article commissions release: run `npm run pb:migrate` (dry
 Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.
+
+## Deployment (GitHub Actions → VPS)
+
+Every push to `master` runs `.github/workflows/deploy.yml`, which can also be started by hand under Actions → Deploy → Run workflow. It does the following:
+1. Installs the dependencies, runs the unit tests and builds the app.
+2. Uploads the build to `/opt/budge-tracker/releases/<commit>` on the VPS and points `/opt/budge-tracker/current` at it.
+3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker`, listening on `127.0.0.1:3000`).
+4. Checks that https://budget-tracker.lasseharm.space answers.
+
+The 5 newest releases are kept on the server.
+
+**One-time server setup** (as root, for the `deploy` user):
+1. Install Node 20 or newer and pm2 for `deploy`:
+   ```bash
+   npm i -g pm2
+   ```
+2. Create the app folder and hand it to `deploy`:
+   ```bash
+   mkdir -p /opt/budge-tracker && chown deploy:deploy /opt/budge-tracker
+   ```
+3. Make pm2 start the app after a reboot. Run `pm2 startup` as `deploy`, then run the command it prints as root.
+4. Point nginx for `budget-tracker.lasseharm.space` at `http://127.0.0.1:3000` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
+5. Put the public half of a key made only for GitHub into `/home/deploy/.ssh/authorized_keys`.
+
+**Repository secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_SSH_KEY` | the private half of that key |
+| `DEPLOY_HOST` | `46.101.138.222` |
+| `DEPLOY_USER` | `deploy` |
+| `DEPLOY_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 46.101.138.222` (pins the server's identity) |
+
+**Rollback:** start an older release:
+```bash
+pm2 delete budget-tracker
+pm2 start /opt/budge-tracker/releases/<older-commit>/ecosystem.config.cjs
+pm2 save
+```
+
+Schema changes are not part of the deploy: run `npm run pb:migrate` yourself first, as described above.

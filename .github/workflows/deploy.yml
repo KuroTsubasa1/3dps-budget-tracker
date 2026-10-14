@@ -1,0 +1,91 @@
+# Builds the app on every push to master and deploys it to the VPS with pm2.
+# Each release lands in $DEPLOY_PATH/releases/<commit>; the newest 5 are kept for rollback.
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   DEPLOY_SSH_KEY      private key of the deploy user (a key made only for this workflow)
+#   DEPLOY_HOST         46.101.138.222
+#   DEPLOY_USER         deploy
+#   DEPLOY_KNOWN_HOSTS  output of: ssh-keyscan -t ed25519 46.101.138.222
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer push waits for the running one
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  DEPLOY_PATH: /opt/budge-tracker
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
+      - name: Package release
+        run: tar -czf release.tar.gz .output ecosystem.config.cjs
+
+      - name: Set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Upload and start
+        env:
+          TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          RELEASE: ${{ github.sha }}
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes"
+          $SSH "$TARGET" "mkdir -p '$DEPLOY_PATH/releases/$RELEASE'"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes release.tar.gz "$TARGET:$DEPLOY_PATH/releases/$RELEASE.tar.gz"
+          $SSH "$TARGET" bash -s -- "$DEPLOY_PATH" "$RELEASE" <<'REMOTE'
+          set -euo pipefail
+          DEPLOY_PATH="$1"
+          RELEASE="$2"
+          # pm2 and node may live in nvm or a user prefix that a non-login shell does not load
+          export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"
+          [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+          cd "$DEPLOY_PATH/releases"
+          tar -xzf "$RELEASE.tar.gz" -C "$RELEASE"
+          rm "$RELEASE.tar.gz"
+          ln -sfn "$DEPLOY_PATH/releases/$RELEASE" "$DEPLOY_PATH/current"
+          # pm2 keeps the directory an app was started from, so restart from the new release
+          pm2 delete budget-tracker >/dev/null 2>&1 || true
+          pm2 start "$DEPLOY_PATH/releases/$RELEASE/ecosystem.config.cjs"
+          pm2 save
+          # Keep the 5 newest releases for rollback
+          ls -1dt "$DEPLOY_PATH"/releases/*/ | tail -n +6 | xargs -r rm -rf
+          REMOTE
+
+      - name: Check the site answers
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS -o /dev/null https://budget-tracker.lasseharm.space/; then echo "Site is up"; exit 0; fi
+            sleep 5
+          done
+          echo "budget-tracker.lasseharm.space did not answer after the deploy"
+          exit 1
