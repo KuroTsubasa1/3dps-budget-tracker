@@ -16,7 +16,7 @@
       <div class="flex items-end gap-2">
         <div class="min-w-0 flex-1">
           <label for="inventory-now" class="label">Stock now</label>
-          <input id="inventory-now" v-model="stockNow" type="text" inputmode="numeric" class="input" autocomplete="off">
+          <input id="inventory-now" v-model="stockNow" type="text" @input="notice = ''" inputmode="numeric" class="input" autocomplete="off">
         </div>
         <BaseButton type="submit" :loading="busy">Save</BaseButton>
       </div>
@@ -55,9 +55,10 @@ const props = defineProps({
 })
 const emit = defineEmits(['changed'])
 
+const CONNECTION_ERROR = 'Could not save the stock change. Check your connection and try again.'
 const REASON_LABEL = { sale: 'Sold', printed: 'Printed', correction: 'Correction' }
 
-const { applyMovements, listMovements } = useInventory()
+const { applyMovements, recomputeStock, listMovements } = useInventory()
 const { findPrintingJob } = usePrintJobs()
 
 const stock = ref(props.article.stock ?? 0)
@@ -80,33 +81,46 @@ onMounted(() => {
 })
 
 // Stock changes need the server: they are owner actions in the sheet, not part of offline selling.
-// A higher count is recorded as printed, a lower one as a correction.
+// A higher count is recorded as printed, a lower one as a correction. The change is worked out from the
+// live stock (re-derived from the movement log), so another device's sale or an earlier half-saved
+// attempt cannot make the result differ from the number typed.
 const save = async () => {
   error.value = ''
   notice.value = ''
-  let movement
-  try {
-    movement = stockNowMovement(stock.value, stockNow.value)
-  } catch (err) {
-    error.value = err.message
-    return
-  }
-  if (!movement) {
-    notice.value = 'Stock unchanged'
-    return
-  }
   busy.value = true
   try {
-    const stocks = await applyMovements([{ id: newRecordId(), article: props.article.id, ...movement }])
-    stock.value = stocks[props.article.id]
-    stockNow.value = String(stock.value)
-    emit('changed', stock.value)
-  } catch (err) {
-    error.value = 'Could not save the stock change. Check your connection and try again.'
-    return
+    let live
+    try {
+      live = await recomputeStock(props.article.id)
+    } catch (err) {
+      error.value = CONNECTION_ERROR
+      return
+    }
+    stock.value = live
+    let movement
+    try {
+      movement = stockNowMovement(live, stockNow.value)
+    } catch (err) {
+      error.value = err.message
+      return
+    }
+    if (!movement) {
+      emit('changed', live)
+      notice.value = 'Stock unchanged'
+      return
+    }
+    try {
+      const stocks = await applyMovements([{ id: newRecordId(), article: props.article.id, ...movement }])
+      stock.value = stocks[props.article.id]
+      stockNow.value = String(stock.value)
+      emit('changed', stock.value)
+    } catch (err) {
+      error.value = CONNECTION_ERROR
+      return
+    }
   } finally {
     busy.value = false
   }
-  loadMovements().catch(() => { error.value = 'Could not load stock history' })
+  loadMovements().catch(() => { notice.value = 'Saved, but the recent changes could not be refreshed' })
 }
 </script>

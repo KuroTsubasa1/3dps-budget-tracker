@@ -102,6 +102,41 @@ test.describe('managing articles', () => {
     await expect(sheet(page).getByTestId('article-stock')).toHaveText('5')
   })
 
+  test('Stock now counts from the live stock when another device changed it', async ({ page, api }) => {
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const stockNow = sheet(page).getByLabel('Stock now')
+    await expect(stockNow).toHaveValue('5')
+    // Another device sold two while the sheet was open: the real stock is 3
+    api.db.stock_movements.push({ id: 'other0000000001', collectionName: 'stock_movements', article: 'k1', change: -2, reason: 'sale', note: '', created: '2999-01-01 00:00:00.000Z' })
+    await stockNow.fill('7')
+    await sheet(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(sheet(page).getByTestId('article-stock')).toHaveText('7')
+    expect(api.db.budget_tracket_catalog[0].stock).toBe(7)
+    expect(loggedMovements(api).filter(m => m.id !== 'other0000000001').map(m => [m.reason, m.change])).toEqual([['printed', 4]])
+  })
+
+  test('Stock now saved again after the article update failed does not apply the change twice', async ({ page, api }) => {
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    const stockNow = sheet(page).getByLabel('Stock now')
+    const save = sheet(page).getByRole('button', { name: 'Save', exact: true })
+    api.failOnce('budget_tracket_catalog', 500)
+    await stockNow.fill('7')
+    await save.click()
+    await expect(sheet(page).getByRole('alert')).toBeVisible()
+    await save.click()
+    await expect(sheet(page).getByTestId('article-stock')).toHaveText('7')
+    await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(7)
+    expect(loggedMovements(api).map(m => [m.reason, m.change])).toEqual([['printed', 2]])
+  })
+
+  test('Stock unchanged goes away when the field is edited', async ({ page }) => {
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    await sheet(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(sheet(page).getByRole('status')).toHaveText('Stock unchanged')
+    await sheet(page).getByLabel('Stock now').fill('6')
+    await expect(sheet(page).getByRole('status')).toHaveCount(0)
+  })
+
   test('the starting stock of a new article and the history list stay as they were', async ({ page, api }) => {
     api.db.stock_movements.push({ id: 'mv0000000000001', collectionName: 'stock_movements', article: 'k1', change: -1, reason: 'sale', note: 'Gatcha prize', created: '2026-10-14 10:00:00.000Z' })
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
