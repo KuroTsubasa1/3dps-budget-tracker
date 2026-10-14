@@ -810,7 +810,7 @@
   {
     "id": "4gkowel673mbuac",
     "created": "2026-10-14 13:08:51.383Z",
-    "updated": "2026-10-14 13:08:51.383Z",
+    "updated": "2026-10-14 13:11:05.485Z",
     "name": "conventions",
     "type": "base",
     "system": false,
@@ -1037,17 +1037,17 @@
       }
     ],
     "indexes": [],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "viewRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
   {
     "id": "t12zr5at6uc3rlr",
     "created": "2026-10-14 13:08:52.960Z",
-    "updated": "2026-10-14 13:08:52.960Z",
+    "updated": "2026-10-14 13:11:07.073Z",
     "name": "push_subscriptions",
     "type": "base",
     "system": false,
@@ -1095,11 +1095,11 @@
     "indexes": [
       "CREATE UNIQUE INDEX `idx_push_subscriptions_endpoint` ON `push_subscriptions` (`endpoint`)"
     ],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
+    "listRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "viewRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "updateRule": null,
-    "deleteRule": null,
+    "deleteRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
     "options": {}
   }
 ]
