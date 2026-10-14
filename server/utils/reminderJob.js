@@ -19,12 +19,16 @@ export const TEST_MESSAGE = { title: 'Akinai', body: 'Notifications work on this
 const isGone = error => error?.statusCode === 404 || error?.statusCode === 410
 
 // Deleting a device that is already deleted is fine
-async function forget ({ store, subscription, subscriptions, summary }) {
+export async function forgetSubscription (store, id) {
   try {
-    await store.deleteSubscription(subscription.id)
+    await store.deleteSubscription(id)
   } catch (error) {
     if (error?.status !== 404) throw error
   }
+}
+
+async function forget ({ store, subscription, subscriptions, summary }) {
+  await forgetSubscription(store, subscription.id)
   subscriptions.splice(subscriptions.indexOf(subscription), 1)
   summary.removed++
 }
@@ -48,7 +52,7 @@ async function deliver ({ store, send, subscriptions, message, summary }) {
           await forget({ store, subscription, subscriptions, summary })
         } catch (deleteError) {
           failed++
-          summary.errors.push(deleteError?.message || String(deleteError))
+          summary.stateErrors.push(deleteError?.message || String(deleteError))
         }
       } else {
         failed++
@@ -59,12 +63,13 @@ async function deliver ({ store, send, subscriptions, message, summary }) {
   return delivered > 0 || failed === 0
 }
 
-// Returns { sent, skipped, missed, failed, removed, errors }. A reminder that could not reach any device
+// Returns { sent, skipped, missed, failed, removed, errors, stateErrors }: `errors` are devices that could not
+// be reached, `stateErrors` are PocketBase failures (deleting a device, saving the marks). A reminder that could not reach any device
 // stays unsent and is tried again on the next run (until it is 24 hours late and counts as missed).
 // The marks of a convention are written right after its pushes, so a failed write for one convention
 // never makes the others go out twice.
 export async function runReminderJob ({ store, send, now = new Date() }) {
-  const summary = { sent: 0, skipped: 0, missed: 0, failed: 0, removed: 0, errors: [] }
+  const summary = { sent: 0, skipped: 0, missed: 0, failed: 0, removed: 0, errors: [], stateErrors: [] }
   const due = dueReminders(await store.listConventions(), now)
   if (!due.length) return summary
   const sending = due.filter(item => item.action === 'send')
@@ -92,7 +97,7 @@ export async function runReminderJob ({ store, send, now = new Date() }) {
     try {
       await store.markReminders(id, marks)
     } catch (error) {
-      summary.errors.push(error?.message || String(error))
+      summary.stateErrors.push(error?.message || String(error))
     }
   }
   return summary
@@ -114,8 +119,12 @@ export function createReminderRunner ({ store, send, status = reminderStatus, lo
     running = Promise.race([runReminderJob({ store, send, now }), cap])
       .then((summary) => {
         status.lastRun = now.toISOString()
-        status.lastError = summary.errors.length ? `Could not reach a device: ${summary.errors[0]}` : null
-        if (summary.errors.length) log.error(`[reminders] ${status.lastError}`)
+        const problems = [
+          ...summary.errors.slice(0, 1).map(message => `Could not reach a device: ${message}`),
+          ...summary.stateErrors.slice(0, 1).map(message => `Could not save reminder state: ${message}`)
+        ]
+        status.lastError = problems.length ? problems.join('; ') : null
+        if (problems.length) log.error(`[reminders] ${status.lastError}`)
         return summary
       })
       .catch((error) => {

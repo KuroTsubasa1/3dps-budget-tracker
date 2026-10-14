@@ -71,20 +71,24 @@ test('only a 200 with a users record that has a string id counts', async () => {
   assert.equal(await check(TOKENS.owner, answer(true, { record: { collectionName: 'users', id: OWNER_ID } })), OWNER_ID)
 })
 
-test('push endpoints must be https and public', () => {
-  for (const endpoint of ['https://fcm.googleapis.com/fcm/send/abc', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/Q1', 'https://8.8.8.8/x']) {
+test('only the real push services are allowed as endpoints', () => {
+  for (const endpoint of [
+    'https://fcm.googleapis.com/fcm/send/abc', 'https://FCM.googleapis.com./fcm/send/abc', 'https://fcm.googleapis.com:443/x',
+    'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/Q1', 'https://api.push.apple.com/3/device/x',
+    'https://db5p.notify.windows.com/?token=x', 'https://wns2-par02p.notify.windows.com/w/?token=x'
+  ]) {
     assert.equal(isPushEndpointAllowed(endpoint), true, endpoint)
   }
   for (const endpoint of [
-    undefined, '', 'not a url', 'http://fcm.googleapis.com/x', 'ftp://push.example/x',
-    'https://localhost/x', 'https://LOCALHOST./x', 'https://app.localhost/x', 'https://printer.local/x', 'https://nas.local./x', 'https://host.internal/x',
-    'https://127.0.0.1/x', 'https://127.1/x', 'https://2130706433/x', 'https://0x7f.0.0.1/x', 'https://0.0.0.0/x',
-    'https://10.0.0.5/x', 'https://172.16.0.1/x', 'https://172.31.255.255/x', 'https://192.168.1.1/x', 'https://169.254.169.254/latest', 'https://100.64.0.1/x',
-    'https://[::1]/x', 'https://[fe80::1]/x', 'https://[fd00::1]/x', 'https://[::ffff:127.0.0.1]/x', 'https://[2001:db8::1]/x'
+    undefined, '', 'not a url', 'http://fcm.googleapis.com/x', 'https://push.example/x',
+    'https://127.0.0.1.nip.io/x', 'https://169.254.169.254/latest', 'https://localhost../x', 'https://localhost/x',
+    'https://fcm.googleapis.com.evil.com/x', 'https://evilfcm.googleapis.com/x', 'https://push.apple.com.evil/x', 'https://push.apple.com/x',
+    'https://notify.windows.com/x', 'https://evilpush.services.mozilla.com/x', 'https://fcm.googleapis.com@evil.com/x',
+    'https://user:pass@fcm.googleapis.com/x', 'https://user@fcm.googleapis.com/x', 'https://fcm.googleapis.com:8443/x',
+    'https://8.8.8.8/x', 'https://[::1]/x', 'https://[2001:db8::1]/x'
   ]) {
     assert.equal(isPushEndpointAllowed(endpoint), false, String(endpoint))
   }
-  assert.equal(isPushEndpointAllowed('https://172.32.0.1/x'), true)
 })
 
 test('the feed link needs the exact secret', () => {
@@ -112,6 +116,9 @@ test('push needs the owner id, the notifier login and the VAPID keys; the feed t
   assert.equal(settings.pocketbaseUrl, 'https://pb.example')
   // No fallback to the production PocketBase
   assert.equal(notifierSettings({}).pocketbaseUrl, '')
+  // The notifier's password never goes over plain http
+  const plain = notifierSettings({ ...FULL, POCKETBASE_URL: 'http://pb.example' })
+  assert.deepEqual([plain.push, plain.feed, plain.pocketbaseUrl, plain.missing], [false, false, '', ['POCKETBASE_URL']])
   const noUrl = notifierSettings({ ...FULL, POCKETBASE_URL: '' })
   assert.deepEqual([noUrl.push, noUrl.feed, noUrl.missing], [false, false, ['POCKETBASE_URL']])
   const noKeys = notifierSettings({ ...FULL, VAPID_PRIVATE_KEY: ' ' })

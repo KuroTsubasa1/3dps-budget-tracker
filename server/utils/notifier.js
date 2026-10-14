@@ -8,9 +8,14 @@ const ARTICLES = 'budget_tracket_catalog'
 // Log in again when the token has less than an hour left
 const RENEW_BEFORE_S = 3600
 
-export function createNotifier ({ PocketBaseClass = PocketBase, url, email, password }) {
+// A PocketBase request that takes longer than this is given up
+const REQUEST_TIMEOUT_MS = 20_000
+
+export function createNotifier ({ PocketBaseClass = PocketBase, url, email, password, requestTimeoutMs = REQUEST_TIMEOUT_MS }) {
   const pb = new PocketBaseClass(url, new BaseAuthStore())
   pb.autoCancellation(false)
+  // Every request has a time limit, so a stuck PocketBase cannot keep a run going for ever
+  pb.beforeSend = (requestUrl, options) => ({ url: requestUrl, options: { ...options, signal: options.signal ?? AbortSignal.timeout(requestTimeoutMs) } })
   let login = null
 
   const logIn = () => {

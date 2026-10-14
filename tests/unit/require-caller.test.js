@@ -57,4 +57,6 @@ test('any other account is refused, and so is everybody when the owner id is not
   await refused(call(TOKENS.stranger))
   const { fetches } = setup()
   await refused(requireCaller({ headers: { authorization: TOKENS.owner } }, { ...SETTINGS, ownerId: '' }, { notifier: { accountId: async () => '' }, fetch: async () => { fetches.push(1); return { ok: false } } }))
+  // Without an owner id nothing is even asked of PocketBase
+  assert.equal(fetches.length, 0)
 })

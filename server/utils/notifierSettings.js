@@ -7,10 +7,10 @@ const FEED_KEYS = ['POCKETBASE_URL', 'OWNER_ID', 'NOTIFIER_EMAIL', 'NOTIFIER_PAS
 const RECORD_ID = /^[a-z0-9]{15}$/
 // The secret is part of the feed's URL: long and URL-safe
 const FEED_SECRET = /^[A-Za-z0-9_-]{32,}$/
-// There is no default PocketBase: a server without POCKETBASE_URL must not guess the production one
+// The notifier's password never goes over plain http. There is no default PocketBase: a server without POCKETBASE_URL must not guess the production one
 
 export function notifierSettings (env = process.env) {
-  const has = key => typeof env[key] === 'string' && env[key].trim() !== '' && (key !== 'OWNER_ID' || RECORD_ID.test(env[key])) && (key !== 'CALENDAR_SECRET' || FEED_SECRET.test(env[key]))
+  const has = key => typeof env[key] === 'string' && env[key].trim() !== '' && (key !== 'OWNER_ID' || RECORD_ID.test(env[key])) && (key !== 'POCKETBASE_URL' || /^https:\/\//.test(env[key].trim())) && (key !== 'CALENDAR_SECRET' || FEED_SECRET.test(env[key]))
   return {
     pocketbaseUrl: has('POCKETBASE_URL') ? env.POCKETBASE_URL.trim().replace(/\/$/, '') : '',
     ownerId: has('OWNER_ID') ? env.OWNER_ID : '',

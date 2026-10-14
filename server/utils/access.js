@@ -1,6 +1,5 @@
 // Who may call the owner's routes, and the feed's secret link
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { isIP } from 'node:net'
 
 // A PocketBase token is a JWT: three base64url parts. Anything else is refused without asking PocketBase.
 const TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
@@ -34,16 +33,12 @@ export async function verifyCaller ({ authorization, pocketbaseUrl, fetch = glob
 // `file` is the last path segment, '<secret>.ics'. Compared in constant time; no secret, no feed
 export const feedFileMatches = (file, secret) => !!secret && sameText(file, `${secret}.ics`)
 
-const privateIPv4 = ([a, b]) =>
-  a === 0 || a === 10 || a === 127 || a >= 224 ||
-  (a === 100 && b >= 64 && b <= 127) ||
-  (a === 169 && b === 254) ||
-  (a === 172 && b >= 16 && b <= 31) ||
-  (a === 192 && b === 168)
+// A push endpoint is an address the owner's browser handed us and the server will call. Only the real push
+// services are allowed (the ones browsers use), over https on the default port and without credentials, so
+// the server cannot be turned on its own network, whatever a host name resolves to.
+const PUSH_HOST = 'fcm.googleapis.com'
+const PUSH_HOST_SUFFIXES = ['.push.apple.com', '.push.services.mozilla.com', '.notify.windows.com']
 
-// A push endpoint is an address the owner's browser handed us and the server will call: only https to a
-// public host (so it cannot be turned on localhost, the private network or a cloud metadata address).
-// Real push services use host names; IPv6 literals are refused outright.
 export function isPushEndpointAllowed (endpoint) {
   let url
   try {
@@ -51,9 +46,7 @@ export function isPushEndpointAllowed (endpoint) {
   } catch {
     return false
   }
-  if (url.protocol !== 'https:') return false
-  const host = url.hostname.toLowerCase().replace(/\.$/, '')
-  if (!host || isIP(host.replace(/^\[|\]$/g, '')) === 6) return false
-  if (isIP(host) === 4) return !privateIPv4(host.split('.').map(Number))
-  return host !== 'localhost' && !/\.(localhost|local|internal)$/.test(host)
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return false
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '')
+  return host === PUSH_HOST || PUSH_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
 }
