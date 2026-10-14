@@ -15,7 +15,6 @@ export const COMMISSION_ARTICLES = [
 ]
 
 const sheet = page => page.getByRole('dialog')
-const addArticle = (page, name) => sheet(page).getByLabel('Add article').selectOption({ label: name })
 // A form line is found by its quantity stepper, a group labelled "Quantity of <name>"
 const line = (page, name) => sheet(page).getByRole('group', { name: `Quantity of ${name}` })
 const card = (page, name) => page.locator('h3', { hasText: name })
@@ -26,6 +25,15 @@ const addToCart = async (page, name, times = 1) => {
 // Below lg the cart is a sheet behind the "View cart" bar
 const openCart = async (page) => {
   if (isCompact(page)) await page.getByRole('button', { name: /View cart/ }).click()
+}
+// Articles are only picked in the catalog: fill the cart (a name repeats for more of it) and tap Commission
+const startCommission = async (page, ...names) => {
+  await gotoReady(page, '/catalog')
+  for (const name of names) await addToCart(page, name)
+  await openCart(page)
+  await page.getByRole('button', { name: 'Commission', exact: true }).click()
+  await page.waitForURL(url => url.pathname === '/commissions')
+  await expect(sheet(page).getByRole('button', { name: 'Create commission' })).toBeVisible()
 }
 const monthsAgo = (months) => {
   const date = new Date()
@@ -58,14 +66,10 @@ const seedWith = (api, commissions = []) =>
 test.describe('the commissions page', () => {
   test('a new commission pre-fills the deal price and saves its lines', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Pikachu Keychain', 'Pikachu Keychain', 'Totoro')
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await addArticle(page, 'Pikachu Keychain')
-    await addArticle(page, 'Pikachu Keychain')
     await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
-    await addArticle(page, 'Totoro')
     await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('15,00')
     await sheet(page).getByLabel('Notes').fill('Shiny colours')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
@@ -83,12 +87,8 @@ test.describe('the commissions page', () => {
 
   test('stepping and removing lines updates the price until it is edited', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Pikachu Keychain', 'Glurak Figure')
     const price = sheet(page).getByLabel('Agreed price')
-    await addArticle(page, 'Pikachu Keychain')
-    await expect(price).toHaveValue('4,00')
-    await addArticle(page, 'Glurak Figure')
     await expect(price).toHaveValue('34,00')
     await line(page, 'Pikachu Keychain').getByRole('button', { name: 'Add one Pikachu Keychain' }).click()
     await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
@@ -102,17 +102,16 @@ test.describe('the commissions page', () => {
     await expect(line(page, 'Pikachu Keychain')).toHaveText('1')
     await expect(price).toHaveValue('4,00')
     await price.fill('9,50')
-    await addArticle(page, 'Glurak Figure')
+    await line(page, 'Pikachu Keychain').getByRole('button', { name: 'Add one Pikachu Keychain' }).click()
+    await expect(line(page, 'Pikachu Keychain')).toHaveText('2')
     await expect(price).toHaveValue('9,50')
   })
 
   test('saving while offline says so and keeps the form open', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 'drop')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText("You're offline — commissions need a connection")
@@ -141,11 +140,9 @@ test.describe('the commissions page', () => {
 
   test('the address is only asked for, and required, when shipping', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Brock')
     await sheet(page).getByLabel('Email').fill('brock@example.com')
-    await addArticle(page, 'Glurak Figure')
     await expect(sheet(page).getByLabel('Address')).toHaveCount(0)
     await sheet(page).getByRole('radio', { name: 'Shipping' }).click()
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
@@ -158,8 +155,7 @@ test.describe('the commissions page', () => {
 
   test('validation names the problem', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     const save = () => sheet(page).getByRole('button', { name: 'Create commission' }).click()
     const alert = sheet(page).getByRole('alert')
     await save()
@@ -169,16 +165,12 @@ test.describe('the commissions page', () => {
     await save()
     await expect(alert).toHaveText('Enter a valid email address')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await save()
-    await expect(alert).toHaveText('Add at least one article')
-    await addArticle(page, 'Glurak Figure')
-    await sheet(page).getByRole('button', { name: 'Remove Glurak Figure', exact: true }).click()
-    await save()
-    await expect(alert).toHaveText('Add at least one article')
-    await addArticle(page, 'Glurak Figure')
     await sheet(page).getByLabel('Agreed price').fill('0')
     await save()
     await expect(alert).toHaveText('Agreed price must be above 0')
+    await sheet(page).getByRole('button', { name: 'Remove Glurak Figure', exact: true }).click()
+    await save()
+    await expect(alert).toHaveText('Add at least one article')
     expect(api.db.commissions).toHaveLength(0)
   })
 
@@ -322,9 +314,7 @@ test.describe('the commissions page', () => {
 
   test('a new commission has no Cancel button in its form', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
-    await expect(sheet(page).getByRole('button', { name: 'Create commission' })).toBeVisible()
+    await startCommission(page, 'Glurak Figure')
     await expect(sheet(page).getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0)
   })
 
@@ -345,11 +335,9 @@ test.describe('the commissions page', () => {
 
   test('an email the server rejects shows the email message and keeps the form open', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
-    await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 400, { customer_email: { code: 'validation_is_email', message: 'Must be a valid email address.' } })
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('Enter a valid email address')
@@ -367,7 +355,7 @@ test.describe('the commissions page', () => {
     await expect(sheet(page)).toContainText('Retired Dino × 1')
     await sheet(page).getByRole('button', { name: 'Edit' }).click()
     await expect(line(page, 'Retired Dino')).toHaveText('1')
-    await expect(sheet(page).getByLabel('Add article').locator('option', { hasText: 'Retired Dino' })).toHaveCount(0)
+    await expect(sheet(page).getByLabel('Add article')).toHaveCount(0)
     await sheet(page).getByLabel('Notes').fill('Still the dino')
     await sheet(page).getByRole('button', { name: 'Save changes' }).click()
     await expect.poll(() => api.db.commissions[0].notes).toBe('Still the dino')
@@ -377,10 +365,8 @@ test.describe('the commissions page', () => {
 
   test('a commission can be created without an email', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Misty')
-    await addArticle(page, 'Glurak Figure')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(page.getByText('Commission created')).toBeVisible()
     expect(api.db.commissions[0]).toMatchObject({ customer_name: 'Misty', customer_email: '' })
@@ -389,10 +375,8 @@ test.describe('the commissions page', () => {
   test('a server that is not migrated yet is reported, not saved silently', async ({ page, api }) => {
     seedWith(api)
     api.stripItems('commissions')
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Misty')
-    await addArticle(page, 'Glurak Figure')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('The server needs updating — run the migration first')
     await expect(sheet(page).getByLabel('Customer name')).toHaveValue('Misty')
@@ -401,10 +385,8 @@ test.describe('the commissions page', () => {
 
   test('a create the server rejects for the required article asks for the migration', async ({ page, api }) => {
     seedWith(api)
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
+    await startCommission(page, 'Glurak Figure')
     await sheet(page).getByLabel('Customer name').fill('Misty')
-    await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 400, { article: { code: 'validation_required', message: 'Cannot be blank.' } })
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('The server needs updating — run the migration first')
@@ -488,11 +470,30 @@ test.describe('entry points', () => {
     await page.waitForURL(url => url.pathname === '/commissions')
     await expect(page.getByText('No commissions here')).toBeVisible()
     await expect(sheet(page)).toHaveCount(0)
+  })
 
-    // A commission started by hand begins with no lines
+  test('New commission on the Commissions page goes to the catalog and the hint explains why', async ({ page, api }) => {
+    seedWith(api)
+    await gotoReady(page, '/commissions')
+    await expect(page.getByText('To start a commission, pick the articles in the catalog and tap Commission in the cart.')).toBeVisible()
     await page.getByRole('button', { name: 'New commission' }).click()
-    await expect(sheet(page).getByRole('group', { name: /^Quantity of / })).toHaveCount(0)
-    await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('')
+    await page.waitForURL(url => url.pathname === '/catalog')
+    await expect(sheet(page)).toHaveCount(0)
+  })
+
+  test('the commission form has no Add article field and the catalog offers only active articles', async ({ page, api }) => {
+    api.seed({
+      categories: COMMISSION_CATEGORIES,
+      articles: [...COMMISSION_ARTICLES, { id: 'old1', name: 'Retired Dino', category: 'cat-figure', active: false }]
+    })
+    await startCommission(page, 'Totoro')
+    await expect(sheet(page).getByLabel('Add article')).toHaveCount(0)
+    await expect(sheet(page).getByText('Add article')).toHaveCount(0)
+    await expect(line(page, 'Totoro')).toHaveText('1')
+    await page.keyboard.press('Escape')
+    await page.goto('/catalog')
+    await expect(card(page, 'Totoro')).toBeVisible()
+    await expect(card(page, 'Retired Dino')).toHaveCount(0)
   })
 
   test('a cart draft is not kept when the list fails to load', async ({ page, api }) => {

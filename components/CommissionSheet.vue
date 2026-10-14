@@ -42,13 +42,6 @@
         </li>
       </ul>
       <div>
-        <label for="commission-add-article" class="label">Add article</label>
-        <select id="commission-add-article" class="input pr-9" @change="onAddArticle">
-          <option value="" disabled selected>Choose an article</option>
-          <option v-for="article in articles" :key="article.id" :value="article.id">{{ article.name }}</option>
-        </select>
-      </div>
-      <div>
         <label for="commission-price" class="label">Agreed price</label>
         <input id="commission-price" v-model="form.price" type="text" inputmode="decimal" class="input" @input="priceTouched = true">
       </div>
@@ -148,7 +141,6 @@ import {
   itemsOf,
   incomeFor,
   validateCommission,
-  addLine,
   setLineQuantity,
   removeLine,
   suggestedPriceFor
@@ -202,7 +194,6 @@ const title = computed(() => {
   return 'Commission'
 })
 
-const articleById = id => props.articles.find(article => article.id === id)
 const lines = computed(() => (props.commission ? itemsOf(props.commission, props.articles) : []))
 const anonymised = computed(() => !!props.commission?.anonymised_at)
 const customerLabel = computed(() => (props.commission?.anonymised_at ? 'Anonymised' : props.commission?.customer_name))
@@ -229,13 +220,6 @@ watch(() => props.open, (isOpen) => {
     form.value.price = toPriceText(suggestedPrice.value)
   }
 }, { immediate: true })
-
-// The select is an action, not a value: it adds the chosen article (or one more of it) and resets
-const onAddArticle = (event) => {
-  const article = articleById(event.target.value)
-  if (article) form.value.items = addLine(form.value.items, article)
-  event.target.value = ''
-}
 
 const stepClass = (step) => {
   const reached = STEPS.indexOf(props.commission.status) >= STEPS.indexOf(step)

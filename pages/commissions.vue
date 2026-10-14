@@ -2,9 +2,10 @@
   <div>
     <PageHeader title="Commissions" subtitle="Made-to-order prints">
       <template #actions>
-        <BaseButton icon="plus" @click="openNew">New commission</BaseButton>
+        <BaseButton icon="plus" @click="navigateTo('/catalog')">New commission</BaseButton>
       </template>
     </PageHeader>
+    <p class="-mt-2 mb-4 text-sm text-ink-muted">To start a commission, pick the articles in the catalog and tap Commission in the cart.</p>
 
     <div class="no-scrollbar -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Commission status">
       <button
@@ -133,12 +134,6 @@ const openDraft = () => {
   draftLines = []
   if (!lines.length) return
   presetItems.value = lines
-  selected.value = null
-  sheetOpen.value = true
-}
-
-const openNew = () => {
-  presetItems.value = []
   selected.value = null
   sheetOpen.value = true
 }

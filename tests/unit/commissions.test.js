@@ -14,7 +14,6 @@ import {
   summaryOf,
   incomeFor,
   validateCommission,
-  addLine,
   setLineQuantity,
   removeLine,
   suggestedPriceFor
@@ -206,15 +205,6 @@ test('summaryOf writes × only above 1 and folds more than two lines', () => {
   assert.equal(summaryOf({ items: [line('A', 1), line('B', 3), line('C', 1), line('D', 2)] }), 'A, B × 3 +2 more')
   assert.equal(summaryOf({ article: 'f1', quantity: 1, expand: { article: { name: 'Glurak Figure' } } }), 'Glurak Figure')
   assert.equal(summaryOf({}), '')
-})
-
-test('addLine adds a new article at 1 and merges a duplicate', () => {
-  const once = addLine([], ARTICLES[0])
-  assert.deepEqual(once, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }])
-  const twice = addLine(once, ARTICLES[0])
-  assert.deepEqual(twice, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 2 }])
-  assert.deepEqual(addLine(twice, ARTICLES[1]), TWO_LINES)
-  assert.deepEqual(once, [{ article: 'k1', name: 'Pikachu Keychain', quantity: 1 }], 'the input is not changed')
 })
 
 test('setLineQuantity stays at 1 or more and removeLine drops one line', () => {

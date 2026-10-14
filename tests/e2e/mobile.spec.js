@@ -131,11 +131,13 @@ test.describe('phone layout sweep', () => {
 
   test('the commission form fits at 375px with long lines', async ({ page, api }) => {
     api.seed({ articles: longProducts })
-    await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: 'New commission' }).click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByLabel('Add article').selectOption({ label: longProducts[0].name })
-    await dialog.getByLabel('Add article').selectOption({ label: 'Phone Stand' })
+    await gotoReady(page, '/catalog')
+    await page.locator('h3', { hasText: longProducts[0].name }).click()
+    await page.locator('h3', { hasText: 'Phone Stand' }).click()
+    await page.getByRole('button', { name: /View cart/ }).click()
+    await page.getByRole('button', { name: 'Commission', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+    const dialog = page.getByRole('dialog', { name: 'New commission' })
     await expect(dialog.getByRole('group', { name: `Quantity of ${longProducts[0].name}` })).toBeVisible()
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)

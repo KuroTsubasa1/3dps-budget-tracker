@@ -86,13 +86,6 @@ export function summaryOf (commission, articles = []) {
 }
 
 // Form helpers: each returns a new array, so the form's list is replaced, never changed in place
-export function addLine (items, article) {
-  if (items.some(line => line.article === article.id)) {
-    return items.map(line => (line.article === article.id ? { ...line, quantity: Number(line.quantity) + 1 } : line))
-  }
-  return [...items, { article: article.id, name: article.name, quantity: 1 }]
-}
-
 export const setLineQuantity = (items, index, quantity) =>
   items.map((line, i) => (i === index ? { ...line, quantity: Math.max(1, quantity) } : line))
 
