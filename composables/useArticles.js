@@ -10,6 +10,10 @@ export const useArticles = () => {
   const listActive = () =>
     pb.collection(ARTICLES).getFullList({ filter: 'active = true', expand: 'category', sort: 'name' })
 
+  // Every article, archived ones too: the reports name what was sold even after an article is retired
+  const listAll = () =>
+    pb.collection(ARTICLES).getFullList({ expand: 'category', sort: 'name' })
+
   const createArticle = (fields, images = []) =>
     pb.collection(ARTICLES).create({ ...fields, active: true, stock: 0, ...(images.length ? { images } : {}) }, withCategory)
 
@@ -26,5 +30,5 @@ export const useArticles = () => {
 
   const imageUrl = (article, thumb = '300x300') => pb.files.getUrl(article, article.images[0], { thumb })
 
-  return { ARTICLES, listActive, createArticle, updateArticle, deleteArticle, imageUrl }
+  return { ARTICLES, listActive, listAll, createArticle, updateArticle, deleteArticle, imageUrl }
 }

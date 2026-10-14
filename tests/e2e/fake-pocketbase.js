@@ -33,15 +33,22 @@ const parseValue = (raw) => {
   return Number(value)
 }
 
-// Only what the app sends: `field = value` and `field >= value` clauses joined by && and ||, optionally in parentheses
-const CLAUSE = /^\s*(\w+)\s*(>=|=)\s*(.+?)\s*$/
+// Only what the app sends: `field = value` and `field >= / > / <= / < value` clauses joined by && and ||,
+// optionally in parentheses
+const CLAUSE = /^\s*(\w+)\s*(>=|<=|>|<|=)\s*(.+?)\s*$/
 // Dates compare as text; the app writes ISO ("T") and PocketBase filters use a space
 const asDateText = value => String(value ?? '').replace('T', ' ')
+const COMPARE = {
+  '>=': (a, b) => a >= b,
+  '>': (a, b) => a > b,
+  '<=': (a, b) => a <= b,
+  '<': (a, b) => a < b
+}
 const matchesClause = (record, clause) => {
   const [, field, operator, raw] = clause.match(CLAUSE)
   const value = parseValue(raw)
-  if (operator === '>=') return asDateText(record[field]) >= asDateText(value)
-  return record[field] === value
+  if (operator === '=') return record[field] === value
+  return COMPARE[operator](asDateText(record[field]), asDateText(value))
 }
 const matchesFilter = (record, filter) =>
   !filter || filter.replace(/[()]/g, '').split('||').some(group => group.split('&&').every(clause => matchesClause(record, clause)))
