@@ -124,6 +124,13 @@ export function createFakePocketBase () {
   const delays = {}
   // Collections whose write replies drop `items`, like a server that has not been migrated yet
   const stripItems = new Set()
+  // Fields a collection does not have yet (a server before the migration): never stored, never answered
+  const missingFields = {}
+  const withoutMissing = (name, record) => {
+    const missing = missingFields[name]
+    if (!missing || !record) return record
+    return Object.fromEntries(Object.entries(record).filter(([key]) => !missing.includes(key)))
+  }
   const requests = []
   const state = { enabled: false }
 
@@ -140,10 +147,12 @@ export function createFakePocketBase () {
     const url = new URL(request.url())
     const method = request.method()
     const authorization = request.headers().authorization || ''
-    const body = parseBody(request)
+    const parsed = parseBody(request)
+    const collectionName = url.pathname.match(/^\/api\/collections\/([^/]+)\//)?.[1]
+    const body = withoutMissing(collectionName, parsed)
     const expand = url.searchParams.get('expand')
     const reply = (status, json) => route.fulfill({ status, json })
-    requests.push({ method, path: url.pathname, body, authorization })
+    requests.push({ method, path: url.pathname, body: parsed, authorization })
 
     if (url.pathname === '/api/collections/users/auth-with-password') {
       return body.identity === OWNER.email && body.password === OWNER_PASSWORD
@@ -173,11 +182,11 @@ export function createFakePocketBase () {
       if (OWNER_READ_ONLY.has(name) && !isOwner) return reply(200, { page: 1, perPage, totalItems: 0, totalPages: 0, items: [] })
       if (id) {
         const record = records.find(item => item.id === id)
-        return record ? reply(200, withExpand(record, expand)) : reply(404, { code: 404, message: 'Not found.', data: {} })
+        return record ? reply(200, withExpand(withoutMissing(name, record), expand)) : reply(404, { code: 404, message: 'Not found.', data: {} })
       }
       const items = sortRecords(records.filter(record => matchesFilter(record, url.searchParams.get('filter'))), url.searchParams.get('sort'))
       // perPage must echo the request: getFullList keeps paging while items.length === perPage
-      return reply(200, { page: 1, perPage, totalItems: items.length, totalPages: 1, items: items.slice(0, perPage).map(record => withExpand(record, expand)) })
+      return reply(200, { page: 1, perPage, totalItems: items.length, totalPages: 1, items: items.slice(0, perPage).map(record => withExpand(withoutMissing(name, record), expand)) })
     }
 
     // PocketBase 0.22 treats a missing or invalid token as a guest: a create that fails its rule
@@ -200,6 +209,7 @@ export function createFakePocketBase () {
     delays[name] = 0
     const done = async (status, json) => {
       if (stripItems.has(name)) { json = { ...json }; delete json.items }
+      json = withoutMissing(name, json)
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       if (!drop) return reply(status, json)
       failures[name] = 0
@@ -233,5 +243,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, readFailures, delays, stripItems, requests, state, handle }
+  return { db, failures, readFailures, delays, stripItems, missingFields, requests, state, handle }
 }

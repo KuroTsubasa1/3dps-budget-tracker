@@ -116,6 +116,8 @@ export const test = base.extend({
       failReads (collection, status) { fake.readFailures[collection] = status },
       // Write replies for the collection come back without `items` (a server that is not migrated yet)
       stripItems (collection) { fake.stripItems.add(collection) },
+      // The collection lacks these fields (not migrated yet): writes drop them, reads and replies leave them out
+      dropFields (collection, fields) { fake.missingFields[collection] = fields },
       // The next write to the collection succeeds but answers only after `ms`
       delayNext (collection, ms) { fake.delays[collection] = ms },
       // What the server's push routes answer: unconfigured by default, like `nuxt dev` without the env file.

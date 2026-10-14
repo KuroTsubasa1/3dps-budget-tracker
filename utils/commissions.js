@@ -65,7 +65,7 @@ export const anonymisedPatch = (now = new Date()) =>
 export const isPaid = commission => !!commission?.paid_at
 
 // The Paid switch went live here: deliveries before it booked their income
-export const PAYMENTS_TRACKED_SINCE = '2026-10-15T00:00:00.000Z'
+export const PAYMENTS_TRACKED_SINCE = '2026-10-16T00:00:00.000Z'
 
 // Before the Paid switch, delivering booked the income: such a commission is an old delivered one
 // (delivered before PAYMENTS_TRACKED_SINCE, no payment_transaction). An unreadable date counts as before,
@@ -99,6 +99,9 @@ export const paidPatch = (recordId, now = new Date()) =>
 export const unpaidPatch = () => ({ paid_at: '', payment_transaction: '' })
 
 export const PRICE_LOCKED = 'Switch to Unpaid to change the price'
+
+// A server without the migration drops fields it does not know; the app reports it instead of going on
+export const NOT_MIGRATED = 'The server needs updating — run the migration first'
 
 export const UNKNOWN_ARTICLE = 'Unknown article'
 

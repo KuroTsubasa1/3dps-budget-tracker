@@ -219,7 +219,8 @@ Run these yourself, in this order.
 
 1. **Schema.** Run `npm run pb:migrate`. The dry run should list only `add to "commissions": customer_phone, paid_at, payment_transaction`. Then run `npm run pb:migrate -- --apply`. The rules do not change. Run it **before** the deploy: until the fields exist, PocketBase ignores the phone and the payment the app saves.
 2. **Deploy.** Push to `main`. From now on *Mark delivered* books nothing; the income is booked when the commission's *Paid* switch is turned on, and taken back when it is turned off.
-3. **Old commissions.** Commissions delivered before 15 October 2026 already booked their income and show `Unpaid`. Turning one to *Paid* asks first: *Only mark paid* books nothing, *Book income again* books a second income.
+3. **Old commissions.** Commissions delivered before 16 October 2026 (UTC) count as delivered before payments were tracked: those from before the deploy already booked their income and show `Unpaid`. Turning one to *Paid* asks first: *Only mark paid* books nothing, *Book income again* books a second income.
+4. **Unpaid and other devices.** *Unpaid* removes the income from this device's queue and from the server. It cannot reach an income still waiting in another device's offline queue: that one is sent when that device comes back online, so check the balance after switching a commission to Unpaid that another device marked Paid while offline.
 
 ## Credits
 

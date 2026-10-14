@@ -1,9 +1,8 @@
 import { usePocketBase } from './usePocketBase'
 import { useTransactions } from './useTransactions'
-import { newRecordId } from '~/utils/inventory'
 import { localDate } from '~/utils/transactions'
 import { commissionLines } from '~/utils/reports/lines'
-import { anonymisedPatch, dueForAnonymising, incomeFor, paymentStep, paidPatch, unpaidPatch } from '~/utils/commissions'
+import { anonymisedPatch, dueForAnonymising, incomeFor, isPaid, paymentStep, paidPatch, unpaidPatch, NOT_MIGRATED } from '~/utils/commissions'
 
 const COMMISSIONS = 'commissions'
 
@@ -43,9 +42,18 @@ export const useCommissions = () => {
     return income.amount
   }
 
+  // A server without the payment fields answers without them: nothing may be booked then
+  const updatePayment = async (id, patch) => {
+    const record = await updateCommission(id, patch)
+    if (!isPaid(record) || (patch.payment_transaction && record.payment_transaction !== patch.payment_transaction)) throw new Error(NOT_MIGRATED)
+    return record
+  }
+
   // Turns Paid on. The commission is read again first: another device may have paid it already.
-  // A new income's record id is stored on the commission before the income is booked, so a lost reply
-  // leaves a commission naming an income that does not exist: the next tap books it with that same id.
+  // The income's record id is the commission's own id (an older commission keeps the id it stored), and it is
+  // stored on the commission before the income is booked. A lost reply leaves a commission naming an income
+  // that does not exist: the next tap books it with that same id. Two devices booking at once post the same
+  // id, and the server keeps only the first.
   // An old delivered commission (its income booked on delivery) needs the owner's `choice` first:
   // without one the result is { ask: true } and nothing changes.
   const markPaid = async (commission, articles = [], { choice = '', now = new Date() } = {}) => {
@@ -57,10 +65,19 @@ export const useCommissions = () => {
       if (await transactionExists(plan.recordId)) return { record: fresh, booked: 0 }
       return { record: fresh, booked: bookIncome(plan.recordId, fresh, articles, now) }
     }
-    if (plan.step === 'mark') return { record: await updateCommission(commission.id, paidPatch('', now)), booked: 0 }
-    const recordId = newRecordId()
-    const record = await updateCommission(commission.id, paidPatch(recordId, now))
+    if (plan.step === 'mark') return { record: await updatePayment(commission.id, paidPatch('', now)), booked: 0 }
+    const recordId = fresh.payment_transaction || fresh.id
+    const record = await updatePayment(commission.id, paidPatch(recordId, now))
     return { record, booked: bookIncome(recordId, record, articles, now) }
+  }
+
+  // Run when a paid commission is opened: an income it names that is gone (a booking that never arrived)
+  // is booked now with its stored id. Only a plain "not found" counts as gone; it never books on a guess.
+  const repairPayment = async (commission, articles = [], now = new Date()) => {
+    const fresh = await getCommission(commission.id)
+    const plan = paymentStep(fresh)
+    if (plan.step !== 'verify' || (await transactionExists(plan.recordId))) return { record: fresh, booked: 0 }
+    return { record: fresh, booked: bookIncome(plan.recordId, fresh, articles, now) }
   }
 
   // Turns Paid off: the income is taken back first (queue or server), then the commission forgets it.
@@ -72,5 +89,5 @@ export const useCommissions = () => {
     return updateCommission(commission.id, unpaidPatch())
   }
 
-  return { listCommissions, getCommission, createCommission, updateCommission, anonymise, anonymiseDue, markPaid, markUnpaid }
+  return { listCommissions, getCommission, createCommission, updateCommission, anonymise, anonymiseDue, markPaid, markUnpaid, repairPayment }
 }

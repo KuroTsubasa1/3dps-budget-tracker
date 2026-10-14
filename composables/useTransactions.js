@@ -329,18 +329,19 @@ export const useTransactions = () => {
   }
 
   // Takes a booked entry back (a commission switched to Unpaid). One still waiting in this device's queue
-  // leaves the queue; otherwise it is deleted on the server, where a 404 means it is gone already.
-  // Either way it leaves the local list. One being sent right now cannot be taken back safely: that throws.
+  // leaves the queue first, so no sync can send it meanwhile. Then it is deleted on the server either way:
+  // a queued POST may have landed with its reply lost. A 404 means it is not there. Any other failure puts
+  // the queue item back and throws. One being sent right now cannot be taken back safely: that throws too.
   const removeTransaction = async (recordId) => {
     const queued = offlineQueue.value.filter(item => item.recordId === recordId && item.status !== 'synced')
     if (sending.has(recordId) || (queued.length && isSyncing.value)) throw new Error('The entry is being sent right now')
-    if (queued.length) {
-      replaceQueue(offlineQueue.value.filter(item => item.recordId !== recordId))
-    } else {
-      try {
-        await pb.collection('budget_tracker_transactions').delete(recordId)
-      } catch (error) {
-        if (error?.status !== 404) throw error
+    if (queued.length) replaceQueue(offlineQueue.value.filter(item => !queued.includes(item)))
+    try {
+      await pb.collection('budget_tracker_transactions').delete(recordId)
+    } catch (error) {
+      if (error?.status !== 404) {
+        if (queued.length) replaceQueue([...offlineQueue.value, ...queued])
+        throw error
       }
     }
     transactions.value = transactions.value.filter(entry => entry.recordId !== recordId && entry.id !== recordId)

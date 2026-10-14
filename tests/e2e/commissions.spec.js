@@ -442,8 +442,8 @@ test.describe('the commissions page', () => {
 })
 
 const PAID_AT = '2026-10-10 10:00:00.000Z'
-// Payments are tracked from 2026-10-15: PAID_AT is before that, so a delivery then booked its income
-const DELIVERED_TRACKED = '2026-10-15 00:00:00.000Z'
+// Payments are tracked from 2026-10-16: PAID_AT is before that, so a delivery then booked its income
+const DELIVERED_TRACKED = '2026-10-16 00:00:00.000Z'
 const TX_ID = 'txpaid000000001'
 const income = overrides => ({
   id: TX_ID,
@@ -463,6 +463,8 @@ const openAsh = async (page, tab) => {
   await page.getByRole('button', { name: /Ash Ketchum/ }).click()
 }
 const PAYMENT_FAILED = 'Could not change the payment. Check your connection and try again.'
+const NOT_MIGRATED = 'The server needs updating — run the migration first'
+const posts = api => api.requests.filter(request => request.method === 'POST' && request.path.endsWith('/budget_tracker_transactions/records'))
 const stored = (page, key) => page.evaluate(name => JSON.parse(localStorage.getItem(name) || '[]'), key)
 
 test.describe('phone and payment', () => {
@@ -517,7 +519,9 @@ test.describe('phone and payment', () => {
     expect(Number.isNaN(Date.parse(api.posted[0].sold_at))).toBe(false)
     expect(api.posted[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(api.db.commissions[0].paid_at).toBeTruthy()
-    expect(api.db.commissions[0].payment_transaction).toBe(api.posted[0].id)
+    // The income's record id is the commission's own id, so two devices can never book it twice
+    expect(api.posted[0].id).toBe('c1')
+    expect(api.db.commissions[0].payment_transaction).toBe('c1')
     expect(api.db.commissions[0].status).toBe('open')
     await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
     await expect(page.getByText(/Paid — 30,00\s€ added to balance/)).toBeVisible()
@@ -541,11 +545,14 @@ test.describe('phone and payment', () => {
 
   test('Unpaid on an income the server no longer has still clears the payment', async ({ page, api }) => {
     seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    // Reads of the income fail, so opening the sheet cannot tell it is missing and books nothing
+    api.failReads('budget_tracker_transactions', 500)
     await openAsh(page)
     await paidSwitch(page).click()
     await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
     expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
     await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+    expect(posts(api)).toHaveLength(0)
   })
 
   test('Unpaid on an income still waiting in the queue drops it from the queue and the list', async ({ page, api }) => {
@@ -558,13 +565,64 @@ test.describe('phone and payment', () => {
     expect(recordId).toBeTruthy()
     await expect.poll(async () => (await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual([recordId])
 
+    api.fail('budget_tracker_transactions', 0)
     await paidSwitch(page).click()
     await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
     expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
     expect(await stored(page, 'budget-tracker-offline-queue')).toEqual([])
     expect((await stored(page, 'budget-tracker-transactions')).filter(entry => entry.recordId === recordId)).toEqual([])
-    expect(api.requests.filter(request => request.method === 'DELETE')).toHaveLength(0)
+    // The server is asked too, in case the queued POST landed: it never did, so the 404 counts as done
+    expect(api.requests.filter(request => request.method === 'DELETE' && request.path.endsWith(`/budget_tracker_transactions/records/${recordId}`))).toHaveLength(1)
     expect(api.posted).toHaveLength(0)
+  })
+
+  test('Unpaid on a queued income whose POST landed with a lost reply deletes it on the server', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    api.fail('budget_tracker_transactions', 'drop')
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(async () => (await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual(['c1'])
+    expect(api.posted.map(entry => entry.id)).toEqual(['c1'])
+
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.posted).toEqual([])
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    expect(await stored(page, 'budget-tracker-offline-queue')).toEqual([])
+  })
+
+  test('a failed server delete puts the queued income back and keeps the switch on', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions({ status: 500 })
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(async () => (await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual(['c1'])
+
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText(PAYMENT_FAILED)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    expect(api.db.commissions[0]).toMatchObject({ payment_transaction: 'c1' })
+    expect((await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual(['c1'])
+  })
+
+  test('Unpaid while the income is still being sent is refused and keeps it', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    api.delayNext('budget_tracker_transactions', 1500)
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText(PAYMENT_FAILED)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => api.posted.map(entry => entry.id)).toEqual(['c1'])
+    await page.waitForTimeout(1600)
+    expect(api.posted.map(entry => entry.id)).toEqual(['c1'])
+    expect(api.db.commissions[0]).toMatchObject({ payment_transaction: 'c1' })
+    expect(api.db.commissions[0].paid_at).toBeTruthy()
   })
 
   test('a failed Unpaid keeps the switch on and the income', async ({ page, api }) => {
@@ -608,6 +666,73 @@ test.describe('phone and payment', () => {
     await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
     await page.waitForLoadState('networkidle')
     expect(api.posted).toHaveLength(1)
+    expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
+    expect(posts(api)).toHaveLength(0)
+  })
+
+  test('two devices booking the same commission end with one income', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect.poll(() => api.posted.map(entry => entry.id)).toEqual(['c1'])
+    // A second device read the commission before the first one's update and books it as well
+    Object.assign(api.db.commissions[0], { paid_at: '', payment_transaction: '' })
+    await page.reload()
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => posts(api).length).toBe(2)
+    await page.waitForLoadState('networkidle')
+    expect(api.posted.map(entry => entry.id)).toEqual(['c1'])
+    expect(api.db.commissions[0].payment_transaction).toBe('c1')
+  })
+
+  test('opening a paid commission whose income is missing books it once with the stored id', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    await api.mockTransactions()
+    await openAsh(page)
+    await expect.poll(() => api.posted.map(entry => entry.id)).toEqual([TX_ID])
+    expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await page.waitForLoadState('networkidle')
+    expect(posts(api)).toHaveLength(1)
+  })
+
+  test('opening a paid commission books nothing when its income cannot be checked', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    await api.mockTransactions()
+    api.failReads('budget_tracker_transactions', 500)
+    await openAsh(page)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(500)
+    expect(posts(api)).toHaveLength(0)
+  })
+
+  test('a server without the payment fields is reported and books nothing', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    api.dropFields('commissions', ['customer_phone', 'paid_at', 'payment_transaction'])
+    await api.mockTransactions()
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText(NOT_MIGRATED)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    await page.waitForLoadState('networkidle')
+    expect(posts(api)).toHaveLength(0)
+  })
+
+  test('the price lock follows the server: a commission paid on another device refuses a new price', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await openAsh(page)
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    Object.assign(api.db.commissions[0], { paid_at: PAID_AT, payment_transaction: 'c1' })
+    await sheet(page).getByLabel('Agreed price').fill('35')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('Switch to Unpaid to change the price')
     expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
   })
 

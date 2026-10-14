@@ -166,6 +166,7 @@ import {
   itemsOf,
   isPaid,
   validateCommission,
+  NOT_MIGRATED,
   setLineQuantity,
   removeLine,
   suggestedPriceFor
@@ -187,7 +188,7 @@ const FULFILMENT_OPTIONS = [
   { value: 'shipping', label: 'Shipping' }
 ]
 
-const { getCommission, createCommission, updateCommission, anonymise, markPaid, markUnpaid } = useCommissions()
+const { getCommission, createCommission, updateCommission, anonymise, markPaid, markUnpaid, repairPayment } = useCommissions()
 const { toast } = useToast()
 
 const mode = ref('view')
@@ -252,6 +253,7 @@ watch(() => props.open, (isOpen) => {
   confirming.value = ''
   if (props.commission) {
     mode.value = 'view'
+    repairOnOpen()
   } else {
     mode.value = 'form'
     form.value = blankForm()
@@ -281,13 +283,9 @@ const cancelEdit = () => {
   mode.value = 'view'
 }
 
-const NOT_MIGRATED = 'The server needs updating — run the migration first'
-
 const save = async () => {
   if (busy.value) return
-  // While paid the booked income is the agreed price: it cannot change until the payment is taken back
-  const lockedPrice = props.commission && isPaid(props.commission) ? Number(props.commission.agreed_price) : null
-  error.value = validateCommission({ ...form.value, anonymised: anonymised.value, lockedPrice })
+  error.value = validateCommission({ ...form.value, anonymised: anonymised.value })
   if (error.value) return
   busy.value = true
   const shipping = form.value.fulfilment === 'shipping'
@@ -310,6 +308,14 @@ const save = async () => {
   }
   try {
     if (props.commission) {
+      // While paid the booked income is the agreed price: it cannot change until the payment is taken back.
+      // The server's copy decides, as another device may have changed the payment since this screen loaded.
+      const fresh = await getCommission(props.commission.id)
+      const locked = validateCommission({ ...form.value, anonymised: anonymised.value, lockedPrice: isPaid(fresh) ? Number(fresh.agreed_price) : null })
+      if (locked) {
+        error.value = locked
+        return
+      }
       const record = await updateCommission(props.commission.id, fields)
       if (!Array.isArray(record.items)) throw new Error(NOT_MIGRATED)
       emit('changed', record)
@@ -385,8 +391,8 @@ const pay = async (choice = '') => {
     }
     confirming.value = ''
     if (booked) toast(`Paid — ${formatCurrency(booked)} added to balance`)
-  } catch {
-    error.value = PAYMENT_FAILED
+  } catch (err) {
+    error.value = err?.message === NOT_MIGRATED ? NOT_MIGRATED : PAYMENT_FAILED
   } finally {
     busy.value = false
   }
@@ -404,6 +410,16 @@ const unpay = async () => {
   } finally {
     busy.value = false
   }
+}
+
+// A paid commission whose income never arrived (it names one the server does not have) gets it booked
+// when opened. Quiet in the background: a failure just leaves it for the next time.
+function repairOnOpen () {
+  const commission = props.commission
+  if (!commission?.payment_transaction || !isPaid(commission) || typeof navigator === 'undefined' || !navigator.onLine) return
+  repairPayment(commission, props.articles)
+    .then(({ record, booked }) => { if (booked && props.commission?.id === record.id) emit('changed', record) })
+    .catch(() => {})
 }
 
 const setPaid = value => (value ? pay() : unpay())
