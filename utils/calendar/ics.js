@@ -10,7 +10,7 @@ export const escapeText = value => String(value ?? '')
   .replace(/\\/g, '\\\\')
   .replace(/;/g, '\\;')
   .replace(/,/g, '\\,')
-  .replace(/\r?\n/g, '\\n')
+  .replace(/\r\n|\r|\n/g, '\\n')
 
 // Lines longer than 75 octets continue after CRLF and a space (which counts towards the next 75);
 // a UTF-8 character is never split

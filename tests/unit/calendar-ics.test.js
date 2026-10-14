@@ -100,3 +100,7 @@ test('every line of a feed with long names stays within 75 octets', () => {
   for (const line of feed.split('\r\n')) assert.ok(Buffer.byteLength(line) <= 75, line)
   assert.ok(linesOf(feed).includes(`SUMMARY:${escapeText(`${name} (booked)`)}`))
 })
+
+test('a lone carriage return is escaped like a line break', () => {
+  assert.equal(escapeText('a\rb\r\nc\nd'), 'a\\nb\\nc\\nd')
+})

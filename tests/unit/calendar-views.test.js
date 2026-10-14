@@ -92,3 +92,27 @@ test('next up is the next open deadline and the next or running booked conventio
   assert.deepEqual([later.booked.convention.id, later.booked.daysLeft], ['booked-nov', 22])
   assert.deepEqual(nextUp([], NOW), { deadline: null, booked: null })
 })
+
+test('only interested conventions have open applications', () => {
+  const list = [
+    convention('applied-open', { status: 'applied', applications_close: '2026-10-30', starts_on: '2027-02-01' }),
+    convention('booked-open', { status: 'booked', applications_close: '2026-10-30', starts_on: '2027-03-01' })
+  ]
+  assert.deepEqual(upcoming(list, NOW).openApplications, [])
+})
+
+test('next up picks a booked convention even when an unbooked one starts sooner', () => {
+  const list = [
+    convention('applied-soon', { status: 'applied', starts_on: '2026-10-20', ends_on: '2026-10-21' }),
+    convention('interested-soon', { starts_on: '2026-10-18' }),
+    convention('booked-later', { status: 'booked', starts_on: '2026-12-05', ends_on: '2026-12-06' })
+  ]
+  assert.equal(nextUp(list, NOW).booked.convention.id, 'booked-later')
+})
+
+test('an interested convention without an applications deadline is listed under its month', () => {
+  const list = [convention('no-deadline', { starts_on: '2026-11-14' })]
+  const { openApplications, byMonth } = upcoming(list, NOW)
+  assert.deepEqual(openApplications, [])
+  assert.deepEqual(byMonth.map(group => [group.key, ids(group.conventions)]), [['2026-11', ['no-deadline']]])
+})
