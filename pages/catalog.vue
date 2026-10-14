@@ -210,6 +210,7 @@ import { useCommissionDraft } from '~/composables/useCommissionDraft'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
+import { saleLines } from '~/utils/reports/lines'
 import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
 
 const STOCK_BADGE = {
@@ -304,6 +305,8 @@ const cartLines = computed(() => selectedProducts.value.map(product => ({
   name: product.name,
   quantity: product.quantity,
   categoryId: product.category,
+  // Stored on the sale's lines, so the reports can name the category even after it changes
+  categoryName: product.expand?.category?.name ?? '',
   basePrice: product.expand?.category?.base_price ?? 0,
   override: Number(product.price) > 0 ? Number(product.price) : 0
 })))
@@ -401,6 +404,9 @@ const submitToBalance = () => {
     description: `3D Printing Products:\n${productNames}${dealNote}`,
     amount: total,
     date: localDate(),
+    // The lines and the time of the sale for the reports: Σ lineTotal − Σ discount = amount
+    items: saleLines(pricedCart.value, deals.value),
+    sold_at: new Date().toISOString(),
     stockMovements
   })
 

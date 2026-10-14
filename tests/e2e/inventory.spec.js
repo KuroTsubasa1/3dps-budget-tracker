@@ -64,6 +64,7 @@ test('an offline checkout syncs its stock changes later', async ({ page, api, co
   await openCart(page)
   await page.getByRole('button', { name: 'Add to Balance' }).click()
   expect(loggedMovements(api)).toHaveLength(0)
+  const soldBy = Date.now()
 
   // Coming back online syncs the queue by itself (the window online event)
   await context.setOffline(false)
@@ -71,6 +72,11 @@ test('an offline checkout syncs its stock changes later', async ({ page, api, co
   await expect.poll(() => loggedMovements(api).length).toBe(1)
   await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(4)
   expect(api.posted).toHaveLength(1)
+  // The queue kept the lines and the time of the sale, not the time it synced
+  expect(api.posted[0].items).toEqual([
+    { article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', categoryName: 'Keychain', quantity: 1, unitPrice: 4, lineTotal: 4, discount: 0, deal: '', dealName: '' }
+  ])
+  expect(Date.parse(api.posted[0].sold_at)).toBeLessThanOrEqual(soldBy)
 })
 
 test('a retried sync does not duplicate the sale', async ({ page, api }) => {

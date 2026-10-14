@@ -186,7 +186,10 @@ export const useTransactions = () => {
           description: data.description,
           amount: data.amount,
           notes: data.notes || '',
-          date: SALE_DATE.test(data.date || '') ? data.date : undefined
+          date: SALE_DATE.test(data.date || '') ? data.date : undefined,
+          // The sale's lines and time for the reports; a server without these fields ignores them
+          items: Array.isArray(data.items) && data.items.length ? data.items : undefined,
+          sold_at: data.sold_at || undefined
         })
       })
       const body = await response.json().catch(() => null)
@@ -299,7 +302,8 @@ export const useTransactions = () => {
     uploadingOrphans.value = [...uploadingOrphans.value, key]
     discardOrphan(entry)
     try {
-      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date })
+      // An orphan keeps the lines and sale time it was recorded with; old entries have neither
+      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date, items: entry.items, sold_at: entry.sold_at })
     } finally {
       uploadingOrphans.value = uploadingOrphans.value.filter(item => item !== key)
     }

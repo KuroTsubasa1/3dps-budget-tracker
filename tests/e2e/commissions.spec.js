@@ -417,6 +417,12 @@ test.describe('the commissions page', () => {
 
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0]).toMatchObject({ amount: 15, description: 'Commission: Pikachu Keychain × 2, Totoro × 1 (Ash Ketchum)' })
+    // The agreed 15 € spread by list value: 2 × 4 € keychains and an 8 € Totoro weigh the same
+    expect(api.posted[0].items).toEqual([
+      { article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', categoryName: 'Keychain', quantity: 2, unitPrice: 3.75, lineTotal: 7.5, discount: 0, deal: '', dealName: '' },
+      { article: 't1', name: 'Totoro', category: 'cat-mini', categoryName: 'Mini Figure', quantity: 1, unitPrice: 7.5, lineTotal: 7.5, discount: 0, deal: '', dealName: '' }
+    ])
+    expect(Number.isNaN(Date.parse(api.posted[0].sold_at))).toBe(false)
     expect(api.db.commissions[0].status).toBe('delivered')
     await expect(page.getByText(/added to balance/)).toBeVisible()
     expect(api.posted).toHaveLength(1)
