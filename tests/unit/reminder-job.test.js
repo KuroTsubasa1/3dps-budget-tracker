@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runReminderJob, createReminderRunner, createPushSender, forgetSubscription, PUSH_TTL_S } from '../../server/utils/reminderJob.js'
+import { runReminderJob, createReminderRunner, createPushSender, forgetSubscription, deviceProblem, runLogLine, deliveryProblem, PUSH_TTL_S } from '../../server/utils/reminderJob.js'
 import { createNotifier } from '../../server/utils/notifier.js'
 
 const local = (month, day, hours, minutes = 0) => new Date(2026, month - 1, day, hours, minutes)
@@ -58,7 +58,15 @@ function fakeSend (fail = {}) {
 
 const PHONE = { id: 'sub000000000001', endpoint: 'https://fcm.googleapis.com/fcm/send/phone', keys: { p256dh: 'p', auth: 'a' } }
 const TABLET = { id: 'sub000000000002', endpoint: 'https://fcm.googleapis.com/fcm/send/tablet', keys: { p256dh: 'p', auth: 'a' } }
+const IPHONE = { id: 'sub000000000003', endpoint: 'https://web.push.apple.com/QGuiYsecret-device-token', keys: { p256dh: 'iphone-p256dh', auth: 'iphone-auth' } }
 const remindersOf = (store, id) => store.db.conventions.find(item => item.id === id).reminders
+// A log that keeps every line, and one that drops them
+const recordingLog = () => {
+  const lines = []
+  return { lines, info: line => lines.push(line), error: line => lines.push(line) }
+}
+const QUIET = { info () {}, error () {} }
+const EMPTY_SUMMARY = { sent: 0, skipped: 0, missed: 0, failed: 0, waiting: 0, removed: 0, removals: [], errors: [], stateErrors: [] }
 
 test('due reminders are sent to every device and recorded as sent', async () => {
   const store = fakeStore({
@@ -75,7 +83,7 @@ test('due reminders are sent to every device and recorded as sent', async () => 
     reminder('auto-deadline-1', 'deadline', iso(10, 29, 9), { sent_at: NOW.toISOString() }),
     reminder('later', 'custom', iso(10, 29, 18))
   ])
-  assert.deepEqual(summary, { sent: 1, skipped: 0, missed: 0, failed: 0, removed: 0, errors: [], stateErrors: [] })
+  assert.deepEqual(summary, { ...EMPTY_SUMMARY, sent: 1 })
   // Never sent twice
   await runReminderJob({ store, send, now: local(10, 29, 9, 10) })
   assert.equal(sent.length, 2)
@@ -123,7 +131,7 @@ test('a reminder no device could get stays unsent for the next run, and the erro
   })
   const summary = await runReminderJob({ store, send: fakeSend({ [PHONE.endpoint]: pushError(500) }).send, now: NOW })
   assert.deepEqual([summary.sent, summary.failed], [0, 1])
-  assert.deepEqual(summary.errors, ['push 500'])
+  assert.deepEqual(summary.errors, [{ host: 'fcm.googleapis.com', status: '500' }])
   assert.equal(remindersOf(store, 'dokomi')[0].sent_at, undefined)
   // Next run the push service is back
   const { sent, send } = fakeSend()
@@ -144,12 +152,45 @@ test('the stock check reads the active articles and lists what to print', async 
   assert.deepEqual(store.calls, ['conventions', 'articles', 'subscriptions'])
 })
 
-test('without any device a due reminder still counts as sent', async () => {
+test('without any device a due reminder waits, until a device is registered or it is a day late', async () => {
   const store = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])] })
   const summary = await runReminderJob({ store, send: fakeSend().send, now: NOW })
-  assert.equal(summary.sent, 1)
-  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, NOW.toISOString())
+  assert.deepEqual(summary, { ...EMPTY_SUMMARY, waiting: 1 })
+  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, undefined)
+  // Still waiting an hour later
+  await runReminderJob({ store, send: fakeSend().send, now: local(10, 29, 10, 5) })
+  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, undefined)
+  // A device turns notifications on: the next run sends it
+  store.db.subscriptions.push(PHONE)
+  const { sent, send } = fakeSend()
+  await runReminderJob({ store, send, now: local(10, 29, 10, 10) })
+  assert.equal(sent.length, 1)
+  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, local(10, 29, 10, 10).toISOString())
+
+  // Nobody turned one on within a day: missed, as before
+  const late = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])] })
+  await runReminderJob({ store: late, send: fakeSend().send, now: NOW })
+  const missed = await runReminderJob({ store: late, send: fakeSend().send, now: local(10, 30, 9, 5) })
+  assert.equal(missed.missed, 1)
+  assert.deepEqual(remindersOf(late, 'dokomi')[0], reminder('r', 'custom', iso(10, 29, 9), { sent_at: local(10, 30, 9, 5).toISOString(), missed: true }))
 })
+
+test('when every device turns out to be gone the reminder waits, as with no devices', async () => {
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('a', 'custom', iso(10, 29, 9)), reminder('b', 'custom', iso(10, 29, 9))])],
+    subscriptions: [PHONE, IPHONE]
+  })
+  const summary = await runReminderJob({ store, send: fakeSend({ [PHONE.endpoint]: pushError(404), [IPHONE.endpoint]: pushError(410) }).send, now: NOW })
+  assert.deepEqual(summary, {
+    ...EMPTY_SUMMARY,
+    waiting: 2,
+    removed: 2,
+    removals: [{ host: 'fcm.googleapis.com', status: '404' }, { host: 'web.push.apple.com', status: '410' }]
+  })
+  assert.deepEqual(store.db.subscriptions, [])
+  assert.deepEqual(remindersOf(store, 'dokomi').map(item => item.sent_at), [undefined, undefined])
+})
+
 
 test('the runner keeps the last run and the last error for the status line, and retries next time', async () => {
   const logged = []
@@ -187,10 +228,10 @@ test('the runner never runs twice at once', async () => {
 
 test('a device failure is shown in the status line even though the run finished', async () => {
   const store = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])], subscriptions: [PHONE] })
-  const status = { lastRun: null, lastError: null }
-  const runner = createReminderRunner({ store, send: fakeSend({ [PHONE.endpoint]: pushError(500) }).send, status, log: { error () {} } })
+  const status = { lastRun: null, lastError: null, lastProblem: null }
+  const runner = createReminderRunner({ store, send: fakeSend({ [PHONE.endpoint]: pushError(500) }).send, status, log: QUIET })
   await runner.run(NOW)
-  assert.deepEqual(status, { lastRun: NOW.toISOString(), lastError: 'Could not reach a device: push 500' })
+  assert.deepEqual(status, { lastRun: NOW.toISOString(), lastError: null, lastProblem: 'Google answered 500 for a device' })
 })
 
 test('pushes go out with the VAPID details and a day to live', async () => {
@@ -335,15 +376,15 @@ test('a failed mark for one convention does not resend the others', async () => 
   assert.equal(remindersOf(store, 'b')[0].sent_at, NOW.toISOString())
 })
 
-test('a 410 device whose deletion answers 404 still marks the reminder', async () => {
+test('a 410 device whose deletion answers 404 counts as removed, and the reminder waits for a device', async () => {
   const store = fakeStore({
     conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])],
     subscriptions: [PHONE]
   })
   store.deleteSubscription = async () => { throw Object.assign(new Error('not found'), { status: 404 }) }
   const summary = await runReminderJob({ store, send: fakeSend({ [PHONE.endpoint]: pushError(410) }).send, now: NOW })
-  assert.deepEqual([summary.sent, summary.failed, summary.errors, summary.stateErrors], [1, 0, [], []])
-  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, NOW.toISOString())
+  assert.deepEqual([summary.sent, summary.waiting, summary.removed, summary.failed, summary.errors, summary.stateErrors], [0, 1, 1, 0, [], []])
+  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, undefined)
 })
 
 test('an endpoint that is not a public https address is never contacted and its device is deleted', async () => {
@@ -376,17 +417,80 @@ test('a run that hangs is cut off, its error recorded, and the next run starts',
 
 test('the status line says whether a device or the saved reminder state failed', async () => {
   const conventions = [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])]
-  const device = { lastRun: null, lastError: null }
-  await createReminderRunner({ store: fakeStore({ conventions, subscriptions: [PHONE] }), send: fakeSend({ [PHONE.endpoint]: pushError(500) }).send, status: device, log: { error () {} } }).run(NOW)
-  assert.equal(device.lastError, 'Could not reach a device: push 500')
+  const device = { lastRun: null, lastError: null, lastProblem: null }
+  await createReminderRunner({ store: fakeStore({ conventions, subscriptions: [PHONE] }), send: fakeSend({ [PHONE.endpoint]: pushError(500) }).send, status: device, log: QUIET }).run(NOW)
+  assert.deepEqual([device.lastError, device.lastProblem], [null, 'Google answered 500 for a device'])
 
-  const state = { lastRun: null, lastError: null }
+  const state = { lastRun: null, lastError: null, lastProblem: null }
   const store = fakeStore({ conventions, subscriptions: [PHONE] })
   store.markReminders = async () => { throw new Error('PocketBase is unreachable') }
-  const logged = []
-  await createReminderRunner({ store, send: fakeSend().send, status: state, log: { error: message => logged.push(message) } }).run(NOW)
+  const log = recordingLog()
+  await createReminderRunner({ store, send: fakeSend().send, status: state, log }).run(NOW)
   assert.equal(state.lastError, 'Could not save reminder state: PocketBase is unreachable')
-  assert.deepEqual(logged, ['[reminders] Could not save reminder state: PocketBase is unreachable'])
+  assert.deepEqual(log.lines, ['[reminders] sent 1, removed 0, failed 0', '[reminders] Could not save reminder state: PocketBase is unreachable'])
+})
+
+test('every run that sends, removes or fails writes one line with the push host and status only', async () => {
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])],
+    subscriptions: [PHONE, IPHONE, TABLET]
+  })
+  const log = recordingLog()
+  const send = fakeSend({ [PHONE.endpoint]: pushError(403), [IPHONE.endpoint]: pushError(410) }).send
+  const runner = createReminderRunner({ store, send, status: { lastRun: null, lastError: null, lastProblem: null }, log })
+  await runner.run(NOW)
+  assert.deepEqual(log.lines, ['[reminders] sent 1, removed 1 (410 web.push.apple.com), failed 1 (403 fcm.googleapis.com)'])
+  // Never the endpoint's path, the keys or the push service's own message
+  for (const secret of ['/fcm/send', 'QGuiYsecret', 'iphone-p256dh', 'iphone-auth', 'push 403']) {
+    assert.ok(!log.lines.join('\n').includes(secret), secret)
+  }
+  // A run with nothing to do writes nothing
+  await runner.run(local(10, 29, 9, 10))
+  assert.equal(log.lines.length, 1)
+})
+
+test('a run whose reminders wait for a device says so in its line', async () => {
+  const log = recordingLog()
+  const store = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])] })
+  await createReminderRunner({ store, send: fakeSend().send, status: { lastRun: null, lastError: null, lastProblem: null }, log }).run(NOW)
+  assert.deepEqual(log.lines, ['[reminders] sent 0, removed 0, failed 0, waiting 1 (no device)'])
+})
+
+test('the last delivery problem stays on the status line until a later run delivers without one', async () => {
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('a', 'custom', iso(10, 29, 9)), reminder('b', 'custom', iso(10, 29, 12))])],
+    subscriptions: [IPHONE, PHONE]
+  })
+  const status = { lastRun: null, lastError: null, lastProblem: null }
+  const runner = createReminderRunner({ store, send: fakeSend({ [IPHONE.endpoint]: pushError(410) }).send, status, log: QUIET })
+  await runner.run(NOW)
+  assert.equal(status.lastProblem, 'Apple answered 410 for a device; it was removed')
+  // Nothing due: the problem stays
+  await runner.run(local(10, 29, 9, 10))
+  assert.equal(status.lastProblem, 'Apple answered 410 for a device; it was removed')
+  // The next reminder reaches the phone without trouble
+  await runner.run(local(10, 29, 12, 1))
+  assert.equal(status.lastProblem, null)
+})
+
+test('device problems name the push service and its answer, never the address', () => {
+  assert.deepEqual(deviceProblem(IPHONE.endpoint, pushError(410)), { host: 'web.push.apple.com', status: '410' })
+  // A timeout or a dropped connection has no status code
+  assert.deepEqual(deviceProblem(PHONE.endpoint, new Error('socket hang up https://fcm.googleapis.com/fcm/send/phone')), { host: 'fcm.googleapis.com', status: 'no answer' })
+  // An address that is not a push service is removed without being contacted
+  assert.deepEqual(deviceProblem('https://169.254.169.254/latest'), { host: '169.254.169.254', status: 'blocked' })
+  assert.deepEqual(deviceProblem('not a url'), { host: 'unknown host', status: 'blocked' })
+
+  const summary = problems => ({ ...EMPTY_SUMMARY, ...problems })
+  assert.equal(deliveryProblem(summary({ errors: [{ host: 'fcm.googleapis.com', status: 'no answer' }] })), 'Google did not answer for a device')
+  assert.equal(deliveryProblem(summary({ errors: [{ host: 'updates.push.services.mozilla.com', status: '413' }] })), 'Mozilla answered 413 for a device')
+  assert.equal(deliveryProblem(summary({ removals: [{ host: 'wns2-par02p.notify.windows.com', status: '404' }] })), 'Microsoft answered 404 for a device; it was removed')
+  assert.equal(deliveryProblem(summary({ removals: [{ host: '169.254.169.254', status: 'blocked' }] })), 'A device without a supported push service was removed')
+  assert.equal(deliveryProblem(summary({ sent: 2 })), null)
+  assert.equal(runLogLine(summary({ skipped: 3 })), null)
+  assert.equal(runLogLine(summary({ missed: 1 })), '[reminders] sent 0, removed 0, failed 0, missed 1')
+  // The same answer from the same service is listed once
+  assert.equal(runLogLine(summary({ errors: [{ host: 'fcm.googleapis.com', status: '500' }, { host: 'fcm.googleapis.com', status: '500' }] })), '[reminders] sent 0, removed 0, failed 2 (500 fcm.googleapis.com)')
 })
 
 test('forgetting a subscription tolerates one that is already gone', async () => {

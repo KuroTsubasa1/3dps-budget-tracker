@@ -26,11 +26,13 @@ export function urlBase64ToUint8Array (value) {
   return Uint8Array.from(atob(base64), char => char.charCodeAt(0))
 }
 
-// The status line under Notifications; '' while it loads
+// The status line under Notifications; '' while it loads. `devices` is null when the server can't tell.
 export function statusText (status) {
   if (!status) return ''
   if (!status.configured) return "Notifications aren't configured on the server"
+  if (status.devices === 0) return 'No device has notifications on'
   if (status.lastError) return `Last check failed: ${status.lastError}`
-  if (status.lastRun) return `Reminders last checked ${formatMoment(new Date(status.lastRun))}`
-  return "Reminders haven't been checked yet"
+  if (!status.lastRun) return "Reminders haven't been checked yet"
+  const checked = `Reminders last checked ${formatMoment(new Date(status.lastRun))}`
+  return status.lastProblem ? `${checked} · ${status.lastProblem}` : checked
 }

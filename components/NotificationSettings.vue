@@ -86,6 +86,8 @@ const run = async (name, action, done = '') => {
   try {
     await action()
     if (done) toast(done)
+    // Turning a device on or off changes "No device has notifications on"; a failed reload keeps the old line
+    if (name !== 'test') await loadStatus().catch(() => {})
   } catch (err) {
     error.value = err?.statusCode === 410 || err?.statusCode === 404
       ? 'This device has to turn notifications on again'

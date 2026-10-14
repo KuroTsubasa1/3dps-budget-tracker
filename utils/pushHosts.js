@@ -17,3 +17,21 @@ export function isPushEndpointAllowed (endpoint) {
   const host = url.hostname.toLowerCase().replace(/\.+$/, '')
   return host === PUSH_HOST || PUSH_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
 }
+
+// The host of a push endpoint, for the server log and the status line. The rest of the address identifies
+// the device and is never shown or logged.
+export function pushHost (endpoint) {
+  try {
+    return new URL(endpoint).hostname.toLowerCase().replace(/\.+$/, '') || 'unknown host'
+  } catch {
+    return 'unknown host'
+  }
+}
+
+const SERVICE_NAMES = [['.push.apple.com', 'Apple'], ['.push.services.mozilla.com', 'Mozilla'], ['.notify.windows.com', 'Microsoft']]
+
+// "Apple answered 410 …": the company behind a push host, for the Settings status line
+export function pushServiceName (host) {
+  if (host === PUSH_HOST) return 'Google'
+  return SERVICE_NAMES.find(([suffix]) => host.endsWith(suffix))?.[1] ?? 'A push service'
+}

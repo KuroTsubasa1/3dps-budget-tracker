@@ -37,3 +37,15 @@ test('the status line says what the server last did', () => {
   assert.equal(statusText({ configured: true, lastRun, lastError: null }), 'Reminders last checked Wed 14 Oct, 13:05')
   assert.equal(statusText({ configured: true, lastRun, lastError: 'PocketBase is unreachable' }), 'Last check failed: PocketBase is unreachable')
 })
+
+test('the status line says when no device has notifications on, and the last delivery problem', () => {
+  const lastRun = new Date(2026, 9, 14, 13, 5).toISOString()
+  assert.equal(statusText({ configured: true, lastRun, lastError: null, devices: 0 }), 'No device has notifications on')
+  assert.equal(statusText({ configured: true, lastRun: null, lastError: null, devices: 0 }), 'No device has notifications on')
+  assert.equal(
+    statusText({ configured: true, lastRun, lastError: null, lastProblem: 'Apple answered 410 for a device; it was removed', devices: 1 }),
+    'Reminders last checked Wed 14 Oct, 13:05 · Apple answered 410 for a device; it was removed'
+  )
+  // The server could not count the devices: the usual line
+  assert.equal(statusText({ configured: true, lastRun, lastError: null, lastProblem: null, devices: null }), 'Reminders last checked Wed 14 Oct, 13:05')
+})

@@ -119,6 +119,35 @@ test.describe('notifications', () => {
     await expect(status(page)).toHaveText('Last check failed: PocketBase is unreachable')
   })
 
+  test('with no device on the server the status line says so, until this device turns notifications on', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true, lastRun: '2026-10-14T11:05:00.000Z', devices: 0 })
+    await stubPush(page)
+    await open(page)
+    await expect(status(page)).toHaveText('No device has notifications on')
+    // The server counts the new device once it is stored
+    api.notifier.devices = 1
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    await expect(status(page)).toHaveText('Reminders last checked Wed 14 Oct, 13:05')
+    api.notifier.devices = 0
+    await page.getByRole('button', { name: 'Turn off' }).click()
+    await expect(status(page)).toHaveText('No device has notifications on')
+  })
+
+  test('the last delivery problem follows the last check', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, {
+      configured: true,
+      lastRun: '2026-10-14T11:05:00.000Z',
+      lastProblem: 'Apple answered 410 for a device; it was removed',
+      devices: 1
+    })
+    await stubPush(page)
+    await open(page)
+    await expect(status(page)).toHaveText('Reminders last checked Wed 14 Oct, 13:05 · Apple answered 410 for a device; it was removed')
+  })
+
   test('blocked notifications explain how to allow them again', async ({ page, api }) => {
     api.enable()
     Object.assign(api.notifier, { configured: true })

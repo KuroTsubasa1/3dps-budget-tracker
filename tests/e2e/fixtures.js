@@ -120,7 +120,9 @@ export const test = base.extend({
       delayNext (collection, ms) { fake.delays[collection] = ms },
       // What the server's push routes answer: unconfigured by default, like `nuxt dev` without the env file.
       // `tests` collects the bodies sent to /api/push/test; `testStatus` is its answer.
-      notifier: { configured: false, feed: false, publicKey: TEST_VAPID_KEY, lastRun: null, lastError: null, secret: 'feedsecret', testStatus: 200, tests: [] }
+      // `devices` is the server's count of devices with notifications on (null: it could not tell), and
+      // `lastProblem` the reminder job's last delivery problem.
+      notifier: { configured: false, feed: false, publicKey: TEST_VAPID_KEY, lastRun: null, lastError: null, lastProblem: null, devices: null, secret: 'feedsecret', testStatus: 200, tests: [] }
     }
 
     await context.route(NOTIFIER_ROUTES, (route) => {
@@ -131,7 +133,7 @@ export const test = base.extend({
       if (path === '/api/push/status' && !state.configured) return json(200, { configured: false, feed: state.feed })
       if (request.headers().authorization !== FAKE_TOKEN) return json(401, { statusCode: 401, message: 'Log in again' })
       if (path === '/api/push/status') {
-        return json(200, { configured: true, feed: state.feed, publicKey: state.publicKey, lastRun: state.lastRun, lastError: state.lastError })
+        return json(200, { configured: true, feed: state.feed, publicKey: state.publicKey, lastRun: state.lastRun, lastError: state.lastError, lastProblem: state.lastProblem, devices: state.devices })
       }
       if (path === '/api/calendar/link') {
         return state.feed ? json(200, { path: `/api/calendar/${state.secret}.ics` }) : json(503, { statusCode: 503, message: "The calendar feed isn't configured on the server" })
