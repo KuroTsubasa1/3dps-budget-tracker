@@ -50,7 +50,7 @@ const TAB_CLASS = 'flex h-16 flex-col items-center justify-center gap-1 text-[11
 
 const route = useRoute()
 const moreOpen = ref(false)
-// More stands in for Reports, Business Card and Settings, so it lights up on those pages
+// More stands in for Calendar, Reports, Business Card and Settings, so it lights up on those pages
 const moreActive = computed(() => isMoreActive(route.path))
 
 // Picking a page in the sheet (or any other navigation) closes it

@@ -10,8 +10,8 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs']
-const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs'])
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs', 'conventions']
+const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
   budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '' },
@@ -19,7 +19,23 @@ const DEFAULTS = {
   budget_tracker_transactions: { notes: '' },
   deals: {},
   commissions: { notes: '', address: '', items: [], delivered_at: '', cancelled_at: '', anonymised_at: '', ready_at: '' },
-  print_jobs: { done_at: '' }
+  print_jobs: { done_at: '' },
+  conventions: {
+    city: '',
+    venue: '',
+    hall: '',
+    table: '',
+    starts_on: '',
+    ends_on: '',
+    applications_open: '',
+    applications_close: '',
+    results_expected: '',
+    setup_at: '',
+    stand_fee: 0,
+    fee_paid_at: '',
+    fee_transaction: '',
+    reminders: null
+  }
 }
 
 let counter = 0

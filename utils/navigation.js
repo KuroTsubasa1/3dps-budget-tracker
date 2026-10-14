@@ -5,6 +5,7 @@ export const NAV_ITEMS = [
   { to: '/catalog', label: 'Catalog', shortLabel: 'Catalog', icon: 'bag', phone: 'tab' },
   { to: '/commissions', label: 'Commissions', shortLabel: 'Commissions', icon: 'clipboard', phone: 'tab' },
   { to: '/print-board', label: 'Print board', shortLabel: 'Print', icon: 'printer', phone: 'tab' },
+  { to: '/calendar', label: 'Calendar', shortLabel: 'Calendar', icon: 'calendar', phone: 'more' },
   { to: '/reports', label: 'Reports', shortLabel: 'Reports', icon: 'chart', phone: 'more' },
   { to: '/business-card', label: 'Business Card', shortLabel: 'Card', icon: 'id-card', phone: 'more' },
   { to: '/settings', label: 'Settings', shortLabel: 'Settings', icon: 'cog', phone: 'more' }

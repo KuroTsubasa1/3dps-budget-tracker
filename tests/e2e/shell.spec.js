@@ -4,7 +4,7 @@ import { NAV_ITEMS } from '../../utils/navigation.js'
 const SETTINGS_KEY = 'budget-tracker-settings'
 const TRANSACTIONS_KEY = 'budget-tracker-transactions'
 
-// Phones reach Reports, Business Card and Settings through the More sheet; the side rail lists every page.
+// Phones reach Calendar, Reports, Business Card and Settings through the More sheet; the side rail lists every page.
 // Returns the control that should now be marked current.
 const goTo = async (page, item) => {
   const nav = page.getByRole('navigation', { name: 'Primary' })
@@ -72,13 +72,13 @@ test.describe('app shell', () => {
     await expect(more).not.toHaveAttribute('aria-current', 'page')
     await more.click()
     const sheet = page.getByRole('dialog', { name: 'More' })
-    await expect(sheet.getByRole('link')).toHaveText(['Reports', 'Business Card', 'Settings'])
+    await expect(sheet.getByRole('link')).toHaveText(['Calendar', 'Reports', 'Business Card', 'Settings'])
     await sheet.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.waitForURL(url => url.pathname === '/settings')
     await expect(sheet).toHaveCount(0)
     await expect(more).toHaveAttribute('aria-current', 'page')
 
-    for (const path of ['/reports', '/business-card']) {
+    for (const path of ['/calendar', '/reports', '/business-card']) {
       await gotoReady(page, path)
       await expect(more).toHaveAttribute('aria-current', 'page')
     }
@@ -98,13 +98,13 @@ test.describe('app shell', () => {
     await expect(sheet).toHaveCount(0)
   })
 
-  test('the side nav lists all seven pages', async ({ page, isMobile }) => {
+  test('the side nav lists all eight pages', async ({ page, isMobile }) => {
     test.skip(isMobile, 'The side nav is for larger screens')
     await gotoReady(page, '/business-card')
     const nav = page.getByRole('navigation', { name: 'Primary' })
     const links = nav.getByRole('link')
-    await expect(links).toHaveCount(7)
-    const labels = ['Dashboard', 'Catalog', 'Commissions', 'Print board', 'Reports', 'Business Card', 'Settings']
+    await expect(links).toHaveCount(8)
+    const labels = ['Dashboard', 'Catalog', 'Commissions', 'Print board', 'Calendar', 'Reports', 'Business Card', 'Settings']
     for (const [index, label] of labels.entries()) await expect(links.nth(index)).toHaveAccessibleName(label)
     await expect(nav.getByRole('button', { name: 'More', exact: true })).toHaveCount(0)
   })

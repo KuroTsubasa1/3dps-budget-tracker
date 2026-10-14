@@ -6,6 +6,7 @@ import { useInventory } from './useInventory'
 import { newRecordId } from '~/utils/inventory'
 import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds } from '~/utils/transactions'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
+import { forgetCopy } from '~/utils/calendar/copy'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
 const SALE_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -255,8 +256,9 @@ export const useTransactions = () => {
     const newTransaction = {
       id: Date.now(),
       ...transaction,
-      // Sent as the PocketBase record id and kept in the queue, so a retry can tell it already exists
-      recordId: newRecordId(),
+      // Sent as the PocketBase record id and kept in the queue, so a retry can tell it already exists.
+      // A caller that must point at the record before it exists (the stand fee) passes its own.
+      recordId: transaction.recordId || newRecordId(),
       amount: Number(transaction.amount),
       date: transaction.date || localDate()
     }
@@ -376,6 +378,8 @@ export const useTransactions = () => {
     orphans.value = []
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(ORPHANS_KEY)
+    // The calendar's offline copy goes with the rest of the owner's data
+    forgetCopy(localStorage)
     if (keepQueue) {
       clearCompletedItems()
     } else {
