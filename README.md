@@ -24,7 +24,7 @@ Akinai is an installable web app for one owner. It runs on the phone at the mark
 | | |
 |---|---|
 | **Sales** | The dashboard shows the balance, today's takings and the Japan savings (10%). A sale can be typed in with the numpad or rung up from the catalog. Sales made offline are queued and sync once the connection is back. |
-| **Catalog and deals** | Articles with photos, categories with base prices, and the stock of each article. Cart deals ("Keychain 2 for 7", "Big items") are applied at checkout. Every stock change is recorded as a movement. |
+| **Catalog and deals** | Articles with photos, categories with base prices, and the stock of each article, set with one "Stock now" field. Cart deals ("Keychain 2 for 7", "Big items") are applied at checkout. A gatcha (an article with prize categories) asks for its prizes right after the checkout, also offline; the prizes' stock goes down, not the gatcha's. Every stock change is recorded as a movement. |
 | **Commissions** | Made-to-order prints with several articles, from Open to Printing, Ready and Delivered. Delivering books the income. Customer data is wiped six months after a commission is finished. |
 | **Print board** | What to print next: articles at or below their low-stock threshold, and open commissions. It also shows what is printing and what was done today. |
 | **Reports** | Sales by article and category, a market day hour by hour, money over time and stock (what runs out soonest, printed vs sold), for any period. Each tab exports as CSV. |
@@ -202,6 +202,16 @@ Run these yourself, in this order. Each step names what to check.
    The status line then reads `Reminders last checked <time>` (or shows the last error).
 
 The calendar link contains `CALENDAR_SECRET`, so it shows up in nginx access logs, and anyone who has the link can read the whole feed. Treat it like a password. A new `CALENDAR_SECRET` ends every existing calendar subscription; add the new link on each phone again.
+
+### Rollout: gatcha prizes and reminder delivery
+
+Run these yourself, in this order.
+
+1. **Schema.** Run `npm run pb:migrate`. The dry run should list only `add to "budget_tracket_catalog": prize_categories`. Then run `npm run pb:migrate -- --apply`. The rules do not change, so no `--apply-rules` is needed (if you run `--apply-rules` later, pass both `--owner` and `--notifier`). Run it **before** the deploy: until the field exists, PocketBase ignores the prize categories the app saves.
+2. **Deploy.** Push to `main`.
+3. **The gatcha.** In the catalog, tap *Manage*, open GatchaPon, tick its prize categories and tap *Save changes*. Its card now shows `Gatcha`. Its own stock no longer changes. If it should not count in Reports → Stock value, set it to 0 once with *Stock now*.
+4. **Notifications.** Open Settings → Notifications on the phone. A phone that showed "on" without a record on the server is registered again here. The status line should read `Reminders last checked …`, not `No device has notifications on`.
+5. **The log.** Once a reminder is due, `pm2 logs budget-tracker` shows one line per run, for example `[reminders] sent 1, removed 0, failed 0`. While no device is registered, a due reminder waits (`waiting 1 (no device)`) instead of being used up, until it is more than 24 hours late.
 
 ## Credits
 

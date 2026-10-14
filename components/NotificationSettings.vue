@@ -55,6 +55,8 @@ import { statusText } from '~/utils/push'
 const { state, status, refreshState, loadStatus, turnOn, turnOff, sendTest, calendarLink } = usePushNotifications()
 const { toast } = useToast()
 
+const UNREGISTERED = "This device isn't registered on the server. Turn notifications on again."
+
 const offline = ref(false)
 const busy = ref('')
 const error = ref('')
@@ -71,8 +73,11 @@ const load = async () => {
   if (offline.value) return
   try {
     const current = await loadStatus()
-    // The server's key is known now: a subscription made with another key is not "on"
-    await refreshState()
+    // The server's key is known now: a subscription made with another key is not "on". An "on" device
+    // must also be registered on the server; a missing record is put back
+    const registration = await refreshState({ checkServer: current.configured })
+    if (registration === 'unregistered') error.value = UNREGISTERED
+    if (registration === 'recreated') await loadStatus().catch(() => {})
     if (current.feed) link.value = await calendarLink()
   } catch (err) {
     error.value = err?.statusCode === 401 ? 'Log in again to manage notifications' : 'Could not reach the server. Try again later.'

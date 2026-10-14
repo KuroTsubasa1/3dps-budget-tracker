@@ -44,22 +44,60 @@ export const usePushNotifications = () => {
     for (const record of records) await pb.collection(SUBSCRIPTIONS).delete(record.id)
   }
 
-  // Works out this device's state; never throws
-  const refreshState = async () => {
+  // Stores this device's subscription on the server. The endpoint is unique: a record that is already
+  // there counts as stored. Any other failure throws.
+  const createRecord = async (endpoint, keys) => {
+    try {
+      await pb.collection(SUBSCRIPTIONS).create({ endpoint, keys, device: deviceName(navigator.userAgent) })
+    } catch (error) {
+      if (!(error?.status === 400 && error.response?.data?.endpoint)) throw error
+    }
+  }
+
+  // The browser can hold a subscription the server never stored (a save that was lost): it would look "on"
+  // and get nothing. Re-creates the missing record; false when this device cannot be registered.
+  const ensureRegistered = async (subscription) => {
+    const { endpoint, keys } = subscription.toJSON()
+    if (!isPushEndpointAllowed(endpoint)) return false
+    const records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+    if (records.length) return true
+    await createRecord(endpoint, keys)
+    return 'recreated'
+  }
+
+  // Works out this device's state; never throws. With `checkServer` (Settings, online, as the owner) an
+  // "on" device must also be on the server. Returns 'recreated' when its record was put back, and
+  // 'unregistered' when that failed (the state is then 'off').
+  const refreshState = async ({ checkServer = false } = {}) => {
     const supported = support()
     if (supported !== 'ok') {
       state.value = supported
-      return
+      return ''
     }
     if (Notification.permission === 'denied') {
       state.value = 'denied'
-      return
+      return ''
     }
+    let subscription = null
     try {
-      const subscription = await currentSubscription()
-      state.value = subscription && usesCurrentKey(subscription) && Notification.permission === 'granted' ? 'on' : 'off'
+      subscription = await currentSubscription()
     } catch {
       state.value = 'off'
+      return ''
+    }
+    const on = !!subscription && usesCurrentKey(subscription) && Notification.permission === 'granted'
+    if (!on || !checkServer || !navigator.onLine || !pb.authStore.isValid) {
+      state.value = on ? 'on' : 'off'
+      return ''
+    }
+    try {
+      const registered = await ensureRegistered(subscription)
+      state.value = registered ? 'on' : 'off'
+      if (!registered) return 'unregistered'
+      return registered === 'recreated' ? 'recreated' : ''
+    } catch {
+      state.value = 'off'
+      return 'unregistered'
     }
   }
 
@@ -95,14 +133,11 @@ export const usePushNotifications = () => {
       throw new Error("This browser's push service isn't supported. Use Safari on iPhone, or Chrome, Firefox or Edge.")
     }
     try {
-      await pb.collection(SUBSCRIPTIONS).create({ endpoint, keys, device: deviceName(navigator.userAgent) })
+      await createRecord(endpoint, keys)
     } catch (error) {
-      // The endpoint is unique: this device is already on the server
-      if (!(error?.status === 400 && error.response?.data?.endpoint)) {
-        // Not stored, so not on: don't leave a browser subscription the server doesn't know
-        if (created) await subscription.unsubscribe().catch(() => {})
-        throw error
-      }
+      // Not stored, so not on: don't leave a browser subscription the server doesn't know
+      if (created) await subscription.unsubscribe().catch(() => {})
+      throw error
     }
     state.value = 'on'
   }

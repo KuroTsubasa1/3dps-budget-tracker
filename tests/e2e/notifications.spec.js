@@ -1,4 +1,4 @@
-import { test, expect, gotoReady } from './fixtures.js'
+import { test, expect, gotoReady, TEST_VAPID_KEY } from './fixtures.js'
 
 // The status line shows Berlin time
 test.use({ timezoneId: 'Europe/Berlin' })
@@ -51,6 +51,8 @@ const stubPush = (page, { permission = 'default', answer = 'granted', existingKe
 }, { permission, answer, endpoint: stubEndpoint, existingKey })
 
 const open = page => gotoReady(page, '/settings#notifications')
+// The bytes of the server's key, for a browser subscription made with it
+const CURRENT_KEY = [...Buffer.from(TEST_VAPID_KEY, 'base64url')]
 const status = page => page.getByTestId('push-status')
 
 test.describe('notifications', () => {
@@ -146,6 +148,54 @@ test.describe('notifications', () => {
     await stubPush(page)
     await open(page)
     await expect(status(page)).toHaveText('Reminders last checked Wed 14 Oct, 13:05 · Apple answered 410 for a device; it was removed')
+  })
+
+  test('a device the browser has on but the server does not know is registered again on load', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY })
+    await open(page)
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    await expect.poll(() => api.db.push_subscriptions.length).toBe(1)
+    expect(api.db.push_subscriptions[0]).toMatchObject({ endpoint: ENDPOINT, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } })
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    // A second load finds the record and creates nothing
+    await page.reload()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    expect(api.db.push_subscriptions).toHaveLength(1)
+  })
+
+  test('a device that cannot be registered again shows off, with a message', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    api.fail('push_subscriptions', 500)
+    await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY })
+    await open(page)
+    await expect(page.getByRole('alert')).toHaveText("This device isn't registered on the server. Turn notifications on again.")
+    await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
+    await expect(page.getByText('Notifications are on for this device')).toHaveCount(0)
+    expect(api.db.push_subscriptions).toEqual([])
+  })
+
+  test('a browser subscription outside the allowed push services is never registered', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY, endpoint: 'https://push.example.com/x' })
+    await open(page)
+    await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
+    expect(api.requests.filter(request => request.path.includes('push_subscriptions'))).toEqual([])
+  })
+
+  test('offline, the browser\'s own state is shown without asking the server', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY })
+    // The device reports no connection while Settings loads
+    await page.addInitScript(() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false }))
+    await open(page)
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    expect(api.requests.filter(request => request.path.includes('push_subscriptions'))).toEqual([])
+    expect(api.db.push_subscriptions).toEqual([])
   })
 
   test('blocked notifications explain how to allow them again', async ({ page, api }) => {
