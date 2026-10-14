@@ -810,7 +810,7 @@
   {
     "id": "4gkowel673mbuac",
     "created": "2026-10-14 13:08:51.383Z",
-    "updated": "2026-10-14 13:11:05.485Z",
+    "updated": "2026-10-14 13:19:52.888Z",
     "name": "conventions",
     "type": "base",
     "system": false,
@@ -1040,7 +1040,7 @@
     "listRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
     "viewRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
     "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
-    "updateRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "updateRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\" && @request.data.name:isset = false && @request.data.city:isset = false && @request.data.venue:isset = false && @request.data.hall:isset = false && @request.data.table:isset = false && @request.data.starts_on:isset = false && @request.data.ends_on:isset = false && @request.data.status:isset = false && @request.data.applications_open:isset = false && @request.data.applications_close:isset = false && @request.data.results_expected:isset = false && @request.data.setup_at:isset = false && @request.data.stand_fee:isset = false && @request.data.fee_paid_at:isset = false && @request.data.fee_transaction:isset = false)",
     "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   },
