@@ -173,7 +173,7 @@
   {
     "id": "j0cxry2bb8mlusa",
     "created": "2025-04-11 23:48:59.661Z",
-    "updated": "2026-10-14 01:54:43.965Z",
+    "updated": "2026-10-14 13:08:54.527Z",
     "name": "budget_tracker_transactions",
     "type": "base",
     "system": false,
@@ -246,6 +246,31 @@
           "min": null,
           "max": null,
           "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      {
+        "system": false,
+        "id": "2cop7ofw",
+        "name": "items",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "wx8k0hwe",
+        "name": "sold_at",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
         }
       }
     ],
@@ -780,6 +805,301 @@
     "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "updateRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "options": {}
+  },
+  {
+    "id": "4gkowel673mbuac",
+    "created": "2026-10-14 13:08:51.383Z",
+    "updated": "2026-10-14 13:08:51.383Z",
+    "name": "conventions",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {
+        "system": false,
+        "id": "ndikhfzi",
+        "name": "name",
+        "type": "text",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "okkbrlmy",
+        "name": "city",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "skywtquy",
+        "name": "venue",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "kqjqe2ao",
+        "name": "hall",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "vmld5wgy",
+        "name": "table",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "1wxhvwhg",
+        "name": "starts_on",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "ohh7iekm",
+        "name": "ends_on",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "xjqjvlcd",
+        "name": "status",
+        "type": "select",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "interested",
+            "applied",
+            "booked",
+            "rejected",
+            "cancelled"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "i5qohemj",
+        "name": "applications_open",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "zvrdx9do",
+        "name": "applications_close",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "pod3bxdo",
+        "name": "results_expected",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "e5s1skba",
+        "name": "setup_at",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "8gox8kv9",
+        "name": "stand_fee",
+        "type": "number",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": 0,
+          "max": null,
+          "noDecimal": false
+        }
+      },
+      {
+        "system": false,
+        "id": "t1kjhguo",
+        "name": "fee_paid_at",
+        "type": "date",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": "",
+          "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "skmz8xrw",
+        "name": "fee_transaction",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "tg2ywuov",
+        "name": "reminders",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 200000
+        }
+      }
+    ],
+    "indexes": [],
+    "listRule": null,
+    "viewRule": null,
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
+    "options": {}
+  },
+  {
+    "id": "t12zr5at6uc3rlr",
+    "created": "2026-10-14 13:08:52.960Z",
+    "updated": "2026-10-14 13:08:52.960Z",
+    "name": "push_subscriptions",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {
+        "system": false,
+        "id": "xo92wwwj",
+        "name": "endpoint",
+        "type": "url",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "exceptDomains": null,
+          "onlyDomains": null
+        }
+      },
+      {
+        "system": false,
+        "id": "yzscwmvw",
+        "name": "keys",
+        "type": "json",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
+        }
+      },
+      {
+        "system": false,
+        "id": "ey7jlunq",
+        "name": "device",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX `idx_push_subscriptions_endpoint` ON `push_subscriptions` (`endpoint`)"
+    ],
+    "listRule": null,
+    "viewRule": null,
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
     "options": {}
   }
 ]
