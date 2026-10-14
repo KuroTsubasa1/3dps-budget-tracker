@@ -132,7 +132,7 @@ export const unconfirmedCount = ({ transactions, serverIds, pending }) => {
   }).length
 }
 
-const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`
+export const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`
 const csvRow = (entry, status) =>
   [entry.id, entry.description, entry.amount, entry.date, entry.notes, status].map(csvField).join(',')
 

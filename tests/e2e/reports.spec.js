@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { test, expect } from './fixtures.js'
 import { REPORT_TIMEZONE, openReports } from './report-data.js'
 
@@ -143,5 +144,37 @@ test.describe('reports', () => {
     await expect(page.getByText('No transactions in this period')).toBeVisible()
     await reportChip(page, 'Stock').click()
     await expect(page.getByText('Nothing printed or sold in this period')).toBeVisible()
+  })
+
+  test('Export downloads the current tab as CSV for the period', async ({ page, api }) => {
+    await openReports(page, api)
+    await expect(rowsOf(page, 'Top articles')).toHaveCount(2)
+    const [sales] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()])
+    expect(sales.suggestedFilename()).toBe('report-sales-2026-10-01-2026-10-31.csv')
+    expect(readFileSync(await sales.path(), 'utf8').split('\n')).toEqual([
+      '"Article","Units","Revenue"',
+      '"Glurak Figure","2","60.00"',
+      '"Pikachu Keychain","6","11.00"'
+    ])
+
+    await reportChip(page, 'Money').click()
+    await periodChip(page, 'Week').click()
+    await expect(page.getByTestId('money-income')).toContainText('41,00')
+    const [money] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()])
+    expect(money.suggestedFilename()).toBe('report-money-2026-10-12-2026-10-18.csv')
+    expect(readFileSync(await money.path(), 'utf8').split('\n')).toEqual([
+      '"Period","Income","Expenses","Profit","Balance"',
+      '"12 Oct","41.00","0.00","41.00","111.00"'
+    ])
+  })
+
+  test('Export is off while a tab needs a connection', async ({ page, api, context }) => {
+    await openReports(page, api)
+    await expect(rowsOf(page, 'Top articles')).toHaveCount(2)
+    await context.setOffline(true)
+    await expect(page.getByText('Needs a connection')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeDisabled()
+    await reportChip(page, 'Money').click()
+    await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeEnabled()
   })
 })

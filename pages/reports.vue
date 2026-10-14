@@ -1,6 +1,12 @@
 <template>
   <div>
-    <PageHeader title="Financial Reports" subtitle="Analyze your income and expense trends" />
+    <PageHeader title="Financial Reports" subtitle="Analyze your income and expense trends">
+      <template #actions>
+        <BaseButton variant="secondary" icon="download" aria-label="Export" :disabled="!canExport" @click="exportCsv">
+          <span class="hidden sm:inline">Export</span>
+        </BaseButton>
+      </template>
+    </PageHeader>
 
     <div class="no-scrollbar -mx-4 mb-3 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Time period">
       <button
@@ -68,11 +74,13 @@ import StockReport from '~/components/reports/StockReport.vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useReportData } from '~/composables/useReportData'
 import { localDate } from '~/utils/transactions'
-import { PERIODS, periodRange, inPeriod, bucketFor } from '~/utils/reports/period'
+import { PERIODS, periodRange, inPeriod, bucketFor, rangeDays } from '~/utils/reports/period'
 import { salesSummary } from '~/utils/reports/sales'
 import { marketDays, dayReport, compareWithPrevious } from '~/utils/reports/marketDay'
 import { moneySeries } from '~/utils/reports/money'
 import { stockValue, runsOutSoonest, printedVsSold, commissionFigures } from '~/utils/reports/stock'
+import { reportTable, toCsv } from '~/utils/reports/csv'
+import { downloadText } from '~/utils/download'
 
 definePageMeta({ middleware: 'owner' })
 
@@ -126,4 +134,18 @@ const stock = computed(() => ({
   printed: printedVsSold(data.value.movements, range.value, data.value.articles),
   commissions: commissionFigures(data.value.commissions, range.value)
 }))
+
+// Export writes the current tab's table for the period; off while a server tab shows no figures
+const canExport = computed(() => !(needsData.value && (needsConnection.value || error.value || loading.value)))
+const FIGURES = {
+  sales: () => sales.value,
+  market: () => ({ day: selectedDay.value, report: dayFigures.value }),
+  money: () => money.value,
+  stock: () => stock.value
+}
+const exportCsv = () => {
+  const { first, last } = rangeDays(range.value)
+  const table = reportTable(report.value, FIGURES[report.value]())
+  downloadText(`report-${report.value}-${first}-${last}.csv`, toCsv(table), 'text/csv')
+}
 </script>
