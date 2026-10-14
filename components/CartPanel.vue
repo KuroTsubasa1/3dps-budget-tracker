@@ -12,7 +12,7 @@
           <p class="truncate text-xs tabular-nums text-ink-muted">
             {{ formatCurrency(priceOf(item)) }} each · {{ formatCurrency(priceOf(item) * item.quantity) }}
           </p>
-          <p v-if="item.quantity > item.stock" class="text-xs font-medium text-warning">
+          <p v-if="item.quantity > item.stock && !isGatcha(item)" class="text-xs font-medium text-warning">
             only {{ Math.max(0, item.stock) }} in stock
           </p>
         </div>
@@ -56,6 +56,7 @@
 
 <script setup>
 import { formatCurrency } from '~/utils/currency'
+import { isGatcha } from '~/utils/gatcha'
 
 defineProps({
   items: { type: Array, required: true },

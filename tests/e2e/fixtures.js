@@ -84,6 +84,7 @@ export const test = base.extend({
           description: '',
           price: 0,
           category: 'cat-figure',
+          prize_categories: [],
           ...article
         })))
         // Stock is derived from the movement log, so seeded stock needs a real opening movement

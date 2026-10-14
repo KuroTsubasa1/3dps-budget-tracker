@@ -14,7 +14,7 @@ const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 
 const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
-  budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '' },
+  budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '', prize_categories: [] },
   stock_movements: { note: '' },
   budget_tracker_transactions: { notes: '' },
   deals: {},

@@ -103,7 +103,11 @@
             </div>
             <div class="flex flex-1 flex-col gap-2 p-3">
               <h3 class="line-clamp-2 break-words text-sm font-semibold text-ink">{{ product.name }}</h3>
-              <span class="self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="STOCK_BADGE[stockStatus(product.stock, product.low_stock_threshold)]">
+              <!-- A gatcha's own stock never changes: its prizes' stock does -->
+              <span v-if="isGatcha(product)" class="self-start rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                Gatcha
+              </span>
+              <span v-else class="self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="STOCK_BADGE[stockStatus(product.stock, product.low_stock_threshold)]">
                 {{ stockLabel(product) }}
               </span>
               <span v-if="dealHint(product)" class="self-start rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
@@ -212,6 +216,7 @@ import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
 import { saleLines } from '~/utils/reports/lines'
 import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
+import { isGatcha } from '~/utils/gatcha'
 
 const STOCK_BADGE = {
   out: 'bg-expense/10 text-expense',
@@ -389,8 +394,9 @@ const submitToBalance = () => {
   const productNames = selectedProducts.value
     .map(product => `${product.name} (${formatCurrency(priceOf(product))} × ${product.quantity})`)
     .join('\n')
-  // Overselling is allowed: the movement deducts what is left and notes the rest
-  const stockMovements = selectedProducts.value.map(product => ({
+  // Overselling is allowed: the movement deducts what is left and notes the rest.
+  // A gatcha's own stock is never touched: the prizes picked for it are.
+  const stockMovements = selectedProducts.value.filter(product => !isGatcha(product)).map(product => ({
     id: newRecordId(),
     article: product.id,
     ...saleMovement(product.stock, product.quantity)
@@ -411,7 +417,7 @@ const submitToBalance = () => {
   })
 
   products.value.forEach((product) => {
-    if (product.quantity) product.stock = Math.max(0, product.stock - product.quantity)
+    if (product.quantity && !isGatcha(product)) product.stock = Math.max(0, product.stock - product.quantity)
     product.quantity = 0
   })
   isCartOpen.value = false

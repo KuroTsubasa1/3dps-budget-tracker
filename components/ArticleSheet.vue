@@ -34,6 +34,17 @@
         <p class="hint">Empty = 2× low-stock threshold</p>
       </div>
 
+      <fieldset>
+        <legend class="label">Prize categories</legend>
+        <div class="divide-y divide-line rounded-lg border border-line">
+          <label v-for="category in categories" :key="category.id" class="flex min-h-[44px] cursor-pointer items-center gap-3 px-3">
+            <input v-model="form.prizeCategories" type="checkbox" :value="category.id" class="h-5 w-5 rounded border-line text-accent focus:ring-accent/30">
+            <span class="min-w-0 flex-1 truncate text-sm text-ink">{{ category.name }}</span>
+          </label>
+        </div>
+        <p class="hint">With any category ticked this is a gatcha: after a sale you pick a prize from these categories, and the prize's stock goes down instead</p>
+      </fieldset>
+
       <div v-if="!article">
         <label for="article-stock" class="label">Starting stock</label>
         <input id="article-stock" v-model="form.startingStock" type="text" inputmode="numeric" class="input" placeholder="0">
@@ -97,6 +108,7 @@ import { useInventory } from '~/composables/useInventory'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { correctionMovement, newRecordId } from '~/utils/inventory'
+import { prizeCategoriesOf } from '~/utils/gatcha'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -109,7 +121,7 @@ const { createArticle, updateArticle, deleteArticle } = useArticles()
 const { applyMovements } = useInventory()
 const { toast } = useToast()
 
-const emptyForm = () => ({ name: '', category: '', price: '', lowStockThreshold: '2', targetStock: '', startingStock: '', description: '' })
+const emptyForm = () => ({ name: '', category: '', price: '', lowStockThreshold: '2', targetStock: '', startingStock: '', description: '', prizeCategories: [] })
 
 const form = ref(emptyForm())
 const keptImages = ref([])
@@ -132,7 +144,8 @@ watch(() => props.open, (isOpen) => {
         lowStockThreshold: String(article.low_stock_threshold ?? 2),
         targetStock: Number(article.target_stock) > 0 ? String(article.target_stock) : '',
         startingStock: '',
-        description: article.description || ''
+        description: article.description || '',
+        prizeCategories: [...prizeCategoriesOf(article)]
       }
     : emptyForm()
   keptImages.value = article ? [...(article.images || [])] : []
@@ -184,7 +197,9 @@ const save = async () => {
     low_stock_threshold: parseNumber(form.value.lowStockThreshold),
     // 0 means "use 2× the threshold"
     target_stock: isBlank(form.value.targetStock) ? 0 : parseNumber(form.value.targetStock),
-    description: form.value.description.trim()
+    description: form.value.description.trim(),
+    // An article with prize categories is a gatcha; a category deleted since then is dropped
+    prize_categories: form.value.prizeCategories.filter(id => props.categories.some(category => category.id === id))
   }
   try {
     let article
