@@ -4,6 +4,7 @@ import { isPushEndpointAllowed } from '~/utils/pushHosts'
 import { pushSupport, deviceName, urlBase64ToUint8Array } from '~/utils/push'
 
 const SUBSCRIPTIONS = 'push_subscriptions'
+const UNSUPPORTED_SERVICE = "This browser's push service isn't supported. Use Safari on iPhone, or Chrome, Firefox or Edge."
 
 // Push on this device: support, permission, subscribing and the server's routes (status, test, calendar link).
 // The server routes need the owner's PocketBase token.
@@ -39,8 +40,10 @@ export const usePushNotifications = () => {
     return actual.length === expected.length && actual.every((byte, index) => byte === expected[index])
   }
 
+  const listRecords = endpoint => pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+
   const deleteRecords = async (endpoint) => {
-    const records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+    const records = await listRecords(endpoint)
     for (const record of records) await pb.collection(SUBSCRIPTIONS).delete(record.id)
   }
 
@@ -54,21 +57,46 @@ export const usePushNotifications = () => {
     }
   }
 
-  // The browser can hold a subscription the server never stored (a save that was lost): it would look "on"
-  // and get nothing. Re-creates the missing record; false when this device cannot be registered, and
-  // 'unknown' when the server could not be asked (nothing is created then). A failed create throws.
+  // A browser subscription the server has no record of may be one it dropped on purpose (the push service
+  // answered 410) or one whose save was lost; either way its endpoint is not stored again. It is given up
+  // and the device subscribes afresh with the server's current key (permission is already granted, so
+  // there is no prompt). The new subscription is stored, or dropped again when that is not possible: the
+  // browser never keeps a subscription the server doesn't know. Returns false for a push service that is
+  // not allowed; a failed create throws.
+  const subscribeAfresh = async (subscription) => {
+    await subscription.unsubscribe()
+    const worker = await registration()
+    if (!worker || !status.value?.publicKey) throw new Error('This device cannot subscribe again right now')
+    const fresh = await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(status.value.publicKey) })
+    const { endpoint, keys } = fresh.toJSON()
+    if (!isPushEndpointAllowed(endpoint)) {
+      await fresh.unsubscribe().catch(() => {})
+      return false
+    }
+    try {
+      await createRecord(endpoint, keys)
+    } catch (error) {
+      await fresh.unsubscribe().catch(() => {})
+      throw error
+    }
+    return true
+  }
+
+  // The browser can hold a subscription the server does not know: it would look "on" and get nothing.
+  // Such a device gets a fresh subscription (subscribeAfresh); returns 'recreated' then, false when this
+  // device cannot be registered, and 'unknown' when the server could not be asked (nothing changes then).
+  // A failed create throws.
   const ensureRegistered = async (subscription) => {
-    const { endpoint, keys } = subscription.toJSON()
+    const { endpoint } = subscription.toJSON()
     if (!isPushEndpointAllowed(endpoint)) return false
     let records
     try {
-      records = await pb.collection(SUBSCRIPTIONS).getFullList({ filter: pb.filter('endpoint = {:endpoint}', { endpoint }) })
+      records = await listRecords(endpoint)
     } catch {
       return 'unknown'
     }
     if (records.length) return true
-    await createRecord(endpoint, keys)
-    return 'recreated'
+    return (await subscribeAfresh(subscription)) ? 'recreated' : false
   }
 
   // Works out this device's state; never throws. With `checkServer` (Settings, online, as the owner) an
@@ -133,6 +161,17 @@ export const usePushNotifications = () => {
       await subscription.unsubscribe()
       subscription = null
     }
+    // One the server has no record of is not stored again under its old endpoint: subscribe afresh
+    if (subscription && isPushEndpointAllowed(subscription.toJSON().endpoint)) {
+      const records = await listRecords(subscription.toJSON().endpoint)
+      if (records.length) {
+        state.value = 'on'
+        return
+      }
+      if (!(await subscribeAfresh(subscription))) throw new Error(UNSUPPORTED_SERVICE)
+      state.value = 'on'
+      return
+    }
     const created = !subscription
     if (created) {
       subscription = await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(status.value.publicKey) })
@@ -141,7 +180,7 @@ export const usePushNotifications = () => {
     // The server only calls the real push services, so a subscription elsewhere could never receive anything
     if (!isPushEndpointAllowed(endpoint)) {
       if (created) await subscription.unsubscribe().catch(() => {})
-      throw new Error("This browser's push service isn't supported. Use Safari on iPhone, or Chrome, Firefox or Edge.")
+      throw new Error(UNSUPPORTED_SERVICE)
     }
     try {
       await createRecord(endpoint, keys)

@@ -18,12 +18,25 @@ const stubPush = (page, { permission = 'default', answer = 'granted', existingKe
     }
   }
   window.PushManager = class PushManager {}
-  const subscription = (key = []) => ({
-    endpoint,
-    options: { applicationServerKey: Uint8Array.from(key).buffer },
-    toJSON: () => ({ endpoint, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } }),
-    unsubscribe: async () => { push.subscription = null; return true }
-  })
+  // Like a real push service, every new subscription gets its own endpoint: the first one is `endpoint`,
+  // later ones `endpoint-2`, `endpoint-3`, ... `unsubscribed` lists the endpoints given up.
+  push.made = 0
+  push.unsubscribed = []
+  const subscription = (key = []) => {
+    push.made += 1
+    const own = push.made === 1 ? endpoint : `${endpoint}-${push.made}`
+    const made = {
+      endpoint: own,
+      options: { applicationServerKey: Uint8Array.from(key).buffer },
+      toJSON: () => ({ endpoint: own, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } }),
+      unsubscribe: async () => {
+        push.unsubscribed.push(own)
+        if (push.subscription === made) push.subscription = null
+        return true
+      }
+    }
+    return made
+  }
   const pushManager = {
     getSubscription: async () => push.subscription,
     subscribe: async (options) => {
@@ -150,19 +163,35 @@ test.describe('notifications', () => {
     await expect(status(page)).toHaveText('Reminders last checked Wed 14 Oct, 13:05 · Apple answered 410 for a device; it was removed')
   })
 
-  test('a device the browser has on but the server does not know is registered again on load', async ({ page, api }) => {
+  test('a device the browser has on but the server does not know gets a fresh subscription on load', async ({ page, api }) => {
     api.enable()
     Object.assign(api.notifier, { configured: true })
+    // The server dropped E1 (lost, or deleted after the push service answered 410): E1 is not stored again
     await stubPush(page, { permission: 'granted', existingKey: CURRENT_KEY })
     await open(page)
     await expect(page.getByText('Notifications are on for this device')).toBeVisible()
     await expect.poll(() => api.db.push_subscriptions.length).toBe(1)
-    expect(api.db.push_subscriptions[0]).toMatchObject({ endpoint: ENDPOINT, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } })
+    const fresh = `${ENDPOINT}-2`
+    expect(api.db.push_subscriptions[0]).toMatchObject({ endpoint: fresh, keys: { p256dh: 'test-p256dh', auth: 'test-auth' } })
+    expect(await page.evaluate(() => ({ endpoint: window.__push.subscription?.endpoint, unsubscribed: window.__push.unsubscribed, subscribed: window.__push.subscribed, keyLength: window.__push.keyLength }))).toEqual({ endpoint: fresh, unsubscribed: [ENDPOINT], subscribed: 1, keyLength: 65 })
+    expect(api.requests.filter(request => request.method === 'POST' && request.body.endpoint === ENDPOINT)).toEqual([])
     await expect(page.getByRole('alert')).toHaveCount(0)
     // A second load finds the record and creates nothing
     await page.reload()
     await expect(page.getByText('Notifications are on for this device')).toBeVisible()
     expect(api.db.push_subscriptions).toHaveLength(1)
+  })
+
+  test('turning on with a browser subscription the server does not know starts a fresh one', async ({ page, api }) => {
+    api.enable()
+    Object.assign(api.notifier, { configured: true })
+    // A subscription from before, but no permission yet: Settings shows off and does not ask the server
+    await stubPush(page, { existingKey: CURRENT_KEY })
+    await open(page)
+    await page.getByRole('button', { name: 'Turn on notifications on this device' }).click()
+    await expect(page.getByText('Notifications are on for this device')).toBeVisible()
+    expect(api.db.push_subscriptions.map(record => record.endpoint)).toEqual([`${ENDPOINT}-2`])
+    expect(await page.evaluate(() => window.__push.unsubscribed)).toEqual([ENDPOINT])
   })
 
   test('a device that cannot be registered again shows off, with a message', async ({ page, api }) => {
@@ -175,6 +204,8 @@ test.describe('notifications', () => {
     await expect(page.getByRole('button', { name: 'Turn on notifications on this device' })).toBeVisible()
     await expect(page.getByText('Notifications are on for this device')).toHaveCount(0)
     expect(api.db.push_subscriptions).toEqual([])
+    // The fresh subscription could not be stored, so the browser does not keep it either
+    expect(await page.evaluate(() => window.__push.subscription)).toBeNull()
   })
 
   test('a server that cannot be asked keeps the browser state and creates nothing', async ({ page, api }) => {
