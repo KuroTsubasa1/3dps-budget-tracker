@@ -478,7 +478,7 @@
   {
     "id": "47ebsejsa31yx0x",
     "created": "2026-10-13 22:24:12.178Z",
-    "updated": "2026-10-13 22:37:00.770Z",
+    "updated": "2026-10-14 00:00:14.165Z",
     "name": "commissions",
     "type": "base",
     "system": false,
@@ -545,7 +545,7 @@
         "id": "calqt5ce",
         "name": "article",
         "type": "relation",
-        "required": true,
+        "required": false,
         "presentable": false,
         "unique": false,
         "options": {
@@ -561,7 +561,7 @@
         "id": "wemb0jrt",
         "name": "quantity",
         "type": "number",
-        "required": true,
+        "required": false,
         "presentable": false,
         "unique": false,
         "options": {
@@ -667,6 +667,18 @@
         "options": {
           "min": "",
           "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "emy8ctgq",
+        "name": "items",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 2000000
         }
       }
     ],
