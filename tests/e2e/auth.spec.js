@@ -109,6 +109,30 @@ test('logging out removes the cached transactions but keeps sales that still nee
   expect(stored.queue.map(item => item.description)).toEqual(['Unsent sale'])
 })
 
+test('a transaction refresh still loading at logout does not write the data back', async ({ page, api }) => {
+  api.seed()
+  api.posted.push({ id: 'srv000000000002', collectionName: 'budget_tracker_transactions', description: 'Commission: Totoro × 1 (Anna Example)', amount: 8, notes: '', created: '2026-10-10 10:00:00.000Z', updated: '2026-10-10 10:00:00.000Z' })
+  await gotoReady(page, '/settings#api')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('budget-tracker-transactions') || '')).toContain('Anna Example')
+
+  // Hold the next transactions read for a moment, then let the fake answer it
+  let held = 0
+  await page.route('**/api/collections/budget_tracker_transactions/records**', async (route) => {
+    if (route.request().method() === 'GET') {
+      held++
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+    await route.fallback()
+  })
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => held).toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await page.waitForURL(url => url.pathname === '/login')
+  await page.waitForTimeout(2000)
+
+  expect(await page.evaluate(() => localStorage.getItem('budget-tracker-transactions'))).toBeNull()
+})
+
 test('transactions are sent with the owner session instead of the shared token', async ({ page, api }) => {
   await api.mockTransactions()
   await gotoReady(page, '/')

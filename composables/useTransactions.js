@@ -18,6 +18,8 @@ let refreshAgain = false
 // Bumped whenever the local list or queue changes, so a refresh that started earlier is redone
 let localVersion = 0
 const isLoading = ref(false)
+// Bumped on logout so a refresh that started before it never writes its answer back
+let sessionGeneration = 0
 const apiError = ref('')
 let autoSyncStarted = false
 let networkListening = false
@@ -98,12 +100,15 @@ export const useTransactions = () => {
       do {
         refreshAgain = false
         const version = localVersion
+        const session = sessionGeneration
         let server
         try {
           server = await pb.collection('budget_tracker_transactions').getFullList({ sort: 'created' })
         } catch {
           return
         }
+        // Logged out while the request was out: never write the answer back to this device
+        if (session !== sessionGeneration || !pb.authStore.isValid) return
         // A sale was added or synced while the request was out: its answer may predate it
         if (version !== localVersion) {
           refreshAgain = true
@@ -312,6 +317,7 @@ export const useTransactions = () => {
   // Logging out must not leave customer names and takings readable on the device. Sales that
   // have not reached the server yet stay queued (they hold no server data) and sync after the next login.
   const forgetLocalData = () => {
+    sessionGeneration++
     transactions.value = []
     orphans.value = []
     localStorage.removeItem(STORAGE_KEY)
