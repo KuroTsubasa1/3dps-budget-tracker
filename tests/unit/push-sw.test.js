@@ -63,3 +63,18 @@ test('tapping a notification focuses an open window on the page, or opens one', 
   await none.dispatch('notificationclick', { notification: { data: { url: '/calendar?c=c1' }, close () {} } })
   assert.deepEqual(none.opened, ['https://akinai.example/calendar?c=c1'])
 })
+
+test('a push whose payload is null or not an object falls back to the defaults', async () => {
+  const worker = loadWorker()
+  await worker.dispatch('push', pushEvent('null'))
+  await worker.dispatch('push', pushEvent('7'))
+  assert.deepEqual(worker.shown.map(item => [item.title, item.data.url]), [['Akinai', '/calendar'], ['Akinai', '/calendar']])
+})
+
+test('a notification that points to another site opens the calendar instead', async () => {
+  for (const url of ['https://evil.example/phish', '//evil.example/x', 'http://']) {
+    const worker = loadWorker()
+    await worker.dispatch('notificationclick', { notification: { data: { url }, close () {} } })
+    assert.deepEqual(worker.opened, ['https://akinai.example/calendar'], url)
+  }
+})

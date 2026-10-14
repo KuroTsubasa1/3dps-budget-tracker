@@ -6,6 +6,7 @@ self.addEventListener('push', (event) => {
   } catch {
     data = { body: event.data ? event.data.text() : '' }
   }
+  if (!data || typeof data !== 'object') data = {}
   event.waitUntil(self.registration.showNotification(data.title || 'Akinai', {
     body: data.body || '',
     icon: '/icons/icon-192x192.png',
@@ -17,7 +18,16 @@ self.addEventListener('push', (event) => {
 // Tapping a notification focuses an open Akinai window on its page, or opens one
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const url = new URL(event.notification.data?.url || '/calendar', self.location.origin).href
+  // Only pages of this site: anything else opens the calendar
+  const target = (path) => {
+    try {
+      const url = new URL(path, self.location.origin)
+      return url.origin === self.location.origin ? url.href : null
+    } catch {
+      return null
+    }
+  }
+  const url = target(event.notification.data?.url || '/calendar') || target('/calendar')
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const open = windows.find(client => new URL(client.url).origin === self.location.origin)

@@ -201,7 +201,7 @@ test('pushes go out with the VAPID details and a day to live', async () => {
   assert.deepEqual(calls, [[
     { endpoint: PHONE.endpoint, keys: PHONE.keys },
     '{"title":"T","body":"B","url":"/calendar?c=x"}',
-    { vapidDetails: { subject: 'mailto:owner@example.com', publicKey: 'pub', privateKey: 'priv' }, TTL: PUSH_TTL_S }
+    { vapidDetails: { subject: 'mailto:owner@example.com', publicKey: 'pub', privateKey: 'priv' }, TTL: PUSH_TTL_S, timeout: 30_000 }
   ]])
   assert.equal(PUSH_TTL_S, 86400)
 })
@@ -311,4 +311,65 @@ test('the notifier finds a device by its endpoint', async () => {
   const notifier = createNotifier({ PocketBaseClass: FakePocketBase, url: 'http://pb.test', email: 'n@example.com', password: 'p' })
   assert.deepEqual(await notifier.findSubscription(PHONE.endpoint), PHONE)
   assert.equal(filter, `endpoint = "${PHONE.endpoint}"`)
+})
+
+test('a failed mark for one convention does not resend the others', async () => {
+  const store = fakeStore({
+    conventions: [
+      convention('a', 'interested', [reminder('r', 'custom', iso(10, 29, 9))]),
+      convention('b', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])
+    ],
+    subscriptions: [PHONE]
+  })
+  const markReminders = store.markReminders.bind(store)
+  store.markReminders = async (id, marks) => {
+    if (id === 'a') throw new Error('PocketBase is unreachable')
+    return markReminders(id, marks)
+  }
+  const { sent, send } = fakeSend()
+  const first = await runReminderJob({ store, send, now: NOW })
+  assert.deepEqual(first.errors, ['PocketBase is unreachable'])
+  await runReminderJob({ store, send, now: local(10, 29, 9, 10) })
+  await runReminderJob({ store, send, now: local(10, 29, 9, 15) })
+  assert.equal(sent.filter(item => item.url === '/calendar?c=b').length, 1)
+  assert.equal(remindersOf(store, 'b')[0].sent_at, NOW.toISOString())
+})
+
+test('a 410 device whose deletion answers 404 still marks the reminder', async () => {
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])],
+    subscriptions: [PHONE]
+  })
+  store.deleteSubscription = async () => { throw Object.assign(new Error('not found'), { status: 404 }) }
+  const summary = await runReminderJob({ store, send: fakeSend({ [PHONE.endpoint]: pushError(410) }).send, now: NOW })
+  assert.deepEqual([summary.sent, summary.failed, summary.errors], [1, 0, []])
+  assert.equal(remindersOf(store, 'dokomi')[0].sent_at, NOW.toISOString())
+})
+
+test('an endpoint that is not a public https address is never contacted and its device is deleted', async () => {
+  const evil = { id: 'sub000000000009', endpoint: 'https://169.254.169.254/latest', keys: { p256dh: 'p', auth: 'a' } }
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])],
+    subscriptions: [evil, PHONE]
+  })
+  const { sent, send } = fakeSend()
+  const summary = await runReminderJob({ store, send, now: NOW })
+  assert.deepEqual(sent.map(item => item.endpoint), [PHONE.endpoint])
+  assert.deepEqual(store.db.subscriptions.map(item => item.id), [PHONE.id])
+  assert.deepEqual([summary.sent, summary.removed], [1, 1])
+})
+
+test('a run that hangs is cut off, its error recorded, and the next run starts', async () => {
+  const store = fakeStore({
+    conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])],
+    subscriptions: [PHONE]
+  })
+  const status = { lastRun: null, lastError: null }
+  const logged = []
+  const runner = createReminderRunner({ store, send: () => new Promise(() => {}), status, log: { error: message => logged.push(message) }, capMs: 20 })
+  const first = runner.run(NOW)
+  assert.equal(await first, null)
+  assert.match(status.lastError, /took too long/)
+  assert.equal(logged.length, 1)
+  assert.notEqual(runner.run(NOW), first)
 })

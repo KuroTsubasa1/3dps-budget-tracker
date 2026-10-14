@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { notifierSettings } from '../../server/utils/notifierSettings.js'
-import { verifyCaller, feedFileMatches } from '../../server/utils/access.js'
+import { verifyCaller, feedFileMatches, isWellFormedAuthorization, isPushEndpointAllowed } from '../../server/utils/access.js'
 
 const OWNER_ID = 'owner0000000001'
 const NOTIFIER_ID = 'notifier0000001'
@@ -21,40 +21,70 @@ function fakeFetch () {
   }
   return { fetch, requests }
 }
-const check = (authorization, fetch) => verifyCaller({ authorization, pocketbaseUrl: 'http://pb.test', allowedIds: [OWNER_ID, NOTIFIER_ID], fetch })
+const check = (authorization, fetch) => verifyCaller({ authorization, pocketbaseUrl: 'http://pb.test', fetch })
 
-test('the owner and the notifier are let in, and the token goes only to auth-refresh', async () => {
+test('a valid token gives the account PocketBase names, and the token goes only to auth-refresh', async () => {
   const { fetch, requests } = fakeFetch()
-  assert.equal(await check(TOKENS.owner, fetch), true)
-  assert.equal(await check(TOKENS.notifier, fetch), true)
+  assert.equal(await check(TOKENS.owner, fetch), OWNER_ID)
+  assert.equal(await check(TOKENS.notifier, fetch), NOTIFIER_ID)
+  assert.equal(await check(TOKENS.stranger, fetch), 'stranger0000001')
   assert.deepEqual(requests[0], { url: 'http://pb.test/api/collections/users/auth-refresh', method: 'POST', authorization: TOKENS.owner })
 })
 
-test('a valid token of any other account is refused', async () => {
-  const { fetch } = fakeFetch()
-  assert.equal(await check(TOKENS.stranger, fetch), false)
+test('the call to PocketBase has a time limit', async () => {
+  let signal
+  await check(TOKENS.owner, async (url, options) => { signal = options.signal; return { ok: false } })
+  assert.ok(signal instanceof AbortSignal)
 })
 
 test('a token PocketBase rejects is refused', async () => {
   const { fetch } = fakeFetch()
-  assert.equal(await check(TOKENS.expired, fetch), false)
+  assert.equal(await check(TOKENS.expired, fetch), null)
 })
 
 test('a missing or malformed header is refused without asking PocketBase', async () => {
   const { fetch, requests } = fakeFetch()
   for (const header of [undefined, '', 'Bearer x', 'not-a-token', `${TOKENS.owner}\nX-Injected: 1`, `${'a'.repeat(5000)}.b.c`]) {
-    assert.equal(await check(header, fetch), false, String(header).slice(0, 20))
+    assert.equal(await check(header, fetch), null, String(header).slice(0, 20))
+    assert.equal(isWellFormedAuthorization(header), false)
   }
+  assert.equal(isWellFormedAuthorization(TOKENS.owner), true)
+  assert.deepEqual(requests, [])
+  assert.equal(await verifyCaller({ authorization: TOKENS.owner, pocketbaseUrl: '', fetch }), null)
   assert.deepEqual(requests, [])
 })
 
-test('without an allow-list, or when PocketBase cannot be reached, nobody is let in', async () => {
-  const { fetch, requests } = fakeFetch()
-  assert.equal(await verifyCaller({ authorization: TOKENS.owner, pocketbaseUrl: 'http://pb.test', allowedIds: ['', null], fetch }), false)
-  assert.deepEqual(requests, [])
-  assert.equal(await check(TOKENS.owner, async () => { throw new Error('offline') }), false)
+test('when PocketBase cannot be reached, nobody is let in', async () => {
+  assert.equal(await check(TOKENS.owner, async () => { throw new Error('offline') }), null)
   // A list-style answer (200, no record) is not proof either
-  assert.equal(await check(TOKENS.owner, async () => ({ ok: true, json: async () => ({ items: [] }) })), false)
+  assert.equal(await check(TOKENS.owner, async () => ({ ok: true, json: async () => ({ items: [] }) })), null)
+})
+
+test('only a 200 with a users record that has a string id counts', async () => {
+  const answer = (ok, body) => async () => ({ ok, status: ok ? 200 : 401, json: async () => body })
+  // A refusal whose body still carries a record
+  assert.equal(await check(TOKENS.owner, answer(false, { record: { collectionName: 'users', id: OWNER_ID } })), null)
+  // A record of another collection
+  assert.equal(await check(TOKENS.owner, answer(true, { record: { collectionName: 'admins', id: OWNER_ID } })), null)
+  // An id that is not a string
+  assert.equal(await check(TOKENS.owner, answer(true, { record: { collectionName: 'users', id: 123 } })), null)
+  assert.equal(await check(TOKENS.owner, answer(true, { record: { collectionName: 'users', id: OWNER_ID } })), OWNER_ID)
+})
+
+test('push endpoints must be https and public', () => {
+  for (const endpoint of ['https://fcm.googleapis.com/fcm/send/abc', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/Q1', 'https://8.8.8.8/x']) {
+    assert.equal(isPushEndpointAllowed(endpoint), true, endpoint)
+  }
+  for (const endpoint of [
+    undefined, '', 'not a url', 'http://fcm.googleapis.com/x', 'ftp://push.example/x',
+    'https://localhost/x', 'https://LOCALHOST./x', 'https://app.localhost/x', 'https://printer.local/x', 'https://nas.local./x', 'https://host.internal/x',
+    'https://127.0.0.1/x', 'https://127.1/x', 'https://2130706433/x', 'https://0x7f.0.0.1/x', 'https://0.0.0.0/x',
+    'https://10.0.0.5/x', 'https://172.16.0.1/x', 'https://172.31.255.255/x', 'https://192.168.1.1/x', 'https://169.254.169.254/latest', 'https://100.64.0.1/x',
+    'https://[::1]/x', 'https://[fe80::1]/x', 'https://[fd00::1]/x', 'https://[::ffff:127.0.0.1]/x', 'https://[2001:db8::1]/x'
+  ]) {
+    assert.equal(isPushEndpointAllowed(endpoint), false, String(endpoint))
+  }
+  assert.equal(isPushEndpointAllowed('https://172.32.0.1/x'), true)
 })
 
 test('the feed link needs the exact secret', () => {
@@ -72,15 +102,18 @@ const FULL = {
   NUXT_PUBLIC_VAPID_PUBLIC_KEY: 'BPub',
   VAPID_PRIVATE_KEY: 'priv',
   VAPID_SUBJECT: 'mailto:owner@example.com',
-  CALENDAR_SECRET: 'feedsecret',
-  NUXT_PUBLIC_POCKETBASE_URL: 'https://pb.example/'
+  CALENDAR_SECRET: 'feedsecret-feedsecret-feedsecret-12',
+  POCKETBASE_URL: 'https://pb.example/'
 }
 
 test('push needs the owner id, the notifier login and the VAPID keys; the feed the owner id, the login and its secret', () => {
   const settings = notifierSettings(FULL)
   assert.deepEqual([settings.push, settings.feed, settings.missing, settings.ownerId], [true, true, [], OWNER_ID])
   assert.equal(settings.pocketbaseUrl, 'https://pb.example')
-  assert.equal(notifierSettings({}).pocketbaseUrl, 'https://pocket.lasseharm.space')
+  // No fallback to the production PocketBase
+  assert.equal(notifierSettings({}).pocketbaseUrl, '')
+  const noUrl = notifierSettings({ ...FULL, POCKETBASE_URL: '' })
+  assert.deepEqual([noUrl.push, noUrl.feed, noUrl.missing], [false, false, ['POCKETBASE_URL']])
   const noKeys = notifierSettings({ ...FULL, VAPID_PRIVATE_KEY: ' ' })
   assert.deepEqual([noKeys.push, noKeys.feed, noKeys.missing], [false, true, ['VAPID_PRIVATE_KEY']])
   // A malformed owner id counts as missing: nobody could pass the check
@@ -88,5 +121,13 @@ test('push needs the owner id, the notifier login and the VAPID keys; the feed t
   assert.deepEqual([badOwner.push, badOwner.feed, badOwner.ownerId, badOwner.missing], [false, false, '', ['OWNER_ID']])
   const nothing = notifierSettings({})
   assert.deepEqual([nothing.push, nothing.feed], [false, false])
-  assert.deepEqual(nothing.missing, ['OWNER_ID', 'NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD', 'NUXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT', 'CALENDAR_SECRET'])
+  assert.deepEqual(nothing.missing, ['POCKETBASE_URL', 'OWNER_ID', 'NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD', 'NUXT_PUBLIC_VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT', 'CALENDAR_SECRET'])
+})
+
+test('the feed secret must be long and URL-safe', () => {
+  for (const secret of ['short', 'a'.repeat(31), `${'a'.repeat(32)}.ics`, `${'a'.repeat(31)} `, `${'a'.repeat(31)}/`]) {
+    const settings = notifierSettings({ ...FULL, CALENDAR_SECRET: secret })
+    assert.deepEqual([settings.feed, settings.push, settings.missing], [false, true, ['CALENDAR_SECRET']], secret)
+  }
+  assert.equal(notifierSettings({ ...FULL, CALENDAR_SECRET: `${'aZ09_-'.repeat(6)}` }).feed, true)
 })
