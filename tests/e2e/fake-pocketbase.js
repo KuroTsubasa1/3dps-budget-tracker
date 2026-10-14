@@ -33,15 +33,22 @@ const parseValue = (raw) => {
   return Number(value)
 }
 
-// Only what the app sends: `field = value` and `field >= value` clauses joined by && and ||, optionally in parentheses
-const CLAUSE = /^\s*(\w+)\s*(>=|=)\s*(.+?)\s*$/
+// Only what the app sends: `field = value` and `field >= / > / <= / < value` clauses joined by && and ||,
+// optionally in parentheses
+const CLAUSE = /^\s*(\w+)\s*(>=|<=|>|<|=)\s*(.+?)\s*$/
 // Dates compare as text; the app writes ISO ("T") and PocketBase filters use a space
 const asDateText = value => String(value ?? '').replace('T', ' ')
+const COMPARE = {
+  '>=': (a, b) => a >= b,
+  '>': (a, b) => a > b,
+  '<=': (a, b) => a <= b,
+  '<': (a, b) => a < b
+}
 const matchesClause = (record, clause) => {
   const [, field, operator, raw] = clause.match(CLAUSE)
   const value = parseValue(raw)
-  if (operator === '>=') return asDateText(record[field]) >= asDateText(value)
-  return record[field] === value
+  if (operator === '=') return record[field] === value
+  return COMPARE[operator](asDateText(record[field]), asDateText(value))
 }
 const matchesFilter = (record, filter) =>
   !filter || filter.replace(/[()]/g, '').split('||').some(group => group.split('&&').every(clause => matchesClause(record, clause)))
@@ -139,6 +146,11 @@ export function createFakePocketBase () {
     const isOwner = authorization === FAKE_TOKEN
 
     if (method === 'GET') {
+      // 'drop' is one-shot here too: the read dies without a reply, like a request lost in transit
+      if (readFailures[name] === 'drop') {
+        readFailures[name] = 0
+        return route.abort()
+      }
       if (readFailures[name]) return reply(readFailures[name], { code: readFailures[name], message: 'Only admins can perform this action.', data: {} })
       const perPage = Number(url.searchParams.get('perPage') || 30)
       if (OWNER_READ_ONLY.has(name) && !isOwner) return reply(200, { page: 1, perPage, totalItems: 0, totalPages: 0, items: [] })

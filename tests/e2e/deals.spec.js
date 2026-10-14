@@ -67,6 +67,34 @@ test.describe('cart deals', () => {
     expect(api.posted[0].amount).toBe(50)
   })
 
+  test('a checkout posts its lines and sale time, and the lines add up to the amount', async ({ page, api }) => {
+    await addToCart(page, 'Pikachu Keychain', 3)
+    await addToCart(page, 'Glurak Figure')
+    await addToCart(page, 'Master Ball')
+    await addToCart(page, 'Golden Pokeball')
+    await openCart(page)
+    // 11 € keychains + 50 € big items + 45 € Golden Pokeball (its own price, no deal)
+    await expect(cart(page).getByTestId('cart-total')).toContainText('106,00')
+    const before = Date.now()
+    await cart(page).getByRole('button', { name: 'Add to Balance' }).click()
+
+    await expect.poll(() => api.posted.length).toBe(1)
+    const sale = api.posted[0]
+    expect(sale.amount).toBe(106)
+    // Cart order is the catalog's (by name); the Big items saving is split by line totals
+    expect(sale.items).toEqual([
+      { article: 'f1', name: 'Glurak Figure', category: 'cat-figure', categoryName: 'Big Figure', quantity: 1, unitPrice: 30, lineTotal: 30, discount: 5, deal: 'deal-bigitems00', dealName: 'Big items' },
+      { article: 'p2', name: 'Golden Pokeball', category: 'cat-pokeball', categoryName: 'Pokeball', quantity: 1, unitPrice: 45, lineTotal: 45, discount: 0, deal: '', dealName: '' },
+      { article: 'p1', name: 'Master Ball', category: 'cat-pokeball', categoryName: 'Pokeball', quantity: 1, unitPrice: 30, lineTotal: 30, discount: 5, deal: 'deal-bigitems00', dealName: 'Big items' },
+      { article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', categoryName: 'Keychain', quantity: 3, unitPrice: 4, lineTotal: 12, discount: 1, deal: 'deal-keychain00', dealName: 'Keychain 2 for 7' }
+    ])
+    const cents = value => Math.round(value * 100)
+    const sum = key => sale.items.reduce((total, line) => total + cents(line[key]), 0)
+    expect(sum('lineTotal') - sum('discount')).toBe(cents(sale.amount))
+    expect(Date.parse(sale.sold_at)).toBeGreaterThanOrEqual(before - 1000)
+    expect(Date.parse(sale.sold_at)).toBeLessThanOrEqual(Date.now())
+  })
+
   test('an overridden article neither gets nor unlocks a deal', async ({ page }) => {
     await addToCart(page, 'Master Ball')
     await addToCart(page, 'Golden Pokeball')

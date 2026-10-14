@@ -1,4 +1,4 @@
-// PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs and owner-only rules.
+// PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs, sale lines and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
 //   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping + commission items (old rules stay)
 //   npm run pb:migrate -- --apply-rules [--owner <email>]  owner-only rules (run after the new app is deployed)

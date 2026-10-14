@@ -1,4 +1,5 @@
 import { test, expect, gotoReady } from './fixtures.js'
+import { openReports } from './report-data.js'
 
 const PAGES = [
   '/',
@@ -154,4 +155,43 @@ test.describe('phone layout sweep', () => {
     expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
     expect(await smallTargets(page)).toEqual([])
   })
+
+  for (const dark of [false, true]) {
+    test(`every report tab fits at 375px with 44px targets${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
+      await page.addInitScript((dark) => {
+        localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))
+      }, dark)
+      await openReports(page, api, {
+        before (api) {
+          // Worst case: an unbroken article name and a seven-digit sale
+          api.db.budget_tracker_transactions.push({
+            id: 'tx0000000000009',
+            collectionName: 'budget_tracker_transactions',
+            description: 'Big order',
+            amount: 1234567.89,
+            notes: '',
+            date: '2026-10-13',
+            created: '2026-10-13 10:00:01.000Z',
+            updated: '2026-10-13 10:00:01.000Z',
+            sold_at: '2026-10-13 10:00:00.000Z',
+            items: [{ article: 'p1', name: longTransaction.description, category: '', categoryName: '', quantity: 1, unitPrice: 1234567.89, lineTotal: 1234567.89, discount: 0, deal: '', dealName: '' }]
+          })
+        }
+      })
+      const tabs = page.getByRole('group', { name: 'Report' })
+      const shown = {
+        Sales: page.getByRole('heading', { name: 'Top articles', exact: true }),
+        'Market day': page.getByRole('combobox', { name: 'Market day' }),
+        Money: page.getByTestId('money-income'),
+        Stock: page.getByTestId('stock-value')
+      }
+      for (const [name, content] of Object.entries(shown)) {
+        await tabs.getByRole('button', { name, exact: true }).click()
+        await expect(content).toBeVisible()
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+        expect(scrollWidth, name).toBeLessThanOrEqual(page.viewportSize().width)
+        expect(await smallTargets(page), name).toEqual([])
+      }
+    })
+  }
 })

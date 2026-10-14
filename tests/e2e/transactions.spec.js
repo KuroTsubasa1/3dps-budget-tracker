@@ -34,6 +34,9 @@ test.describe('home page transactions', () => {
     await expect(page.getByText('Market sale').first()).toBeVisible()
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0]).toMatchObject({ description: 'Market sale', amount: 25 })
+    // A manual entry has no lines and no sale time
+    expect(api.posted[0].items).toBeUndefined()
+    expect(api.posted[0].sold_at).toBeUndefined()
 
     const stored = await storedTransactions(page)
     expect(stored).toHaveLength(1)

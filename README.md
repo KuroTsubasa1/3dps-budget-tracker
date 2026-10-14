@@ -178,6 +178,8 @@ Rollout for the multi-article commissions release: run `npm run pb:migrate` (dry
 
 Rollout for the sale date release: run `npm run pb:migrate` (the dry run should show only `add to "budget_tracker_transactions": date`), then `npm run pb:migrate -- --apply`. Deploy before or after, the order doesn't matter: until the field exists PocketBase ignores the `date` the app sends, and records without one are dated by `created` as before. From then on a sale queued offline or uploaded later keeps the day it was made.
 
+Rollout for the reports release: run `npm run pb:migrate` (the dry run should show only `add to "budget_tracker_transactions": items, sold_at`), then `npm run pb:migrate -- --apply`. Deploy before or after, the order doesn't matter: until the fields exist PocketBase ignores the `items` and `sold_at` the app sends, and those sales count as older sales in the reports (their units come from stock movements). Migrate first to keep the lines of every sale made with the new app.
+
 Afterwards, make one test sale and check it appears in PocketBase.
 
 Each run writes the resulting schema to `pocketbase/schema.json`.

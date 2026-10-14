@@ -344,26 +344,40 @@ test('converting again after applying changes nothing', () => {
 })
 
 const DATE_FIELD = { name: 'date', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
+const SOLD_AT_FIELD = { name: 'sold_at', type: 'date', required: false, presentable: false, options: { min: '', max: '' } }
 const live = () => JSON.parse(readFileSync(new URL('../../pocketbase/schema.json', import.meta.url)))
 
-test('transactions gain an optional sale date field', () => {
+test('transactions gain an optional sale date, sale lines and sale time', () => {
   const op = planSchema(current()).find(item => item.op === 'addFields' && item.collection === TRANSACTIONS)
-  assert.deepEqual(op.fields, [DATE_FIELD])
+  assert.deepEqual(op.fields, [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD])
   assert.ok(new RegExp(DATE_FIELD.options.pattern).test('2026-10-14'))
-  assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date`)
+  assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date, items, sold_at`)
 })
 
-// The snapshot follows production, so it is checked both as it is and as it was before the date field
-const withoutDate = collections => collections.map(collection => collection.name === TRANSACTIONS
-  ? { ...collection, schema: collection.schema.filter(field => field.name !== 'date') }
+// The snapshot follows production, so it is checked as it is and as it was before these fields.
+// Both checks hold before and after `npm run pb:migrate -- --apply` refreshes the snapshot.
+const REPORT_FIELDS = ['items', 'sold_at']
+const withoutFields = (collections, names) => collections.map(collection => collection.name === TRANSACTIONS
+  ? { ...collection, schema: collection.schema.filter(field => !names.includes(field.name)) }
   : collection)
+const withoutDate = collections => withoutFields(collections, ['date', ...REPORT_FIELDS])
 
-test('the live schema needs nothing more', () => {
-  assert.deepEqual(planSchema(live()), [])
+test('the live schema needs nothing beyond the report fields', () => {
+  const has = name => live().find(collection => collection.name === TRANSACTIONS).schema.some(field => field.name === name)
+  const missing = [ITEMS_FIELD, SOLD_AT_FIELD].filter(field => !has(field.name))
+  assert.deepEqual(planSchema(live()), missing.length ? [{ op: 'addFields', collection: TRANSACTIONS, fields: missing }] : [])
 })
 
-test('before the date field the live schema needs exactly that field, and only once', () => {
+test('without the report fields the live schema needs exactly those two, and only once', () => {
+  const before = withoutFields(live(), REPORT_FIELDS)
+  const ops = planSchema(before)
+  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [ITEMS_FIELD, SOLD_AT_FIELD] }])
+  assert.equal(describeOp(ops[0]), `add to "${TRANSACTIONS}": items, sold_at`)
+  assert.deepEqual(planSchema(simulate(before, ops)), [])
+})
+
+test('before the date field the live schema needs it and the report fields, and only once', () => {
   const ops = planSchema(withoutDate(live()))
-  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD] }])
+  assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD] }])
   assert.deepEqual(planSchema(simulate(withoutDate(live()), ops)), [])
 })

@@ -130,6 +130,7 @@ import { useTransactions } from '~/composables/useTransactions'
 import { localDate } from '~/utils/transactions'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
+import { commissionLines } from '~/utils/reports/lines'
 import {
   STATUS_LABEL,
   NEXT,
@@ -293,7 +294,8 @@ const save = async () => {
 const bookDelivery = (record) => {
   emit('changed', record)
   const income = incomeFor(record, props.articles)
-  addTransaction({ ...income, date: localDate() })
+  // The agreed price spread over the commission's lines, for the reports
+  addTransaction({ ...income, date: localDate(), items: commissionLines(record, props.articles), sold_at: new Date().toISOString() })
   toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
 }
 

@@ -230,3 +230,25 @@ test('the CSV quotes every field and lists orphans and sales waiting to sync', (
     '"9","Only queued","4","2026-10-12","","waiting to sync"'
   ])
 })
+
+
+test('fromRecord keeps the sale lines, the sale time and the created stamp for the reports', () => {
+  const items = [{ article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', categoryName: 'Keychain', quantity: 2, unitPrice: 4, lineTotal: 8, discount: 1, deal: 'd1', dealName: 'Keychain 2 for 7' }]
+  const entry = fromRecord({ ...record('a', 'Sale', 7, '2026-10-14 08:30:01.000Z'), date: '2026-10-14', items, sold_at: '2026-10-14 08:30:00.000Z' })
+  assert.deepEqual(entry, {
+    id: 'a',
+    recordId: 'a',
+    description: 'Sale',
+    amount: 7,
+    notes: '',
+    date: '2026-10-14',
+    items,
+    sold_at: '2026-10-14 08:30:00.000Z',
+    created: '2026-10-14 08:30:01.000Z'
+  })
+  // Records from before the reports: PocketBase sends null and '' for the empty fields
+  const older = fromRecord({ ...record('b', 'Old sale', 3), date: '2026-10-12', items: null, sold_at: '' })
+  assert.equal('items' in older, false)
+  assert.equal('sold_at' in older, false)
+  assert.equal(older.created, '2026-10-12 10:00:00.000Z')
+})

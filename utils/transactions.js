@@ -13,7 +13,12 @@ export const fromRecord = record => ({
   description: record.description,
   amount: Number(record.amount),
   notes: record.notes || '',
-  date: record.date || createdDate(record.created)
+  date: record.date || createdDate(record.created),
+  // The reports read these from the cached list, so they work offline too. PocketBase returns an
+  // empty json field as null and an unset date as ''; those are left out.
+  ...(Array.isArray(record.items) && record.items.length ? { items: record.items } : {}),
+  ...(record.sold_at ? { sold_at: record.sold_at } : {}),
+  ...(record.created ? { created: record.created } : {})
 })
 
 const sameSale = (a, b) => a.description === b.description && a.amount === b.amount && a.date === b.date
@@ -127,7 +132,7 @@ export const unconfirmedCount = ({ transactions, serverIds, pending }) => {
   }).length
 }
 
-const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`
+export const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`
 const csvRow = (entry, status) =>
   [entry.id, entry.description, entry.amount, entry.date, entry.notes, status].map(csvField).join(',')
 
