@@ -353,8 +353,17 @@ test('transactions gain an optional sale date field', () => {
   assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date`)
 })
 
-test('the live schema needs exactly the transaction date field, and only once', () => {
-  const ops = planSchema(live())
+// The snapshot follows production, so it is checked both as it is and as it was before the date field
+const withoutDate = collections => collections.map(collection => collection.name === TRANSACTIONS
+  ? { ...collection, schema: collection.schema.filter(field => field.name !== 'date') }
+  : collection)
+
+test('the live schema needs nothing more', () => {
+  assert.deepEqual(planSchema(live()), [])
+})
+
+test('before the date field the live schema needs exactly that field, and only once', () => {
+  const ops = planSchema(withoutDate(live()))
   assert.deepEqual(ops, [{ op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD] }])
-  assert.deepEqual(planSchema(simulate(live(), ops)), [])
+  assert.deepEqual(planSchema(simulate(withoutDate(live()), ops)), [])
 })
