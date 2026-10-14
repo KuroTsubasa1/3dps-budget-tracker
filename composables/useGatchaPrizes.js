@@ -29,6 +29,12 @@ let loaded = false
 let syncRun = null
 let syncAgain = false
 let listening = false
+// The stock the server answered for the last send ({ stocks }, a new object each time), for the catalog
+const syncedStocks = ref(null)
+// While prize changes wait, they are sent again every minute (a failed send on a connection that says it is online)
+const RETRY_EVERY_MS = 60000
+let retryTimer = null
+let retry = () => {}
 
 // localStorage only exists in the browser, so the state is read on first use there
 const load = () => {
@@ -38,10 +44,20 @@ const load = () => {
   outbox.value = readOutbox(localStorage)
 }
 
+const stopRetrying = () => {
+  clearInterval(retryTimer)
+  retryTimer = null
+}
+
 const save = () => {
   writeOpenPrizes(localStorage, open.value)
   writeOutbox(localStorage, outbox.value)
+  if (!outbox.value.length) stopRetrying()
+  else if (!retryTimer) retryTimer = setInterval(() => retry(), RETRY_EVERY_MS)
 }
+
+// What the outbox still changes in an article's stock on the server, to add to the server's figure
+const pendingChange = articleId => outbox.value.reduce((sum, item) => (item.article === articleId ? sum + item.change : sum), 0)
 
 // The fields PocketBase stores; `tried` only lives on this device
 const bodyOf = ({ id, article, change, reason, note }) => ({ id, article, change, reason, note })
@@ -53,6 +69,7 @@ export function forgetGatchaPrizes ({ keepOutbox = true } = {}) {
   open.value = NO_PRIZES
   picks.value = []
   outbox.value = keepOutbox ? readOutbox(localStorage) : []
+  stopRetrying()
   forgetPrizes(localStorage, { keepOutbox })
 }
 
@@ -73,8 +90,9 @@ export const useGatchaPrizes = () => {
         outbox.value = outbox.value.map(item => (item.id === queued.id ? { ...item, tried: true } : item))
         save()
         sending.value = [...sending.value, queued.id]
+        let stocks
         try {
-          await applyMovements([bodyOf(queued)])
+          stocks = await applyMovements([bodyOf(queued)])
         } catch {
           return
         } finally {
@@ -82,6 +100,7 @@ export const useGatchaPrizes = () => {
         }
         outbox.value = outbox.value.filter(item => item.id !== queued.id)
         save()
+        syncedStocks.value = { stocks }
       }
     } while (syncAgain)
   }
@@ -101,10 +120,16 @@ export const useGatchaPrizes = () => {
   // the connection comes back (once per app)
   const startPrizeSync = () => {
     load()
+    retry = syncPrizes
     if (!listening) {
       listening = true
       window.addEventListener('online', () => syncPrizes())
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') syncPrizes()
+      })
     }
+    // Waiting from an earlier visit: keep trying
+    save()
     syncPrizes()
   }
 
@@ -151,5 +176,5 @@ export const useGatchaPrizes = () => {
     if (!open.value.count) picks.value = []
   }
 
-  return { openPrizes: open, picks, outbox, addOpenPrizes, pick, undo, isWaiting, endRound, syncPrizes, startPrizeSync }
+  return { openPrizes: open, picks, outbox, addOpenPrizes, pick, undo, isWaiting, endRound, syncPrizes, startPrizeSync, syncedStocks, pendingChange }
 }

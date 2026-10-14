@@ -15,6 +15,8 @@
           <BaseButton @click="isPrizeSheetOpen = true">Pick now</BaseButton>
         </div>
 
+        <p v-if="isOwner && prizeOutbox.length" class="mb-4 text-sm text-ink-muted" data-testid="prize-waiting">{{ prizeWaiting }}</p>
+
         <div class="mb-4 space-y-3">
           <div class="relative">
             <AppIcon name="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
@@ -390,7 +392,15 @@ const changeStock = (id, by) => {
   if (product) product.stock = Math.max(0, Number(product.stock) + by)
 }
 
-const { openPrizes, addOpenPrizes, startPrizeSync } = useGatchaPrizes()
+const { openPrizes, outbox: prizeOutbox, addOpenPrizes, startPrizeSync, syncedStocks, pendingChange } = useGatchaPrizes()
+// The server's stock after a send, plus what still waits on this device
+watch(syncedStocks, (synced) => {
+  for (const [id, stock] of Object.entries(synced?.stocks || {})) {
+    const product = products.value.find(item => item.id === id)
+    if (product) product.stock = Math.max(0, Number(stock) + pendingChange(id))
+  }
+})
+const prizeWaiting = computed(() => (prizeOutbox.value.length === 1 ? '1 prize change waiting to sync' : `${prizeOutbox.value.length} prize changes waiting to sync`))
 const isPrizeSheetOpen = ref(false)
 const prizeBanner = computed(() => (openPrizes.value.count === 1 ? '1 gatcha prize to pick' : `${openPrizes.value.count} gatcha prizes to pick`))
 

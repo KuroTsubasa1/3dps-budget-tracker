@@ -233,3 +233,155 @@ test.describe('visitors', () => {
     await expect(page.getByTestId('gatcha-banner')).toHaveCount(0)
   })
 })
+
+test.describe('prize sync and its bookkeeping', () => {
+  const pickByName = (page, name) => prizeSheet(page).getByRole('button', { name: new RegExp(`^${name}`) }).click()
+  const waiting = page => page.getByTestId('prize-waiting')
+
+  test('a failed send is tried again when the tab comes back to the foreground', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.failOnce('stock_movements', 500)
+    const failed = page.waitForResponse(response => response.url().includes('stock_movements') && response.status() === 500)
+    await pickByName(page, 'Pikachu Keychain')
+    await failed
+    await expect(prizeSheet(page).getByRole('region', { name: 'Picked' })).toContainText('Waiting to sync')
+    expect(prizeMovements(api)).toEqual([])
+
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await expect.poll(() => prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+    await expect.poll(() => stockOf(api, 'k1')).toBe(1)
+    await expect(waiting(page)).toHaveCount(0)
+  })
+
+  test('a failed send is tried again every minute while it waits', async ({ page, api }) => {
+    await page.clock.install()
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.failOnce('stock_movements', 500)
+    const failed = page.waitForResponse(response => response.url().includes('stock_movements') && response.status() === 500)
+    await pickByName(page, 'Pikachu Keychain')
+    await failed
+    await expect(prizeSheet(page).getByRole('region', { name: 'Picked' })).toContainText('Waiting to sync')
+
+    await page.clock.runFor(61000)
+    await expect.poll(() => prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+    await expect.poll(() => stockOf(api, 'k1')).toBe(1)
+  })
+
+  test('waiting prize changes show on the catalog, also after the round ended', async ({ page, api, context }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 2 })
+    await expect(waiting(page)).toHaveCount(0)
+    await context.setOffline(true)
+    await pickByName(page, 'Pikachu Keychain')
+    await expect(waiting(page)).toHaveText('1 prize change waiting to sync')
+    await pickByName(page, 'Totoro Mini')
+    await expect(prizeSheet(page)).toHaveCount(0)
+    await expect(page.getByTestId('gatcha-banner')).toHaveCount(0)
+    await expect(waiting(page)).toHaveText('2 prize changes waiting to sync')
+    await context.setOffline(false)
+    await expect(waiting(page)).toHaveCount(0)
+    await expect.poll(() => prizeMovements(api).length).toBe(2)
+  })
+
+  test('the catalog takes the stock the server answers after a send', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    // Someone else sold the keychain meanwhile: the server's stock is lower than the catalog shows
+    api.db.stock_movements.push({ id: 'other0000000001', collectionName: 'stock_movements', article: 'k1', change: -1, reason: 'sale', note: '', created: '2999-01-01 00:00:00.000Z' })
+    await checkout(page, { GatchaPon: 1 })
+    await pickByName(page, 'Pikachu Keychain')
+    await expect.poll(() => stockOf(api, 'k1')).toBe(0)
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('Out of stock')
+  })
+
+  test('two gatchas make a plural banner', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 2 })
+    await prizeSheet(page).getByRole('button', { name: 'Later' }).click()
+    await expect(page.getByTestId('gatcha-banner')).toContainText('2 gatcha prizes to pick')
+  })
+
+  test('an undo of a pick queued behind one in flight drops it without a correction', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 2 })
+    api.delayNext('stock_movements', 1500)
+    await pickByName(page, 'Pikachu Keychain')
+    await pickByName(page, 'Zubat Keychain')
+    await prizeSheet(page).getByRole('button', { name: 'Undo Zubat Keychain' }).click()
+    await expect.poll(() => prizeMovements(api).length).toBe(1)
+    await expect(waiting(page)).toHaveCount(0)
+    await expect(prizeSheet(page).getByRole('region', { name: 'Picked' })).not.toContainText('Waiting to sync')
+    expect(prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+    expect(stockOf(api, 'k2')).toBe(1)
+  })
+
+  test('a pick made while another send is in flight is still sent', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 2 })
+    api.delayNext('stock_movements', 1500)
+    await pickByName(page, 'Pikachu Keychain')
+    await pickByName(page, 'Totoro Mini')
+    await expect.poll(() => prizeMovements(api).map(m => m.article).sort()).toEqual(['k1', 'm1'])
+    await expect(waiting(page)).toHaveCount(0)
+  })
+
+  test('a new round after a finished one starts at zero picked', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await pickByName(page, 'Pikachu Keychain')
+    await expect(prizeSheet(page)).toHaveCount(0)
+    await checkout(page, { GatchaPon: 2 })
+    await expect(prizeSheet(page)).toHaveAccessibleName('Gatcha prizes · 0 of 2')
+    await expect(prizeSheet(page).getByRole('region', { name: 'Picked' })).toHaveCount(0)
+  })
+
+  test('logging out keeps a waiting prize change and sends it after the next login', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.fail('stock_movements', 500)
+    await pickByName(page, 'Pikachu Keychain')
+    await expect(waiting(page)).toHaveText('1 prize change waiting to sync')
+    await gotoReady(page, '/settings#api')
+    await page.getByRole('button', { name: 'Log out' }).click()
+    await page.waitForURL(url => url.pathname === '/login')
+    expect(await page.evaluate(() => localStorage.getItem('akinai-gatcha-outbox'))).not.toBeNull()
+    expect(prizeMovements(api)).toEqual([])
+
+    api.fail('stock_movements', 0)
+    await page.getByLabel('Email').fill('owner@example.com')
+    await page.getByLabel('Password').fill('correct-horse')
+    await page.getByRole('button', { name: 'Log in' }).click()
+    await page.waitForURL(url => url.pathname !== '/login')
+    // Client-side navigation: the state the logout left in memory must still be sent, not only what storage holds
+    await page.evaluate(() => window.useNuxtApp().$router.push('/catalog'))
+    await expect.poll(() => prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+  })
+
+  test('Clear All Local Data drops a waiting prize change', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    api.fail('stock_movements', 500)
+    await pickByName(page, 'Pikachu Keychain')
+    await expect(waiting(page)).toHaveCount(1)
+    await gotoReady(page, '/settings#data')
+    expect(await page.evaluate(() => localStorage.getItem('akinai-gatcha-outbox'))).not.toBeNull()
+    await page.getByRole('button', { name: 'Clear All Local Data' }).click()
+    await page.getByRole('button', { name: 'Delete All Data' }).click()
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('akinai-gatcha-outbox'))).toBeNull()
+  })
+
+  test('the picker keeps its live region mounted and announces the count', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    const picker = prizeSheet(page)
+    await expect(picker.getByRole('status')).toHaveCount(1)
+    await expect(picker.getByRole('status')).toHaveText('')
+    await expect(picker.locator('[aria-live="polite"]')).toHaveText('0 of 1 prizes picked')
+    await pickByName(page, 'Pikachu Keychain')
+    await expect(picker.getByRole('status')).toHaveText('All prizes picked')
+  })
+})

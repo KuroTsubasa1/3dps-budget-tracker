@@ -1,9 +1,11 @@
 <template>
   <BottomSheet :open="open" :title="title" @update:open="$emit('update:open', $event)">
     <div class="space-y-4">
-      <p v-if="allPicked" role="status" class="rounded-lg bg-income/10 px-3 py-2 text-sm font-medium text-income">All prizes picked</p>
+      <!-- Always mounted, so screen readers hear its text change -->
+      <p role="status" :class="allPicked ? 'rounded-lg bg-income/10 px-3 py-2 text-sm font-medium text-income' : 'sr-only'">{{ allPicked ? 'All prizes picked' : '' }}</p>
+      <p class="sr-only" aria-live="polite" aria-atomic="true">{{ picks.length }} of {{ picks.length + openPrizes.count }} prizes picked</p>
 
-      <template v-else>
+      <template v-if="!allPicked">
         <div class="relative">
           <AppIcon name="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <input v-model="query" type="text" class="input pl-9" placeholder="Search prizes..." aria-label="Search prizes" autocomplete="off">
