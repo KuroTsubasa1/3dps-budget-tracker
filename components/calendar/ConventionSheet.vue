@@ -150,7 +150,7 @@ const props = defineProps({
   // Offline, or showing the saved copy: everything is read-only
   readOnly: { type: Boolean, default: false }
 })
-const emit = defineEmits(['saved', 'changed', 'deleted'])
+const emit = defineEmits(['saved', 'changed', 'deleted', 'close'])
 
 const { createConvention, updateConvention, deleteConvention, markFeePaid } = useConventions()
 const { toast } = useToast()
@@ -194,6 +194,8 @@ const save = async () => {
       reminders.value = record.reminders ?? []
       emit('changed', record)
       toast('Convention saved')
+      // Done with this convention: the sheet (or the desktop panel) closes; status buttons and the fee keep it open
+      emit('close')
     } else {
       const record = await createConvention(fields, currentReminders())
       emit('saved', record)

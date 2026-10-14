@@ -28,6 +28,7 @@ test.describe('convention calendar', () => {
     ])
     await sheet(page).getByRole('button', { name: 'Create convention' }).click()
     await expect(page.getByText('Convention created')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
 
     await expect.poll(() => api.db.conventions.length).toBe(1)
     const [created] = api.db.conventions
@@ -37,11 +38,29 @@ test.describe('convention calendar', () => {
       ['auto-deadline-1', '2026-10-29T08:00:00.000Z', true]
     ])
 
+    await openRow(page, 'Dokomi')
     await sheet(page).getByLabel('Closes').fill('2026-11-06')
     await expect(remindersIn(page)).toHaveText([/Fri 30 Oct, 09:00/, /Thu 5 Nov, 09:00/])
     await sheet(page).getByRole('button', { name: 'Save changes' }).click()
     await expect.poll(() => api.db.conventions[0].reminders.map(item => item.at)).toEqual(['2026-10-30T08:00:00.000Z', '2026-11-05T08:00:00.000Z'])
     await expect(upcoming(page)).toContainText('Applications close in 23 days')
+  })
+
+  test('Save changes and Create convention close the sheet once saved', async ({ page, api }) => {
+    await openCalendar(page, api, { conventions: [convention('c1', { name: 'Dokomi' })] })
+    await openRow(page, 'Dokomi')
+    await sheet(page).getByLabel('City').fill('Dortmund')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.getByText('Convention saved')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(stored(api, 'c1').city).toBe('Dortmund')
+
+    await page.getByRole('button', { name: 'New convention' }).click()
+    await sheet(page).getByLabel('Name', { exact: true }).fill('Hanami Fest')
+    await sheet(page).getByRole('button', { name: 'Create convention' }).click()
+    await expect(page.getByText('Convention created')).toBeVisible()
+    await expect(sheet(page)).toHaveCount(0)
+    await expect(upcoming(page)).toContainText('Hanami Fest')
   })
 
   test('an edited reminder stays put, a removed one stays gone and a custom one is added', async ({ page, api }) => {

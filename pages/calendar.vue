@@ -35,7 +35,7 @@
                 <AppIcon name="x" class="h-5 w-5" />
               </button>
             </div>
-            <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
+            <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" @close="closePanel" />
           </section>
           <MonthGrid v-show="!(isDesktop && panelOpen)" :conventions="conventions" :now="now" @open="openExisting" />
         </div>
@@ -43,7 +43,7 @@
     </template>
 
     <BottomSheet v-if="!isDesktop" v-model:open="panelOpen" :title="panelTitle">
-      <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" />
+      <ConventionSheet :key="selectedId ?? 'new'" :convention="selected" :read-only="readOnly" @saved="onSaved" @changed="onChanged" @deleted="onDeleted" @close="closePanel" />
     </BottomSheet>
   </div>
 </template>
@@ -160,8 +160,7 @@ const remember = () => saveCopy(conventions.value)
 const onSaved = (record) => {
   conventions.value = [...conventions.value, record]
   remember()
-  creating.value = false
-  selectedId.value = record.id
+  closePanel()
 }
 
 const onChanged = (record) => {
