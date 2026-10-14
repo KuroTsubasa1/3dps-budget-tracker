@@ -3,7 +3,7 @@
     :type="type"
     :disabled="disabled || loading"
     class="btn"
-    :class="[`btn-${variant}`, { 'btn-lg': size === 'lg', 'w-full': block }]"
+    :class="[VARIANT_CLASSES[variant] ?? VARIANT_CLASSES.primary, { 'btn-lg': size === 'lg', 'w-full': block }]"
   >
     <span v-if="loading" class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />
     <AppIcon v-else-if="icon" :name="icon" class="h-4 w-4" />
@@ -12,6 +12,16 @@
 </template>
 
 <script setup>
+// Written out in full: Tailwind only keeps classes it can find in the code, so `btn-${variant}` would be dropped
+const VARIANT_CLASSES = {
+  primary: 'btn-primary',
+  secondary: 'btn-secondary',
+  ghost: 'btn-ghost',
+  danger: 'btn-danger',
+  link: 'btn-link',
+  'danger-ghost': 'btn-danger-ghost'
+}
+
 defineProps({
   variant: { type: String, default: 'primary' },
   size: { type: String, default: 'md' },
