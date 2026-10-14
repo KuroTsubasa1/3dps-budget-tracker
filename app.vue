@@ -3,6 +3,7 @@
     <NuxtPwaManifest />
     <AppSideNav v-if="!chromeless" />
     <div :class="{ 'md:pl-20 lg:pl-60': !chromeless }">
+      <MovedBanner />
       <AppTopBar v-if="!chromeless" />
       <main class="mx-auto max-w-6xl px-4 pt-4 md:px-6 md:pt-6" :class="chromeless ? 'pb-10' : 'pb-nav md:pb-10'">
         <NuxtPage />

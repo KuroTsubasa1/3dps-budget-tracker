@@ -20,6 +20,8 @@ test.describe('installable PWA', () => {
       expect(res.headers()['content-type']).toContain('image/png')
     }
     expect(manifest.theme_color).toBe('#2563eb')
+    expect(manifest.name).toBe('Akinai')
+    expect(manifest.short_name).toBe('Akinai')
   })
 
   test('has an apple touch icon, a png favicon and the accent theme colour', async ({ page, request, baseURL }) => {

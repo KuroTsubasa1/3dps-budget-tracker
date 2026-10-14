@@ -4,6 +4,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   app: {
     head: {
+      title: 'Akinai · 商い',
       viewport: 'width=device-width, initial-scale=1, viewport-fit=cover',
       link: [
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/icon-32x32.png' },
@@ -37,9 +38,9 @@ export default defineNuxtConfig({
   pwa: {
     registerType: 'autoUpdate',
     manifest: {
-      name: 'Budget Tracker',
-      short_name: 'Budget',
-      description: '3DPS Budget Tracking Application',
+      name: 'Akinai',
+      short_name: 'Akinai',
+      description: 'Sales, stock and commissions for the 3D print shop',
       theme_color: '#2563eb',
       background_color: '#ffffff',
       display: 'standalone',

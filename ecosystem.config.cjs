@@ -6,7 +6,7 @@ module.exports = {
       name: 'budget-tracker',
       cwd: __dirname,
       script: '.output/server/index.mjs',
-      // nginx proxies budget-tracker.lasseharm.space to this port; only reachable from the server itself
+      // nginx proxies akinai.lasseharm.space (and the old budget-tracker address) to this port; only reachable from the server itself
       env: {
         NODE_ENV: 'production',
         HOST: '127.0.0.1',

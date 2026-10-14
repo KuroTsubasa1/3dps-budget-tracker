@@ -129,7 +129,7 @@ export const useAppSettings = () => {
       
       if (format === 'json') {
         dataStr = JSON.stringify(exportData, null, 2)
-        filename = `budget-tracker-export-${new Date().toISOString().slice(0, 10)}.json`
+        filename = `akinai-export-${new Date().toISOString().slice(0, 10)}.json`
         
         // Create download link
         const dataBlob = new Blob([dataStr], { type: 'application/json' })
@@ -148,7 +148,7 @@ export const useAppSettings = () => {
       } else if (format === 'csv') {
         // Transactions plus the local entries the server does not have yet, with their status
         dataStr = transactionsCsv({ transactions, orphans, queue: offlineQueue })
-        filename = `budget-tracker-transactions-${new Date().toISOString().slice(0, 10)}.csv`
+        filename = `akinai-transactions-${new Date().toISOString().slice(0, 10)}.csv`
         
         // Create download link
         const dataBlob = new Blob([dataStr], { type: 'text/csv' })

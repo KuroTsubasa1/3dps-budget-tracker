@@ -2,7 +2,10 @@
   <header class="sticky top-0 z-30 border-b border-line bg-card pt-safe print:hidden">
     <div class="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
       <div class="flex min-w-0 items-baseline gap-2">
-        <span class="text-base font-semibold text-ink md:hidden">Budget Tracker</span>
+        <span class="flex items-center gap-2 self-center md:hidden">
+          <img src="/logo.svg" alt="Akinai logo" class="h-7 w-7">
+          <span class="text-base font-semibold text-ink">Akinai</span>
+        </span>
         <span v-if="accountSettings.displayName" class="hidden truncate text-sm text-ink-muted sm:inline">
           {{ accountSettings.displayName }}
         </span>

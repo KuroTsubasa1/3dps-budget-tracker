@@ -177,10 +177,12 @@ test.describe('local entries that are not on the server', () => {
     await expect(page.getByText('Lost sale')).toBeVisible()
 
     const [json] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export as JSON' }).click()])
+    expect(json.suggestedFilename()).toMatch(/^akinai-export-\d{4}-\d{2}-\d{2}\.json$/)
     const exported = JSON.parse(readFileSync(await json.path(), 'utf8'))
     expect(exported.orphans).toEqual([lonely])
 
     const [csv] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export as CSV' }).click()])
+    expect(csv.suggestedFilename()).toMatch(/^akinai-transactions-\d{4}-\d{2}-\d{2}\.csv$/)
     const lines = readFileSync(await csv.path(), 'utf8').split('\n')
     expect(lines.find(line => line.includes('Lost sale'))).toBe('"111","Lost sale","7","2026-10-11","","not on server"')
     expect(lines.find(line => line.includes('Unsent sale'))).toBe('"5","Unsent sale","3","2026-10-14","","waiting to sync"')

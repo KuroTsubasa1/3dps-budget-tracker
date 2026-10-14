@@ -1,7 +1,7 @@
 <template>
   <div class="mx-auto flex min-h-[70vh] max-w-sm flex-col justify-center">
     <h1 class="text-xl font-semibold text-ink">Log in</h1>
-    <p class="mb-6 mt-1 text-sm text-ink-muted">Owner account for Budget Tracker</p>
+    <p class="mb-6 mt-1 text-sm text-ink-muted">Owner account for Akinai</p>
     <form class="space-y-4" novalidate @submit.prevent="submit">
       <p v-if="error" role="alert" class="rounded-lg bg-expense/10 px-3 py-2 text-sm text-expense">{{ error }}</p>
       <div>

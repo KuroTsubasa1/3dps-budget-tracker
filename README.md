@@ -1,6 +1,21 @@
-# 3DPS Budget Tracker
+<div align="center">
 
-A modern, comprehensive budget tracking application built with Vue.js and Nuxt.js. This application helps 3D printing shop owners manage their finances by tracking income and expenses, with special features for calculating savings, managing product catalogs, and creating digital business cards.
+<img src="public/logo.svg" width="104" height="104" alt="Akinai logo">
+
+# Akinai · 商い
+
+**Sales, stock and commissions for a small 3D print shop — at the market stall and at home.**
+
+*Akinai (商い) — "trade, doing business."*
+
+![Nuxt](https://img.shields.io/badge/Nuxt-3.21-00DC82?logo=nuxt.js&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js&logoColor=white)
+![PocketBase](https://img.shields.io/badge/PocketBase-0.22-b8dbe4)
+![PWA](https://img.shields.io/badge/PWA-installable-2563eb)
+
+</div>
+
+---
 
 ## Features
 
@@ -39,8 +54,8 @@ A modern, comprehensive budget tracking application built with Vue.js and Nuxt.j
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/3dps-budget-tracker.git
-cd 3dps-budget-tracker
+git clone https://github.com/KuroTsubasa1/akinai.git
+cd akinai
 ```
 
 2. Install dependencies:
@@ -93,7 +108,7 @@ npm run dev
 ## Project Structure
 
 ```
-3dps-budget-tracker/
+akinai/
 ├── pages/              # Application pages (index, settings, catalog, business-card, reports)
 ├── components/         # Vue components (PWAInstall, etc.)
 ├── composables/        # Vue composables (hooks for transactions, settings, offline queue)
@@ -190,7 +205,7 @@ Every push to `main` runs `.github/workflows/deploy.yml`, which can also be star
 1. Installs the dependencies, runs the unit tests and builds the app.
 2. Uploads the build to `/opt/budget-tracker/releases/<commit>` on the VPS and points `/opt/budget-tracker/current` at it.
 3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker`, listening on `127.0.0.1:3668`).
-4. Checks that https://budget-tracker.lasseharm.space answers.
+4. Checks that https://akinai.lasseharm.space answers.
 
 The 5 newest releases are kept on the server.
 
@@ -204,7 +219,7 @@ The 5 newest releases are kept on the server.
    mkdir -p /opt/budget-tracker && chown deploy:deploy /opt/budget-tracker
    ```
 3. Make pm2 start the app after a reboot. Run `pm2 startup` as `deploy`, then run the command it prints as root.
-4. Point nginx for `budget-tracker.lasseharm.space` at `http://127.0.0.1:3668` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
+4. Point nginx for `akinai.lasseharm.space` at `http://127.0.0.1:3668` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
 5. Put the public half of a key made only for GitHub into `/home/deploy/.ssh/authorized_keys`.
 
 **Repository secrets** (Settings → Secrets and variables → Actions):
@@ -224,3 +239,7 @@ pm2 save
 ```
 
 Schema changes are not part of the deploy: run `npm run pb:migrate` yourself first, as described above.
+
+## Credits
+
+The 商 in the Akinai logo is drawn from [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP) (SIL Open Font License 1.1). `node scripts/make-icons.mjs` renders the app icons from `public/logo.svg`.
