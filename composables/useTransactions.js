@@ -4,7 +4,7 @@ import { useOfflineQueue } from './useOfflineQueue'
 import { usePocketBase } from './usePocketBase'
 import { useInventory } from './useInventory'
 import { newRecordId } from '~/utils/inventory'
-import { localDate, mergeTransactions } from '~/utils/transactions'
+import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds } from '~/utils/transactions'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
@@ -17,8 +17,11 @@ const orphans = ref([])
 const uploadingOrphans = ref([])
 // Record ids whose POST is in flight right now: neither on the server yet nor in the queue
 const sending = new Set()
-let refreshing = false
+// The refresh under way, so callers (logout) can wait for it; a second call asks it to run again
+let refreshRun = null
 let refreshAgain = false
+// Record ids from the last successful server list; null until one succeeded in this session
+let lastServerIds = null
 // Bumped whenever the local list or queue changes, so a refresh that started earlier is redone
 let localVersion = 0
 const isLoading = ref(false)
@@ -46,6 +49,7 @@ export const useTransactions = () => {
     processQueue,
     clearCompletedItems, 
     clearQueue,
+    replaceQueue,
     isSyncing, 
     syncStatus: queueSyncStatus,
     isOnline 
@@ -94,53 +98,65 @@ export const useTransactions = () => {
 
   // Replaces the local list with what the server holds, plus sales still waiting in the queue.
   // Offline or a failed request leaves the cached list untouched.
-  const refreshTransactions = async () => {
-    if (refreshing) {
+  const refreshTransactions = () => {
+    if (refreshRun) {
       refreshAgain = true
-      return
+      return refreshRun
     }
-    if (!isOnline() || !pb.authStore.isValid) return
-    refreshing = true
-    try {
-      do {
-        refreshAgain = false
-        const version = localVersion
-        const session = sessionGeneration
-        let server
-        try {
-          server = await pb.collection('budget_tracker_transactions').getFullList({ sort: 'created' })
-        } catch {
-          return
-        }
-        // Logged out while the request was out: never write the answer back to this device
-        if (session !== sessionGeneration || !pb.authStore.isValid) return
-        // A sale was added or synced while the request was out: its answer may predate it
-        if (version !== localVersion) {
-          refreshAgain = true
-          continue
-        }
-        // Legacy queue items have no record id; their local id identifies them instead
-        const pending = [
-          ...offlineQueue.value.filter(item => item.status !== 'synced').map(item => item.recordId || item.id),
-          ...sending
-        ].filter(Boolean)
-        const merged = mergeTransactions({ server, local: transactions.value, pending })
-        transactions.value = merged.transactions
-        saveTransactions()
-        // Stored orphans are checked again against the whole server list: once their sale shows up
-        // there (synced from another device, or a false orphan from an older matcher), they go
-        const stillMissing = new Set(mergeTransactions({ server, local: orphans.value, pending: [] }).orphans.map(orphanKey))
-        const kept = orphans.value.filter(entry => stillMissing.has(orphanKey(entry)))
-        const known = new Set(orphans.value.map(orphanKey))
-        const added = merged.orphans.filter(entry => !known.has(orphanKey(entry)))
-        if (added.length || kept.length !== orphans.value.length) {
-          orphans.value = [...kept, ...added]
-          saveOrphans()
-        }
-      } while (refreshAgain)
-    } finally {
-      refreshing = false
-    }
+    if (!isOnline() || !pb.authStore.isValid) return Promise.resolve()
+    refreshRun = runRefresh().finally(() => { refreshRun = null })
+    return refreshRun
+  }
+
+  const runRefresh = async () => {
+    do {
+      refreshAgain = false
+      const version = localVersion
+      const session = sessionGeneration
+      let server
+      try {
+        server = await pb.collection('budget_tracker_transactions').getFullList({ sort: 'created' })
+      } catch {
+        return
+      }
+      // Logged out while the request was out: never write the answer back to this device
+      if (session !== sessionGeneration || !pb.authStore.isValid) return
+      // A sale was added or synced while the request was out: its answer may predate it
+      if (version !== localVersion) {
+        refreshAgain = true
+        continue
+      }
+      lastServerIds = new Set(server.map(record => record.id))
+      const merged = mergeTransactions({ server, local: transactions.value, pending: pendingIds() })
+      transactions.value = merged.transactions
+      saveTransactions()
+      // A stored orphan goes once its own record id is on the server; old-app ones stay for review
+      const kept = recheckOrphans({ server, orphans: orphans.value })
+      const known = new Set(orphans.value.map(orphanKey))
+      const added = merged.orphans.filter(entry => !known.has(orphanKey(entry)))
+      if (added.length || kept.length !== orphans.value.length) {
+        orphans.value = [...kept, ...added]
+        saveOrphans()
+      }
+    } while (refreshAgain)
+  }
+
+  // Queued sales by record id, and by local id for items from before record ids, plus sends in flight
+  const pendingIds = () => [...pendingQueueIds(offlineQueue.value), ...sending]
+
+  // Queue items from before record ids get one before they are sent, so a retry after a lost reply
+  // is recognised instead of creating a second record. Their local entries take the same id, so the
+  // server record replaces them once synced.
+  const ensureQueueRecordIds = () => {
+    const next = withRecordIds(offlineQueue.value, newRecordId)
+    if (!next) return
+    const assigned = new Map(next.filter((item, index) => item !== offlineQueue.value[index]).map(item => [item.id, item.recordId]))
+    replaceQueue(next)
+    transactions.value = transactions.value.map(entry =>
+      !entry.recordId && assigned.has(entry.id) ? { ...entry, recordId: assigned.get(entry.id) } : entry
+    )
+    saveTransactions()
+    localVersion++
   }
 
   const saveTransactions = () => {
@@ -225,6 +241,7 @@ export const useTransactions = () => {
       return
     }
     
+    ensureQueueRecordIds()
     const result = await processQueue(item => postTransaction(item))
     localVersion++
     await refreshTransactions()
@@ -350,6 +367,7 @@ export const useTransactions = () => {
   // "Clear All Local Data" passes keepQueue: false and drops those as well.
   const forgetLocalData = ({ keepQueue = true } = {}) => {
     sessionGeneration++
+    lastServerIds = null
     transactions.value = []
     orphans.value = []
     localStorage.removeItem(STORAGE_KEY)
@@ -362,10 +380,18 @@ export const useTransactions = () => {
     clearLegacyApiCache()
   }
 
-  // Entries that exist on this device only: orphans plus sales still waiting to sync
-  const localOnlyCount = computed(() =>
-    orphans.value.length + offlineQueue.value.filter(item => item.status !== 'synced').length
-  )
+  // Entries that exist on this device only: orphans, sales still waiting to sync, and listed entries
+  // the server has not confirmed. Refreshes first (a failure just leaves the last known state).
+  const countLocalOnly = async () => {
+    try {
+      await refreshTransactions()
+    } catch {
+      // Offline or unreachable: count against what is known
+    }
+    return orphans.value.length +
+      offlineQueue.value.filter(item => item.status !== 'synced').length +
+      unconfirmedCount({ transactions: transactions.value, serverIds: lastServerIds, pending: pendingIds() })
+  }
 
   return {
     transactions,
@@ -375,7 +401,7 @@ export const useTransactions = () => {
     uploadOrphan,
     isUploadingOrphan,
     discardOrphan,
-    localOnlyCount,
+    countLocalOnly,
     earnings,
     todayEarnings,
     addTransaction,

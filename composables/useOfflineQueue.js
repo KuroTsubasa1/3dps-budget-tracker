@@ -93,6 +93,12 @@ export const useOfflineQueue = () => {
     saveQueue()
   }
 
+  // Swaps in an updated copy of the queue (same items, e.g. with record ids added) and saves it
+  const replaceQueue = (items) => {
+    offlineQueue.value = items
+    saveQueue()
+  }
+
   // Drops every queued sale, synced or not ("Clear All Local Data")
   const clearQueue = () => {
     offlineQueue.value = []
@@ -123,6 +129,7 @@ export const useOfflineQueue = () => {
     processQueue,
     clearCompletedItems,
     clearQueue,
+    replaceQueue,
     isOnline
   }
 }

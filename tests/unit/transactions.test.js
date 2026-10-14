@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import * as tx from '../../utils/transactions.js'
 import { fromRecord, mergeTransactions } from '../../utils/transactions.js'
 
 const record = (id, description, amount, created = '2026-10-12 10:00:00.000Z') =>
@@ -151,4 +152,81 @@ test('a record carrying its sale date matches a legacy sale of that date exactly
     pending: []
   })
   assert.deepEqual(orphans, [])
+})
+
+// Fix round 2: orphans are only dropped by record id, legacy queue items get one, logout and CSV see every local entry
+const twin = (id, date = '2026-10-10') => legacy(id, 'Keychain', 5, date)
+
+test('the orphan recheck drops an orphan whose record id reached the server', () => {
+  const orphan = local('loc000000000001', 'Lost sale', 7, '2026-10-11')
+  assert.deepEqual(tx.recheckOrphans({ server: [record('loc000000000001', 'Lost sale', 7)], orphans: [orphan] }), [])
+  assert.deepEqual(tx.recheckOrphans({ server: [], orphans: [orphan] }), [orphan])
+})
+
+test('uploading one of two identical legacy orphans leaves the other one', () => {
+  // The uploaded twin is on the server with its own date, distance 0 from the one left behind
+  const uploaded = { ...record('upl000000000001', 'Keychain', 5, '2026-10-14 09:00:00.000Z'), date: '2026-10-10' }
+  const left = twin(2)
+  assert.deepEqual(tx.recheckOrphans({ server: [uploaded], orphans: [left] }), [left])
+})
+
+test('selling the same item again within the week does not remove an identical legacy orphan', () => {
+  const orphan = twin(3)
+  const again = record('new000000000001', 'Keychain', 5, '2026-10-12 10:00:00.000Z')
+  assert.deepEqual(tx.recheckOrphans({ server: [again], orphans: [orphan] }), [orphan])
+})
+
+test('queued items count as pending by record id and by local id', () => {
+  const queue = [
+    { id: 1, recordId: 'rec000000000001', status: 'pending' },
+    { id: 2, status: 'failed' },
+    { id: 3, recordId: 'rec000000000003', status: 'synced' }
+  ]
+  assert.deepEqual(tx.pendingQueueIds(queue), ['rec000000000001', 1, 2])
+})
+
+test('unsynced queue items without a record id get one, others stay untouched', () => {
+  let n = 0
+  const makeId = () => `new${String(++n).padStart(12, '0')}`
+  const withId = { id: 1, recordId: 'rec000000000001', status: 'pending' }
+  const synced = { id: 3, status: 'synced' }
+  const result = tx.withRecordIds([withId, { id: 2, status: 'failed', description: 'Old' }, synced], makeId)
+  assert.deepEqual(result, [withId, { id: 2, status: 'failed', description: 'Old', recordId: 'new000000000001' }, synced])
+  assert.equal(tx.withRecordIds([withId, synced], makeId), null)
+})
+
+test('entries the server has not confirmed count as local only', () => {
+  const confirmed = local('srv000000000001', 'A', 1)
+  const unknown = local('loc000000000001', 'B', 2)
+  const queued = local('que000000000001', 'C', 3)
+  const oldApp = legacy(9, 'D', 4, '2026-01-01')
+  const transactions = [confirmed, unknown, queued, oldApp]
+  const pending = ['que000000000001']
+  // After a successful refresh: anything not in that list and not queued
+  assert.equal(tx.unconfirmedCount({ transactions, serverIds: new Set(['srv000000000001']), pending }), 2)
+  // No successful refresh yet: only entries that never had a record id
+  assert.equal(tx.unconfirmedCount({ transactions, serverIds: null, pending }), 1)
+  assert.equal(tx.unconfirmedCount({ transactions: [{ ...oldApp }], serverIds: null, pending: [9] }), 0)
+})
+
+test('the CSV quotes every field and lists orphans and sales waiting to sync', () => {
+  const csv = tx.transactionsCsv({
+    transactions: [
+      { id: 'srv1', recordId: 'srv1', description: 'Say "hi"', amount: 5, date: '2026-10-10', notes: 'a,b' },
+      { id: 7, recordId: 'que1', description: 'Queued', amount: 3, date: '2026-10-11', notes: '' }
+    ],
+    orphans: [{ id: 8, description: 'Lost', amount: 2, date: '2026-10-09' }],
+    queue: [
+      { id: 7, recordId: 'que1', description: 'Queued', amount: 3, date: '2026-10-11', status: 'pending' },
+      { id: 9, recordId: 'que2', description: 'Only queued', amount: 4, date: '2026-10-12', status: 'failed' },
+      { id: 10, recordId: 'syn1', description: 'Done', amount: 1, date: '2026-10-12', status: 'synced' }
+    ]
+  })
+  assert.deepEqual(csv.split('\n'), [
+    'ID,Description,Amount,Date,Notes,Status',
+    '"srv1","Say ""hi""","5","2026-10-10","a,b",""',
+    '"7","Queued","3","2026-10-11","","waiting to sync"',
+    '"8","Lost","2","2026-10-09","","not on server"',
+    '"9","Only queued","4","2026-10-12","","waiting to sync"'
+  ])
 })

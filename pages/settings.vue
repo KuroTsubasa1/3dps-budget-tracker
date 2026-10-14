@@ -64,7 +64,7 @@
               <dd class="font-medium text-ink">{{ user?.email || 'Not logged in' }}</dd>
             </div>
           </dl>
-          <BaseButton class="mt-4" variant="secondary" block icon="x" @click="handleLogout">Log out</BaseButton>
+          <BaseButton class="mt-4" variant="secondary" block icon="x" :loading="checkingLogout" @click="handleLogout">Log out</BaseButton>
         </BaseCard>
 
         <BaseCard v-if="activeCategory === 'display'" title="Display Settings" subtitle="Customize the application appearance" icon="desktop">
@@ -224,7 +224,7 @@ const {
   isUploadingOrphan,
   discardOrphan,
   forgetLocalData,
-  localOnlyCount
+  countLocalOnly
 } = useTransactions()
 const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
@@ -248,15 +248,25 @@ const logOutNow = () => {
   navigateTo('/login')
 }
 
-// Orphans and unsynced sales live only on this device, and logging out deletes the orphans: ask first
+// Entries only on this device (orphans, unsynced or unconfirmed sales) are lost on logout unless
+// queued: check with a fresh refresh, and ask first when there are any
 const showLogoutConfirm = ref(false)
+const localOnly = ref(0)
+const checkingLogout = ref(false)
 const logoutWarning = computed(() => {
-  const count = localOnlyCount.value
+  const count = localOnly.value
   const entries = count === 1 ? '1 entry is' : `${count} entries are`
   return `${entries} only on this device. Upload or export ${count === 1 ? 'it' : 'them'} first — logging out deletes the ones that are not queued.`
 })
-const handleLogout = () => {
-  if (localOnlyCount.value > 0) {
+const handleLogout = async () => {
+  if (checkingLogout.value) return
+  checkingLogout.value = true
+  try {
+    localOnly.value = await countLocalOnly()
+  } finally {
+    checkingLogout.value = false
+  }
+  if (localOnly.value > 0) {
     showLogoutConfirm.value = true
     return
   }

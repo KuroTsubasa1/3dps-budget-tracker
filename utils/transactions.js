@@ -89,3 +89,57 @@ export const mergeTransactions = ({ server, local, pending }) => {
   const transactions = [...mapped, ...kept].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   return { transactions, orphans }
 }
+
+// Stored orphans are dropped only once their own record id is on the server. Old-app entries have
+// none: a look-alike record (the same item sold again, an uploaded twin) must never remove them,
+// so the owner reviews those in Settings.
+export const recheckOrphans = ({ server, orphans }) => {
+  const onServer = new Set(server.map(record => record.id))
+  return orphans.filter(entry => !(entry.recordId && onServer.has(entry.recordId)))
+}
+
+// A queued sale is pending under its record id and, for items from before record ids, its local id
+export const pendingQueueIds = queue => queue
+  .filter(item => item.status !== 'synced')
+  .flatMap(item => [item.recordId, item.id])
+  .filter(id => id !== undefined && id !== null && id !== '')
+
+// Unsynced items from before record ids get one, so a retry after a lost reply cannot create a
+// second record. Returns the new queue, or null when nothing changed.
+export const withRecordIds = (queue, makeId) => {
+  let changed = false
+  const next = queue.map((item) => {
+    if (item.status === 'synced' || item.recordId) return item
+    changed = true
+    return { ...item, recordId: makeId() }
+  })
+  return changed ? next : null
+}
+
+// Local entries the server has not confirmed and no queue item covers. Without a successful
+// refresh (serverIds null) only entries that never had a record id are known to be local.
+export const unconfirmedCount = ({ transactions, serverIds, pending }) => {
+  const pendingIds = new Set(pending)
+  return transactions.filter((entry) => {
+    if (pendingIds.has(entry.recordId || entry.id)) return false
+    if (!entry.recordId) return true
+    return !!serverIds && !serverIds.has(entry.recordId)
+  }).length
+}
+
+const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`
+const csvRow = (entry, status) =>
+  [entry.id, entry.description, entry.amount, entry.date, entry.notes, status].map(csvField).join(',')
+
+// Transactions, then orphans, then queued sales the transaction list does not hold (after a logout)
+export const transactionsCsv = ({ transactions, orphans, queue }) => {
+  const waiting = queue.filter(item => item.status !== 'synced')
+  const waitingIds = new Set(pendingQueueIds(waiting))
+  const listed = new Set(transactions.map(entry => entry.recordId || entry.id))
+  return [
+    'ID,Description,Amount,Date,Notes,Status',
+    ...transactions.map(entry => csvRow(entry, waitingIds.has(entry.recordId || entry.id) ? 'waiting to sync' : '')),
+    ...orphans.map(entry => csvRow(entry, 'not on server')),
+    ...waiting.filter(item => !listed.has(item.recordId) && !listed.has(item.id)).map(item => csvRow(item, 'waiting to sync'))
+  ].join('\n')
+}

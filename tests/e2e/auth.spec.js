@@ -134,6 +134,23 @@ test('logging out with entries only on this device asks first', async ({ page, a
   expect(await page.evaluate(() => localStorage.getItem('budget-tracker-orphans'))).toBeNull()
 })
 
+test('logging out offline with an unconfirmed old-app entry asks first', async ({ page, context }) => {
+  // No server answers and nothing is queued or orphaned: the entry has only ever been on this device
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('old-entry-seeded')) return
+    localStorage.setItem('budget-tracker-transactions', JSON.stringify([{ id: 1, description: 'Old stand sale', amount: 4, date: '2026-01-01', notes: '' }]))
+    sessionStorage.setItem('old-entry-seeded', '1')
+  })
+  await gotoReady(page, '/settings#api')
+  await context.setOffline(true)
+  await page.getByRole('button', { name: 'Log out' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Log out' })
+  await expect(dialog).toContainText('1 entry is only on this device.')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page).toHaveURL(/\/settings/)
+  expect(await page.evaluate(() => localStorage.getItem('budget-tracker-transactions'))).toContain('Old stand sale')
+})
+
 test('a transaction refresh still loading at logout does not write the data back', async ({ page, api }) => {
   api.seed()
   api.posted.push({ id: 'srv000000000002', collectionName: 'budget_tracker_transactions', description: 'Commission: Totoro × 1 (Anna Example)', amount: 8, notes: '', created: '2026-10-10 10:00:00.000Z', updated: '2026-10-10 10:00:00.000Z' })

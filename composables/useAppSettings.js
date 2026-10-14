@@ -1,5 +1,6 @@
 import { ref, onMounted, watch } from 'vue'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
+import { transactionsCsv } from '~/utils/transactions'
 
 const SETTINGS_STORAGE_KEY = 'budget-tracker-settings'
 
@@ -145,16 +146,8 @@ export const useAppSettings = () => {
         
         return { success: true, format, filename }
       } else if (format === 'csv') {
-        // For CSV, export transactions plus the local entries the server does not have
-        const csvHeader = 'ID,Description,Amount,Date,Notes,Status\n'
-        const csvRow = (t, status) =>
-          `${t.id},"${String(t.description).replace(/"/g, '""')}",${t.amount},"${t.date}","${(t.notes || '').replace(/"/g, '""')}","${status}"`
-        const csvRows = [
-          ...transactions.map(t => csvRow(t, '')),
-          ...orphans.map(t => csvRow(t, 'not on server'))
-        ].join('\n')
-        
-        dataStr = csvHeader + csvRows
+        // Transactions plus the local entries the server does not have yet, with their status
+        dataStr = transactionsCsv({ transactions, orphans, queue: offlineQueue })
         filename = `budget-tracker-transactions-${new Date().toISOString().slice(0, 10)}.csv`
         
         // Create download link

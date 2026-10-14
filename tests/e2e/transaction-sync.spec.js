@@ -121,9 +121,9 @@ test.describe('local entries that are not on the server', () => {
     expect(api.posted).toHaveLength(1)
   })
 
-  test('disappear once their sale shows up on the server', async ({ page, api, context }) => {
+  test('disappear once their record id shows up on the server; old-app entries stay for review', async ({ page, api, context }) => {
     await api.mockTransactions()
-    // One is known by its record id, one is from the old app: dated by UTC and synced two days later
+    // One is known by its record id; one is from the old app and has none, so a look-alike record never removes it
     const legacy = { id: 222, description: 'Old stand sale', amount: 4, date: '2026-07-09', notes: '' }
     await seedOrphans(context, [lonely, legacy])
     await gotoReady(page, '/')
@@ -134,18 +134,45 @@ test.describe('local entries that are not on the server', () => {
       serverRecord('srv000000000009', 'Old stand sale', 4, '2026-07-11 08:00:00.000Z')
     )
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
-    await expect(page.getByText('not on the server')).toHaveCount(0)
+    await expect(page.getByText('1 local entry is not on the server', { exact: false })).toBeVisible()
     await expect(page.getByTestId('header-balance')).toContainText('11,00')
 
     await gotoReady(page, '/settings#data')
-    await expect(page.getByRole('heading', { name: 'Export Data' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Local entries not on the server' })).toHaveCount(0)
-    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), ORPHANS_KEY)).toEqual([])
+    await expect(page.getByRole('heading', { name: 'Local entries not on the server' })).toBeVisible()
+    await expect(page.getByText('Old stand sale')).toBeVisible()
+    await expect(page.getByText('Lost sale')).toHaveCount(0)
+    expect((await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), ORPHANS_KEY)).map(o => o.id)).toEqual([222])
+  })
+
+  test('uploading one of two identical old-app entries keeps the other', async ({ page, api, context }) => {
+    await api.mockTransactions()
+    const first = { id: 301, description: 'Keychain', amount: 5, date: '2026-10-10', notes: '' }
+    const second = { id: 302, description: 'Keychain', amount: 5, date: '2026-10-10', notes: '' }
+    await seedOrphans(context, [first, second])
+    await gotoReady(page, '/settings#data')
+    await expect(page.getByRole('button', { name: 'Upload' })).toHaveCount(2)
+
+    await page.getByRole('button', { name: 'Upload' }).first().click()
+    await expect.poll(() => api.posted.length).toBe(1)
+    // A later refresh sees the uploaded twin on the server with the same date
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await page.waitForTimeout(1000)
+    await expect(page.getByRole('button', { name: 'Upload' })).toHaveCount(1)
+    expect((await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), ORPHANS_KEY)).map(o => o.id)).toEqual([302])
   })
 
   test('are included in the JSON and CSV export', async ({ page, api, context }) => {
     await api.mockTransactions()
     await seedLocal(context, [lonely])
+    // A sale the server keeps refusing stays queued
+    api.fail('budget_tracker_transactions', 500)
+    await context.addInitScript(() => {
+      if (sessionStorage.getItem('queue-seeded')) return
+      localStorage.setItem('budget-tracker-offline-queue', JSON.stringify([
+        { id: 5, recordId: 'que000000000005', description: 'Unsent sale', amount: 3, date: '2026-10-14', notes: '', status: 'failed', queuedAt: '2026-10-14T10:00:00.000Z' }
+      ]))
+      sessionStorage.setItem('queue-seeded', '1')
+    })
     await gotoReady(page, '/settings#data')
     await expect(page.getByText('Lost sale')).toBeVisible()
 
@@ -155,7 +182,8 @@ test.describe('local entries that are not on the server', () => {
 
     const [csv] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export as CSV' }).click()])
     const lines = readFileSync(await csv.path(), 'utf8').split('\n')
-    expect(lines.find(line => line.includes('Lost sale'))).toContain('not on server')
+    expect(lines.find(line => line.includes('Lost sale'))).toBe('"111","Lost sale","7","2026-10-11","","not on server"')
+    expect(lines.find(line => line.includes('Unsent sale'))).toBe('"5","Unsent sale","3","2026-10-14","","waiting to sync"')
   })
   test('Discard removes the entry after confirmation', async ({ page, api, context }) => {
     await api.mockTransactions()
@@ -225,4 +253,31 @@ test('a sale whose connection drops mid-send is queued and counted once', async 
   await expect(page.getByTestId('header-balance')).toContainText('9,00')
   expect(api.posted).toHaveLength(1)
   await expect(page.getByText('Dropped sale')).toHaveCount(1)
+})
+
+test('an old queued sale without a record id is posted once even when a reply is lost', async ({ page, api, context }) => {
+  await api.mockTransactions()
+  // Queued by a build from before record ids: no recordId on the item or the local entry
+  await context.addInitScript(() => {
+    if (sessionStorage.getItem('legacy-queue-seeded')) return
+    const sale = { id: 1700000000000, description: 'Old queued sale', amount: 8, notes: '', date: '2026-10-13' }
+    localStorage.setItem('budget-tracker-transactions', JSON.stringify([sale]))
+    localStorage.setItem('budget-tracker-offline-queue', JSON.stringify([{ ...sale, status: 'pending', queuedAt: '2026-10-13T10:00:00.000Z' }]))
+    sessionStorage.setItem('legacy-queue-seeded', '1')
+  })
+  // The first send is stored by the server, but its reply is lost
+  api.fail('budget_tracker_transactions', 'drop')
+  await gotoReady(page, '/')
+  await expect.poll(() => api.posted.length).toBe(1)
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('budget-tracker-offline-queue') || '[]')[0]?.status)).toBe('failed')
+  // Still listed and counted while it waits
+  await expect(page.getByText('Old queued sale')).toHaveCount(1)
+
+  // The retry (the connection comes back)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect(page.getByText(/\d+ pending/)).toHaveCount(0)
+  expect(api.posted).toHaveLength(1)
+  await expect(page.getByTestId('header-balance')).toContainText('8,00')
+  await expect(page.getByText('Old queued sale')).toHaveCount(1)
+  await expect(page.getByText('not on the server')).toHaveCount(0)
 })
