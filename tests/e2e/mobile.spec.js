@@ -152,6 +152,76 @@ test.describe('phone layout sweep', () => {
     expect(await smallTargets(page)).toEqual([])
   })
 
+  for (const dark of [false, true]) {
+    test(`the commission details with phone and Paid switch fit at 375px${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
+      await page.addInitScript((dark) => {
+        localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))
+      }, dark)
+      const long = 'Supercalifragilisticexpialidocious-customer-name'
+      api.seed({
+        articles: longProducts,
+        commissions: [{
+          id: 'c1',
+          customer_name: long,
+          customer_email: 'supercalifragilisticexpialidocious@example.com',
+          customer_phone: '+49 151 23456789012345678901234567890',
+          fulfilment: 'pickup',
+          address: '',
+          items: [{ article: 'p1', name: longProducts[0].name, quantity: 12 }],
+          agreed_price: 1234567.89,
+          notes: '',
+          status: 'delivered',
+          created: '2026-10-01 10:00:00.000Z',
+          delivered_at: '2026-10-10 10:00:00.000Z',
+          cancelled_at: '',
+          anonymised_at: '',
+          ready_at: '',
+          paid_at: '',
+          payment_transaction: ''
+        }]
+      })
+      await gotoReady(page, '/commissions')
+      await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Done/ }).click()
+      const fits = async (label) => {
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+        expect(scrollWidth, label).toBeLessThanOrEqual(page.viewportSize().width)
+        expect(await smallTargets(page), label).toEqual([])
+      }
+      await expect(page.getByRole('button', { name: new RegExp(long) }).getByText('Unpaid', { exact: true })).toBeVisible()
+      await fits('list')
+      await page.getByRole('button', { name: new RegExp(long) }).click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByRole('switch', { name: 'Paid' })).toBeVisible()
+      await expect(dialog.getByRole('link', { name: /\+49/ })).toBeVisible()
+      await fits('details')
+      expect(await dialog.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
+      // The switch row is the tap target: at least 44px high
+      const row = await dialog.locator('label', { has: page.getByRole('switch', { name: 'Paid' }) }).boundingBox()
+      expect(row.height).toBeGreaterThanOrEqual(44)
+      await dialog.getByRole('switch', { name: 'Paid' }).click()
+      await expect(dialog.getByRole('button', { name: 'Book income again' })).toBeVisible()
+      await fits('ask')
+      await dialog.getByRole('button', { name: 'Only mark paid' }).click()
+      await expect(dialog.getByRole('switch', { name: 'Paid' })).toHaveAttribute('aria-checked', 'true')
+      await fits('paid')
+    })
+  }
+
+  test('the commission form with its Phone field fits at 375px', async ({ page, api }) => {
+    api.seed({ articles: longProducts })
+    await gotoReady(page, '/catalog')
+    await page.locator('h3', { hasText: 'Phone Stand' }).click()
+    await page.getByRole('button', { name: /View cart/ }).click()
+    await page.getByRole('button', { name: 'Commission', exact: true }).click()
+    await page.waitForURL(url => url.pathname === '/commissions')
+    const dialog = page.getByRole('dialog', { name: 'New commission' })
+    await dialog.getByLabel('Phone', { exact: true }).fill('+49 151 23456789012345678901234567890')
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+    expect(scrollWidth).toBeLessThanOrEqual(page.viewportSize().width)
+    expect(await dialog.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
+    expect(await smallTargets(page)).toEqual([])
+  })
+
   test('the More sheet fits at 375px with 44px targets', async ({ page, api }) => {
     await api.mockCatalog()
     await gotoReady(page, '/')

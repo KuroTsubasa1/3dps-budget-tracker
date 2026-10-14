@@ -328,6 +328,41 @@ export const useTransactions = () => {
     }
   }
 
+  // Takes a booked entry back (a commission switched to Unpaid). One still waiting in this device's queue
+  // leaves the queue; otherwise it is deleted on the server, where a 404 means it is gone already.
+  // Either way it leaves the local list. One being sent right now cannot be taken back safely: that throws.
+  const removeTransaction = async (recordId) => {
+    const queued = offlineQueue.value.filter(item => item.recordId === recordId && item.status !== 'synced')
+    if (sending.has(recordId) || (queued.length && isSyncing.value)) throw new Error('The entry is being sent right now')
+    if (queued.length) {
+      replaceQueue(offlineQueue.value.filter(item => item.recordId !== recordId))
+    } else {
+      try {
+        await pb.collection('budget_tracker_transactions').delete(recordId)
+      } catch (error) {
+        if (error?.status !== 404) throw error
+      }
+    }
+    transactions.value = transactions.value.filter(entry => entry.recordId !== recordId && entry.id !== recordId)
+    saveTransactions()
+    localVersion++
+  }
+
+  // Is the entry with this record id on the server, in this device's history or waiting in its queue?
+  // Only a plain "not found" counts as missing; any other failure is thrown so nothing is booked on a guess.
+  const transactionExists = async (recordId) => {
+    if (transactions.value.some(item => item.recordId === recordId)) return true
+    if (offlineQueue.value.some(item => item.recordId === recordId && item.status !== 'synced')) return true
+    if (sending.has(recordId)) return true
+    try {
+      await pb.collection('budget_tracker_transactions').getOne(recordId)
+      return true
+    } catch (error) {
+      if (error?.status === 404) return false
+      throw error
+    }
+  }
+
   const isUploadingOrphan = entry => uploadingOrphans.value.includes(orphanKey(entry))
 
   const discardOrphan = (entry) => {
@@ -439,6 +474,8 @@ export const useTransactions = () => {
     earnings,
     todayEarnings,
     addTransaction,
+    removeTransaction,
+    transactionExists,
     isLoading,
     apiError,
     clearApiError,

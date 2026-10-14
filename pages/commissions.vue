@@ -38,7 +38,10 @@
         @click="openExisting(item)"
       >
         <template #trailing>
-          <span class="shrink-0 text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(Number(item.agreed_price)) }}</span>
+          <span class="flex shrink-0 flex-col items-end gap-1">
+            <span class="text-sm font-semibold tabular-nums text-ink">{{ formatCurrency(Number(item.agreed_price)) }}</span>
+            <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="isPaid(item) ? 'bg-income/10 text-income' : 'bg-warning/10 text-warning'">{{ isPaid(item) ? 'Paid' : 'Unpaid' }}</span>
+          </span>
         </template>
       </ListRow>
     </div>
@@ -63,7 +66,7 @@ import { useDeals } from '~/composables/useDeals'
 import { useToast } from '~/composables/useToast'
 import { useCommissionDraft } from '~/composables/useCommissionDraft'
 import { formatCurrency } from '~/utils/currency'
-import { isFinal, summaryOf } from '~/utils/commissions'
+import { isFinal, isPaid, summaryOf } from '~/utils/commissions'
 
 definePageMeta({ middleware: 'owner' })
 

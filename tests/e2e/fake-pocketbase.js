@@ -18,7 +18,7 @@ const DEFAULTS = {
   stock_movements: { note: '' },
   budget_tracker_transactions: { notes: '' },
   deals: {},
-  commissions: { notes: '', address: '', items: [], delivered_at: '', cancelled_at: '', anonymised_at: '', ready_at: '' },
+  commissions: { notes: '', address: '', items: [], delivered_at: '', cancelled_at: '', anonymised_at: '', ready_at: '', customer_phone: '', paid_at: '', payment_transaction: '' },
   print_jobs: { done_at: '' },
   conventions: {
     city: '',

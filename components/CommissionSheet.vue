@@ -13,6 +13,10 @@
           <input id="commission-email" v-model="form.email" type="email" inputmode="email" class="input" autocomplete="off">
         </div>
         <div>
+          <label for="commission-phone" class="label">Phone</label>
+          <input id="commission-phone" v-model="form.phone" type="tel" inputmode="tel" class="input" autocomplete="off">
+        </div>
+        <div>
           <p class="label">Delivery</p>
           <SegmentedControl v-model="form.fulfilment" label="Delivery" :options="FULFILMENT_OPTIONS" />
         </div>
@@ -74,6 +78,12 @@
       <dl class="space-y-2 text-sm">
         <div class="flex justify-between gap-3"><dt class="text-ink-muted">Customer</dt><dd class="text-right font-medium text-ink">{{ customerLabel }}</dd></div>
         <div v-if="commission.customer_email" class="flex justify-between gap-3"><dt class="text-ink-muted">Email</dt><dd class="min-w-0 break-all text-right text-ink">{{ commission.customer_email }}</dd></div>
+        <div v-if="phone" class="flex items-center justify-between gap-3">
+          <dt class="text-ink-muted">Phone</dt>
+          <dd class="min-w-0 text-right">
+            <a :href="`tel:${phone.replace(/[^\d+]/g, '')}`" class="inline-flex min-h-[44px] items-center break-all font-medium text-accent hover:underline">{{ phone }}</a>
+          </dd>
+        </div>
         <div class="flex justify-between gap-3"><dt class="text-ink-muted">Delivery</dt><dd class="text-right text-ink">{{ commission.fulfilment === 'shipping' ? 'Shipping' : 'Pickup' }}</dd></div>
         <div v-if="commission.fulfilment === 'shipping'" class="flex justify-between gap-3"><dt class="text-ink-muted">Address</dt><dd class="whitespace-pre-line text-right text-ink">{{ commission.address }}</dd></div>
         <div class="flex justify-between gap-3">
@@ -87,6 +97,23 @@
         <div class="flex justify-between gap-3"><dt class="text-ink-muted">Agreed price</dt><dd class="text-right font-semibold tabular-nums text-ink">{{ formatCurrency(Number(commission.agreed_price)) }}</dd></div>
         <div v-if="commission.notes" class="flex justify-between gap-3"><dt class="text-ink-muted">Notes</dt><dd class="whitespace-pre-line text-right text-ink">{{ commission.notes }}</dd></div>
       </dl>
+
+      <div class="border-t border-line pt-3">
+        <ToggleSwitch
+          :model-value="paid"
+          label="Paid"
+          :description="online ? '' : 'Needs a connection'"
+          :disabled="!online || busy"
+          @update:model-value="setPaid"
+        />
+        <div v-if="confirming === 'pay'" class="mt-2 space-y-3">
+          <p class="text-sm text-ink-muted">Income was already booked when this commission was delivered.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <BaseButton variant="secondary" :disabled="busy" @click="pay('only')">Only mark paid</BaseButton>
+            <BaseButton :loading="busy" @click="pay('book')">Book income again</BaseButton>
+          </div>
+        </div>
+      </div>
 
       <div class="space-y-2">
         <BaseButton v-if="NEXT[commission.status]" size="lg" block :loading="busy" @click="move(NEXT[commission.status])">
@@ -112,7 +139,7 @@
       <div v-if="!commission.anonymised_at" class="border-t border-line pt-4">
         <BaseButton v-if="confirming !== 'delete'" variant="danger-ghost" block icon="trash" :disabled="busy" @click="confirming = 'delete'">Delete customer data</BaseButton>
         <div v-else class="space-y-3">
-          <p class="text-sm text-ink-muted">Remove the name, email and address for good? The article, price and status stay.</p>
+          <p class="text-sm text-ink-muted">Remove the name, email, phone and address for good? The article, price and status stay.</p>
           <div class="grid grid-cols-2 gap-2">
             <BaseButton variant="secondary" @click="confirming = ''">Keep data</BaseButton>
             <BaseButton variant="danger" :loading="busy" @click="deleteData">Delete data</BaseButton>
@@ -124,13 +151,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useCommissions } from '~/composables/useCommissions'
-import { useTransactions } from '~/composables/useTransactions'
-import { localDate } from '~/utils/transactions'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
-import { commissionLines } from '~/utils/reports/lines'
 import {
   STATUS_LABEL,
   NEXT,
@@ -140,7 +164,7 @@ import {
   canCancel,
   transitionPatch,
   itemsOf,
-  incomeFor,
+  isPaid,
   validateCommission,
   setLineQuantity,
   removeLine,
@@ -163,8 +187,7 @@ const FULFILMENT_OPTIONS = [
   { value: 'shipping', label: 'Shipping' }
 ]
 
-const { getCommission, createCommission, updateCommission, anonymise } = useCommissions()
-const { addTransaction } = useTransactions()
+const { getCommission, createCommission, updateCommission, anonymise, markPaid, markUnpaid } = useCommissions()
 const { toast } = useToast()
 
 const mode = ref('view')
@@ -173,15 +196,28 @@ const priceTouched = ref(false)
 const error = ref('')
 const busy = ref(false)
 const confirming = ref('')
+// Paying and taking a payment back both need the server: the switch follows the connection
+const online = ref(true)
+const followConnection = () => { online.value = navigator.onLine }
+onMounted(() => {
+  followConnection()
+  window.addEventListener('online', followConnection)
+  window.addEventListener('offline', followConnection)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('online', followConnection)
+  window.removeEventListener('offline', followConnection)
+})
 
 const toPriceText = amount => (Number(amount) > 0 ? Number(amount).toFixed(2).replace('.', ',') : '')
 const parseNumber = value => Number(String(value).trim().replace(',', '.'))
 const copyLines = lines => lines.map(line => ({ article: line.article, name: line.name, quantity: Number(line.quantity) }))
 
-const blankForm = () => ({ customerName: '', email: '', fulfilment: 'pickup', address: '', items: copyLines(props.presetItems), price: '', notes: '' })
+const blankForm = () => ({ customerName: '', email: '', phone: '', fulfilment: 'pickup', address: '', items: copyLines(props.presetItems), price: '', notes: '' })
 const formFrom = commission => ({
   customerName: commission.customer_name,
   email: commission.customer_email,
+  phone: commission.customer_phone ?? '',
   fulfilment: commission.fulfilment,
   address: commission.address,
   // A legacy record (article × quantity) becomes its one line here and is saved as items
@@ -198,6 +234,9 @@ const title = computed(() => {
 const lines = computed(() => (props.commission ? itemsOf(props.commission, props.articles) : []))
 const anonymised = computed(() => !!props.commission?.anonymised_at)
 const customerLabel = computed(() => (props.commission?.anonymised_at ? 'Anonymised' : props.commission?.customer_name))
+// An anonymised commission never shows a phone, even one entered again by an old client
+const phone = computed(() => (props.commission?.anonymised_at ? '' : String(props.commission?.customer_phone ?? '').trim()))
+const paid = computed(() => isPaid(props.commission))
 
 // Deal-aware suggestion over every line; it follows the lines until the price is edited
 const suggestedPrice = computed(() => suggestedPriceFor(form.value.items ?? [], props.articles, props.deals))
@@ -246,7 +285,9 @@ const NOT_MIGRATED = 'The server needs updating — run the migration first'
 
 const save = async () => {
   if (busy.value) return
-  error.value = validateCommission({ ...form.value, anonymised: anonymised.value })
+  // While paid the booked income is the agreed price: it cannot change until the payment is taken back
+  const lockedPrice = props.commission && isPaid(props.commission) ? Number(props.commission.agreed_price) : null
+  error.value = validateCommission({ ...form.value, anonymised: anonymised.value, lockedPrice })
   if (error.value) return
   busy.value = true
   const shipping = form.value.fulfilment === 'shipping'
@@ -256,6 +297,7 @@ const save = async () => {
     : {
         customer_name: form.value.customerName.trim(),
         customer_email: form.value.email.trim(),
+        customer_phone: form.value.phone.trim(),
         fulfilment: form.value.fulfilment,
         address: shipping ? form.value.address.trim() : ''
       }
@@ -290,15 +332,6 @@ const save = async () => {
   }
 }
 
-// The commission is updated first; income is only booked once the server has accepted "delivered"
-const bookDelivery = (record) => {
-  emit('changed', record)
-  const income = incomeFor(record, props.articles)
-  // The agreed price spread over the commission's lines, for the reports
-  addTransaction({ ...income, date: localDate(), items: commissionLines(record, props.articles), sold_at: new Date().toISOString() })
-  toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
-}
-
 const move = async (target) => {
   if (busy.value) return
   busy.value = true
@@ -308,7 +341,7 @@ const move = async (target) => {
   try {
     let current = props.commission
     if (delivering) {
-      // A second device may have delivered it already: never book from a stale screen
+      // A second device may have delivered it already: never act on a stale screen
       current = await getCommission(props.commission.id)
       if (current.status !== props.commission.status) {
         emit('changed', current)
@@ -320,14 +353,14 @@ const move = async (target) => {
     const record = await updateCommission(props.commission.id, transitionPatch(current, target))
     patchSent = false
     confirming.value = ''
-    if (delivering) bookDelivery(record)
-    else emit('changed', record)
+    // Delivering books nothing: the income is booked when the commission is marked paid
+    emit('changed', record)
   } catch (err) {
     // The reply may have been lost after the server accepted "delivered": confirm before giving up
     const landed = delivering && patchSent ? await getCommission(props.commission.id).catch(() => null) : null
     if (landed?.status === 'delivered') {
       confirming.value = ''
-      bookDelivery(landed)
+      emit('changed', landed)
     } else {
       error.value = failMessage(err, 'Could not update the commission. Check your connection and try again.')
     }
@@ -335,6 +368,45 @@ const move = async (target) => {
     busy.value = false
   }
 }
+
+const PAYMENT_FAILED = 'Could not change the payment. Check your connection and try again.'
+
+// Paid on books the income (see markPaid), Paid off takes it back (see markUnpaid). Any failure leaves the switch as it was.
+const pay = async (choice = '') => {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const { record, ask, booked } = await markPaid(props.commission, props.articles, { choice })
+    emit('changed', record)
+    if (ask) {
+      confirming.value = 'pay'
+      return
+    }
+    confirming.value = ''
+    if (booked) toast(`Paid — ${formatCurrency(booked)} added to balance`)
+  } catch {
+    error.value = PAYMENT_FAILED
+  } finally {
+    busy.value = false
+  }
+}
+
+const unpay = async () => {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  confirming.value = ''
+  try {
+    emit('changed', await markUnpaid(props.commission))
+  } catch {
+    error.value = PAYMENT_FAILED
+  } finally {
+    busy.value = false
+  }
+}
+
+const setPaid = value => (value ? pay() : unpay())
 
 const deleteData = async () => {
   if (busy.value) return

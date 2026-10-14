@@ -55,6 +55,9 @@ export const commission = overrides => ({
   delivered_at: '',
   cancelled_at: '',
   anonymised_at: '',
+  customer_phone: '',
+  paid_at: '',
+  payment_transaction: '',
   ...overrides
 })
 
@@ -174,7 +177,7 @@ test.describe('the commissions page', () => {
     expect(api.db.commissions).toHaveLength(0)
   })
 
-  test('a commission moves from open to delivered and books its income', async ({ page, api }) => {
+  test('a commission moves from open to delivered and books nothing', async ({ page, api }) => {
     seedWith(api, [commission()])
     await api.mockTransactions()
     await gotoReady(page, '/commissions')
@@ -185,12 +188,14 @@ test.describe('the commissions page', () => {
     await expect.poll(() => api.db.commissions[0].status).toBe('ready')
     await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
 
-    await expect.poll(() => api.posted.length).toBe(1)
-    expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
-    expect(api.db.commissions[0].status).toBe('delivered')
+    await expect.poll(() => api.db.commissions[0].status).toBe('delivered')
     expect(api.db.commissions[0].delivered_at).toBeTruthy()
-    await expect(page.getByText(/added to balance/)).toBeVisible()
-    expect(api.posted).toHaveLength(1)
+    await expect(sheet(page).getByRole('listitem').filter({ hasText: 'Delivered' })).toHaveAttribute('aria-current', 'step')
+    await expect(sheet(page).getByRole('switch', { name: 'Paid' })).toHaveAttribute('aria-checked', 'false')
+    await page.waitForLoadState('networkidle')
+    expect(api.posted).toHaveLength(0)
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    await expect(page.getByText(/added to balance/)).toHaveCount(0)
   })
 
   test('a failed delivery update books no income', async ({ page, api }) => {
@@ -218,7 +223,7 @@ test.describe('the commissions page', () => {
     expect(api.posted).toHaveLength(0)
   })
 
-  test('a lost reply on the delivery update still books the income once', async ({ page, api }) => {
+  test('a lost reply on the delivery update still shows it delivered and books nothing', async ({ page, api }) => {
     seedWith(api, [commission({ status: 'ready' })])
     await api.mockTransactions()
     await gotoReady(page, '/commissions')
@@ -226,10 +231,11 @@ test.describe('the commissions page', () => {
     await page.getByRole('button', { name: /Ash Ketchum/ }).click()
     api.fail('commissions', 'drop')
     await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
-    await expect(page.getByText(/added to balance/)).toBeVisible()
-    await expect.poll(() => api.posted.length).toBe(1)
-    expect(api.posted[0]).toMatchObject({ amount: 30 })
+    await expect(sheet(page).getByRole('listitem').filter({ hasText: 'Delivered' })).toHaveAttribute('aria-current', 'step')
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
     expect(api.db.commissions[0].status).toBe('delivered')
+    await page.waitForLoadState('networkidle')
+    expect(api.posted).toHaveLength(0)
   })
 
   test('a step back, a cancellation and the Done chip', async ({ page, api }) => {
@@ -413,7 +419,7 @@ test.describe('the commissions page', () => {
     await row.click()
     await expect(sheet(page)).toContainText('Pikachu Keychain × 2')
     await expect(sheet(page)).toContainText('Totoro × 1')
-    await sheet(page).getByRole('button', { name: 'Mark delivered' }).click()
+    await sheet(page).getByRole('switch', { name: 'Paid' }).click()
 
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0]).toMatchObject({ amount: 15, description: 'Commission: Pikachu Keychain × 2, Totoro × 1 (Ash Ketchum)' })
@@ -423,8 +429,8 @@ test.describe('the commissions page', () => {
       { article: 't1', name: 'Totoro', category: 'cat-mini', categoryName: 'Mini Figure', quantity: 1, unitPrice: 7.5, lineTotal: 7.5, discount: 0, deal: '', dealName: '' }
     ])
     expect(Number.isNaN(Date.parse(api.posted[0].sold_at))).toBe(false)
-    expect(api.db.commissions[0].status).toBe('delivered')
-    await expect(page.getByText(/added to balance/)).toBeVisible()
+    expect(api.db.commissions[0].status).toBe('ready')
+    await expect(page.getByText(/Paid — 15,00\s€ added to balance/)).toBeVisible()
     expect(api.posted).toHaveLength(1)
   })
 
@@ -432,6 +438,252 @@ test.describe('the commissions page', () => {
     seedWith(api, [commission({ article: '', quantity: 0, items: [...TWO_LINES, { article: 'f1', name: 'Glurak Figure', quantity: 1 }] })])
     await gotoReady(page, '/commissions')
     await expect(page.getByRole('button', { name: /Ash Ketchum/ })).toContainText('Pikachu Keychain × 2, Totoro +1 more · Pickup')
+  })
+})
+
+const PAID_AT = '2026-10-10 10:00:00.000Z'
+const TX_ID = 'txpaid000000001'
+const income = overrides => ({
+  id: TX_ID,
+  collectionName: 'budget_tracker_transactions',
+  description: 'Commission: Glurak Figure × 1 (Ash Ketchum)',
+  amount: 30,
+  notes: '',
+  date: '2026-10-10',
+  created: PAID_AT,
+  updated: PAID_AT,
+  ...overrides
+})
+const paidSwitch = page => sheet(page).getByRole('switch', { name: 'Paid' })
+const openAsh = async (page, tab) => {
+  await gotoReady(page, '/commissions')
+  if (tab) await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: new RegExp(tab) }).click()
+  await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+}
+const PAYMENT_FAILED = 'Could not change the payment. Check your connection and try again.'
+const stored = (page, key) => page.evaluate(name => JSON.parse(localStorage.getItem(name) || '[]'), key)
+
+test.describe('phone and payment', () => {
+  test('the phone is saved trimmed, shown as a tel: link and removed with the customer data', async ({ page, api }) => {
+    seedWith(api)
+    await startCommission(page, 'Glurak Figure')
+    await sheet(page).getByLabel('Customer name').fill('Misty')
+    const phone = sheet(page).getByLabel('Phone', { exact: true })
+    await expect(phone).toHaveAttribute('type', 'tel')
+    await expect(phone).toHaveAttribute('inputmode', 'tel')
+    await expect(phone).toHaveAttribute('autocomplete', 'off')
+    await phone.fill('  +49 151 2345678 ')
+    await sheet(page).getByRole('button', { name: 'Create commission' }).click()
+    await expect(page.getByText('Commission created')).toBeVisible()
+    expect(api.db.commissions[0].customer_phone).toBe('+49 151 2345678')
+
+    await page.getByRole('button', { name: /Misty/ }).click()
+    const link = sheet(page).getByRole('link', { name: '+49 151 2345678' })
+    await expect(link).toHaveAttribute('href', 'tel:+491512345678')
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await expect(sheet(page).getByLabel('Phone', { exact: true })).toHaveValue('+49 151 2345678')
+    await sheet(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    await sheet(page).getByRole('button', { name: 'Delete customer data' }).click()
+    await expect(sheet(page).getByText('Remove the name, email, phone and address for good? The article, price and status stay.')).toBeVisible()
+    await sheet(page).getByRole('button', { name: 'Delete data' }).click()
+    await expect.poll(() => api.db.commissions[0].anonymised_at).toBeTruthy()
+    expect(api.db.commissions[0].customer_phone).toBe('')
+    await expect(sheet(page).getByRole('link', { name: /\+49/ })).toHaveCount(0)
+    await expect(sheet(page).getByText('Phone', { exact: true })).toHaveCount(0)
+  })
+
+  test('a commission without a phone shows no Phone row', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await openAsh(page)
+    await expect(sheet(page).getByText('ash@example.com')).toBeVisible()
+    await expect(sheet(page).getByText('Phone', { exact: true })).toHaveCount(0)
+  })
+
+  test('Paid books one income with the customer name, its lines and time, and stores its id', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    await paidSwitch(page).click()
+
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
+    expect(api.posted[0].items).toEqual([
+      { article: 'f1', name: 'Glurak Figure', category: 'cat-figure', categoryName: 'Big Figure', quantity: 1, unitPrice: 30, lineTotal: 30, discount: 0, deal: '', dealName: '' }
+    ])
+    expect(Number.isNaN(Date.parse(api.posted[0].sold_at))).toBe(false)
+    expect(api.posted[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(api.db.commissions[0].paid_at).toBeTruthy()
+    expect(api.db.commissions[0].payment_transaction).toBe(api.posted[0].id)
+    expect(api.db.commissions[0].status).toBe('open')
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByText(/Paid — 30,00\s€ added to balance/)).toBeVisible()
+    // The commission is updated before the income is booked
+    const order = api.requests.filter(request => request.method !== 'GET' && /commissions|budget_tracker_transactions/.test(request.path)).map(request => request.path.split('/')[3])
+    expect(order).toEqual(['commissions', 'budget_tracker_transactions'])
+  })
+
+  test('Unpaid deletes the income on the server and clears the payment', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    api.db.budget_tracker_transactions.push(income())
+    await openAsh(page)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.posted).toHaveLength(0)
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    expect(api.requests.some(request => request.method === 'DELETE' && request.path.endsWith(`/budget_tracker_transactions/records/${TX_ID}`))).toBe(true)
+    expect((await stored(page, 'budget-tracker-transactions')).filter(entry => entry.recordId === TX_ID || entry.id === TX_ID)).toEqual([])
+  })
+
+  test('Unpaid on an income the server no longer has still clears the payment', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+  })
+
+  test('Unpaid on an income still waiting in the queue drops it from the queue and the list', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions({ status: 500 })
+    await openAsh(page)
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    const recordId = api.db.commissions[0].payment_transaction
+    expect(recordId).toBeTruthy()
+    await expect.poll(async () => (await stored(page, 'budget-tracker-offline-queue')).map(item => item.recordId)).toEqual([recordId])
+
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    expect(await stored(page, 'budget-tracker-offline-queue')).toEqual([])
+    expect((await stored(page, 'budget-tracker-transactions')).filter(entry => entry.recordId === recordId)).toEqual([])
+    expect(api.requests.filter(request => request.method === 'DELETE')).toHaveLength(0)
+    expect(api.posted).toHaveLength(0)
+  })
+
+  test('a failed Unpaid keeps the switch on and the income', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    api.db.budget_tracker_transactions.push(income())
+    await openAsh(page)
+    api.fail('budget_tracker_transactions', 500)
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText(PAYMENT_FAILED)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: PAID_AT, payment_transaction: TX_ID })
+    expect(api.posted).toHaveLength(1)
+  })
+
+  test('a lost reply on the payment update books nothing; tapping again books exactly one income with the stored id', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    api.fail('commissions', 'drop')
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText(PAYMENT_FAILED)
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    const recordId = api.db.commissions[0].payment_transaction
+    expect(recordId).toBeTruthy()
+    expect(api.posted).toHaveLength(0)
+
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ id: recordId, amount: 30 })
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+  })
+
+  test('a commission another device already paid is shown paid and books nothing', async ({ page, api }) => {
+    seedWith(api, [commission()])
+    await api.mockTransactions()
+    await openAsh(page)
+    Object.assign(api.db.commissions[0], { paid_at: PAID_AT, payment_transaction: TX_ID })
+    api.db.budget_tracker_transactions.push(income())
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await page.waitForLoadState('networkidle')
+    expect(api.posted).toHaveLength(1)
+    expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
+  })
+
+  test('an old delivered commission asks first; Only mark paid books nothing', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'delivered', delivered_at: PAID_AT })])
+    await api.mockTransactions()
+    await openAsh(page, 'Done')
+    await paidSwitch(page).click()
+    await expect(sheet(page).getByText('Income was already booked when this commission was delivered.')).toBeVisible()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.db.commissions[0].paid_at).toBe('')
+    await sheet(page).getByRole('button', { name: 'Only mark paid' }).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    expect(api.db.commissions[0].paid_at).toBeTruthy()
+    expect(api.db.commissions[0].payment_transaction).toBe('')
+    await page.waitForLoadState('networkidle')
+    expect(api.posted).toHaveLength(0)
+
+    // Unpaid only clears paid_at: there is no income of its own to remove
+    await paidSwitch(page).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'false')
+    expect(api.db.commissions[0]).toMatchObject({ paid_at: '', payment_transaction: '' })
+    expect(api.requests.filter(request => request.method === 'DELETE')).toHaveLength(0)
+  })
+
+  test('an old delivered commission asks first; Book income again books one income', async ({ page, api }) => {
+    seedWith(api, [commission({ status: 'delivered', delivered_at: PAID_AT })])
+    await api.mockTransactions()
+    await openAsh(page, 'Done')
+    await paidSwitch(page).click()
+    await sheet(page).getByRole('button', { name: 'Book income again' }).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect.poll(() => api.posted.length).toBe(1)
+    expect(api.posted[0]).toMatchObject({ amount: 30, description: 'Commission: Glurak Figure × 1 (Ash Ketchum)' })
+    expect(api.db.commissions[0].payment_transaction).toBe(api.posted[0].id)
+    await expect(sheet(page).getByText('Income was already booked when this commission was delivered.')).toHaveCount(0)
+  })
+
+  test('offline the switch is disabled and says it needs a connection', async ({ page, api, context }) => {
+    seedWith(api, [commission()])
+    await openAsh(page)
+    await expect(paidSwitch(page)).toBeEnabled()
+    await context.setOffline(true)
+    await expect(paidSwitch(page)).toBeDisabled()
+    await expect(sheet(page).getByText('Needs a connection')).toBeVisible()
+    await context.setOffline(false)
+    await expect(paidSwitch(page)).toBeEnabled()
+  })
+
+  test('while paid the price cannot change, other fields can', async ({ page, api }) => {
+    seedWith(api, [commission({ paid_at: PAID_AT, payment_transaction: TX_ID })])
+    await openAsh(page)
+    await sheet(page).getByRole('button', { name: 'Edit' }).click()
+    await sheet(page).getByLabel('Agreed price').fill('35')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText('Switch to Unpaid to change the price')
+    expect(api.requests.filter(request => request.method === 'PATCH')).toHaveLength(0)
+    await sheet(page).getByLabel('Agreed price').fill('30,00')
+    await sheet(page).getByLabel('Notes').fill('Gold paint')
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect.poll(() => api.db.commissions[0].notes).toBe('Gold paint')
+    expect(api.db.commissions[0]).toMatchObject({ agreed_price: 30, paid_at: PAID_AT, payment_transaction: TX_ID })
+  })
+
+  test('list rows show Paid or Unpaid, and a cancelled commission keeps the switch', async ({ page, api }) => {
+    seedWith(api, [
+      commission({ id: 'p1', customer_name: 'Paid Customer', paid_at: PAID_AT, payment_transaction: TX_ID }),
+      commission({ id: 'u1', customer_name: 'Open Customer' }),
+      commission({ id: 'x1', customer_name: 'Ash Ketchum', status: 'cancelled', cancelled_at: PAID_AT, paid_at: PAID_AT })
+    ])
+    await gotoReady(page, '/commissions')
+    await expect(page.getByRole('button', { name: /Paid Customer/ }).getByText('Paid', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Paid Customer/ }).getByText('Unpaid', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Open Customer/ }).getByText('Unpaid', { exact: true })).toBeVisible()
+    await page.getByRole('group', { name: 'Commission status' }).getByRole('button', { name: /Done/ }).click()
+    await page.getByRole('button', { name: /Ash Ketchum/ }).click()
+    await expect(paidSwitch(page)).toHaveAttribute('aria-checked', 'true')
+    await expect(paidSwitch(page)).toBeEnabled()
   })
 })
 
