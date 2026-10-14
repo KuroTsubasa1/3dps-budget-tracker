@@ -297,6 +297,26 @@ test.describe('convention calendar', () => {
     await expect(page.getByRole('heading', { name: 'October 2026' })).toBeVisible()
   })
 
+  test('the month grid marks today', async ({ page, api }) => {
+    await openCalendar(page, api)
+    await showMonth(page)
+    const today = page.getByRole('group', { name: 'October 2026' }).getByRole('button', { name: 'Wed 14 Oct, today' })
+    await expect(today).toHaveAttribute('aria-current', 'date')
+    await expect(page.locator('[aria-current="date"]')).toHaveCount(1)
+  })
+
+  test('on phones the month grid keeps its month when switching views', async ({ page, api, isMobile }) => {
+    test.skip(!isMobile, 'The view switch is phone-only')
+    await openCalendar(page, api)
+    const views = page.getByRole('radiogroup', { name: 'View' })
+    await views.getByRole('radio', { name: 'Month' }).click()
+    await page.getByRole('button', { name: 'Next month' }).click()
+    await expect(page.getByRole('heading', { name: 'November 2026' }).last()).toBeVisible()
+    await views.getByRole('radio', { name: 'Upcoming' }).click()
+    await views.getByRole('radio', { name: 'Month' }).click()
+    await expect(page.getByRole('group', { name: 'November 2026' })).toBeVisible()
+  })
+
   test('the dashboard shows Next up and opens the convention', async ({ page, api }) => {
     api.seed({ conventions: [DOKOMI, CONNICHI] })
     await page.clock.setFixedTime(CALENDAR_NOW)

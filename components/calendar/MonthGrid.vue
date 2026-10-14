@@ -22,6 +22,7 @@
         :class="[day.inMonth ? 'text-ink' : 'text-ink-muted opacity-60', selected === day.date ? 'bg-accent/10' : '']"
         :aria-label="labelOf(day)"
         :aria-pressed="selected === day.date"
+        :aria-current="day.date === today ? 'date' : undefined"
         @click="selected = day.date"
       >
         <span class="text-center tabular-nums" :class="day.date === today ? 'font-bold text-accent' : ''">{{ day.day }}</span>
@@ -103,6 +104,7 @@ const entries = computed(() => (selectedDay.value
 
 const labelOf = (day) => {
   const parts = [...day.bars.map(bar => bar.name), ...day.dots.map(dot => `applications close: ${dot.name}`)]
-  return parts.length ? `${formatDay(day.date)}: ${parts.join(', ')}` : formatDay(day.date)
+  const label = parts.length ? `${formatDay(day.date)}: ${parts.join(', ')}` : formatDay(day.date)
+  return day.date === today.value ? `${label}, today` : label
 }
 </script>

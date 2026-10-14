@@ -24,7 +24,8 @@
       <SegmentedControl v-if="!isDesktop" v-model="view" class="mb-4" label="View" :options="VIEWS" />
       <div class="grid gap-4 lg:grid-cols-2 lg:items-start">
         <UpcomingList v-if="isDesktop || view === 'upcoming'" :conventions="conventions" :now="now" @open="openExisting" />
-        <div v-if="isDesktop || view === 'month'" class="min-w-0">
+        <!-- v-show: switching views keeps the viewed month and the tapped day -->
+        <div v-show="isDesktop || view === 'month'" class="min-w-0">
           <!-- On lg+ the convention opens in place of the month grid (kept, so it stays on its month);
                the Upcoming list stays beside it -->
           <section v-if="isDesktop && panelOpen" class="card p-4 md:p-5" aria-labelledby="convention-panel-title">
