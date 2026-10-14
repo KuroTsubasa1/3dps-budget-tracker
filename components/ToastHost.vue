@@ -32,7 +32,7 @@ import { useToast } from '~/composables/useToast'
 
 const TONE_CLASS = {
   success: 'text-income',
-  warning: 'text-amber-500',
+  warning: 'text-warning',
   error: 'text-expense'
 }
 

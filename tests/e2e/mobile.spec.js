@@ -132,7 +132,7 @@ test.describe('phone layout sweep', () => {
   test('the commission form fits at 375px with long lines', async ({ page, api }) => {
     api.seed({ articles: longProducts })
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByLabel('Add article').selectOption({ label: longProducts[0].name })
     await dialog.getByLabel('Add article').selectOption({ label: 'Phone Stand' })

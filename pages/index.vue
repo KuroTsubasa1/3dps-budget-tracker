@@ -50,7 +50,7 @@
 
         <BaseCard title="Recent Transactions" icon="clipboard" flush>
           <template #actions>
-            <BaseButton variant="ghost">View All</BaseButton>
+            <NuxtLink to="/reports" class="btn-link">View All</NuxtLink>
           </template>
           <div v-if="sortedTransactions.length === 0" class="px-4 py-10 text-center">
             <p class="text-sm font-medium text-ink">No transactions yet</p>
@@ -86,7 +86,7 @@
       <button
         type="button"
         aria-label="Add transaction"
-        class="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg bottom-above-nav md:bottom-6 md:right-6"
+        class="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 bottom-above-nav md:bottom-6 md:right-6"
         @click="isFormOpen = true"
       >
         <AppIcon name="plus" class="h-6 w-6" />

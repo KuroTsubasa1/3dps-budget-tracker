@@ -6,7 +6,7 @@
   >
     <button
       type="button"
-      class="flex h-11 w-11 items-center justify-center text-ink-muted hover:text-ink"
+      class="flex h-11 w-11 items-center justify-center text-ink-muted hover:bg-muted hover:text-ink"
       :aria-label="`Remove one ${name}`"
       @click.stop="$emit('decrement')"
     >
@@ -15,7 +15,7 @@
     <span class="w-6 text-center text-sm font-semibold tabular-nums text-ink">{{ quantity }}</span>
     <button
       type="button"
-      class="flex h-11 w-11 items-center justify-center text-ink-muted hover:text-ink"
+      class="flex h-11 w-11 items-center justify-center text-accent hover:bg-muted"
       :aria-label="`Add one ${name}`"
       @click.stop="$emit('increment')"
     >

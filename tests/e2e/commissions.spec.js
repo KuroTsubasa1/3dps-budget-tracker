@@ -59,7 +59,7 @@ test.describe('the commissions page', () => {
   test('a new commission pre-fills the deal price and saves its lines', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
     await addArticle(page, 'Pikachu Keychain')
@@ -84,7 +84,7 @@ test.describe('the commissions page', () => {
   test('stepping and removing lines updates the price until it is edited', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     const price = sheet(page).getByLabel('Agreed price')
     await addArticle(page, 'Pikachu Keychain')
     await expect(price).toHaveValue('4,00')
@@ -109,7 +109,7 @@ test.describe('the commissions page', () => {
   test('saving while offline says so and keeps the form open', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
     await addArticle(page, 'Glurak Figure')
@@ -142,7 +142,7 @@ test.describe('the commissions page', () => {
   test('the address is only asked for, and required, when shipping', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Brock')
     await sheet(page).getByLabel('Email').fill('brock@example.com')
     await addArticle(page, 'Glurak Figure')
@@ -159,7 +159,7 @@ test.describe('the commissions page', () => {
   test('validation names the problem', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     const save = () => sheet(page).getByRole('button', { name: 'Create commission' }).click()
     const alert = sheet(page).getByRole('alert')
     await save()
@@ -323,7 +323,7 @@ test.describe('the commissions page', () => {
   test('a new commission has no Cancel button in its form', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await expect(sheet(page).getByRole('button', { name: 'Create commission' })).toBeVisible()
     await expect(sheet(page).getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0)
   })
@@ -346,7 +346,7 @@ test.describe('the commissions page', () => {
   test('an email the server rejects shows the email message and keeps the form open', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await sheet(page).getByLabel('Email').fill('misty@example.com')
     await addArticle(page, 'Glurak Figure')
@@ -378,7 +378,7 @@ test.describe('the commissions page', () => {
   test('a commission can be created without an email', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await addArticle(page, 'Glurak Figure')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
@@ -390,7 +390,7 @@ test.describe('the commissions page', () => {
     seedWith(api)
     api.stripItems('commissions')
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await addArticle(page, 'Glurak Figure')
     await sheet(page).getByRole('button', { name: 'Create commission' }).click()
@@ -402,7 +402,7 @@ test.describe('the commissions page', () => {
   test('a create the server rejects for the required article asks for the migration', async ({ page, api }) => {
     seedWith(api)
     await gotoReady(page, '/commissions')
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await sheet(page).getByLabel('Customer name').fill('Misty')
     await addArticle(page, 'Glurak Figure')
     api.fail('commissions', 400, { article: { code: 'validation_required', message: 'Cannot be blank.' } })
@@ -490,7 +490,7 @@ test.describe('entry points', () => {
     await expect(sheet(page)).toHaveCount(0)
 
     // A commission started by hand begins with no lines
-    await page.getByRole('button', { name: '+ New commission' }).click()
+    await page.getByRole('button', { name: 'New commission' }).click()
     await expect(sheet(page).getByRole('group', { name: /^Quantity of / })).toHaveCount(0)
     await expect(sheet(page).getByLabel('Agreed price')).toHaveValue('')
   })

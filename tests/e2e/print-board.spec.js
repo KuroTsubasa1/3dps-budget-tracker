@@ -54,6 +54,7 @@ test.describe('the print board', () => {
     const card = toPrint.getByRole('article', { name: 'Pikachu Keychain' })
     await expect(card).toContainText('2 left · target 10')
     await expect(toPrint.getByRole('article', { name: 'Glurak Figure' })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Print 8' })).not.toHaveClass(/btn-primary/)
     await card.getByRole('button', { name: 'Print 8' }).click()
 
     await expect.poll(() => api.db.print_jobs.length).toBe(1)
@@ -61,7 +62,9 @@ test.describe('the print board', () => {
     await expect(toPrint.getByRole('article', { name: 'Pikachu Keychain' })).toHaveCount(0)
 
     const printing = await openColumn(page, 'Printing')
-    await printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true }).click()
+    const doneButton = printing.getByRole('article', { name: 'Pikachu Keychain' }).getByRole('button', { name: 'Done', exact: true })
+    await expect(doneButton).toHaveClass(/btn-primary/)
+    await doneButton.click()
     await expect.poll(() => api.db.print_jobs[0].status).toBe('done')
     expect(api.db.print_jobs[0].done_at).toBeTruthy()
     expect(stockOf(api, 'k1')).toBe(10)

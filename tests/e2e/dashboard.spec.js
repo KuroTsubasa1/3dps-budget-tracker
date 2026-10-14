@@ -88,3 +88,9 @@ test('keypad decimal point works after typing digits', async ({ page }) => {
   await page.getByRole('button', { name: '5', exact: true }).click()
   await expect(amount).toHaveValue('12.5')
 })
+
+test('View All on the dashboard opens the reports', async ({ page }) => {
+  await gotoReady(page, '/')
+  await page.getByRole('link', { name: 'View All' }).click()
+  await expect(page).toHaveURL(/\/reports$/)
+})

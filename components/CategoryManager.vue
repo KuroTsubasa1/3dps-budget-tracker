@@ -1,7 +1,7 @@
 <template>
   <BaseCard title="Categories" subtitle="Base prices apply to every article without its own price" icon="bag" flush>
     <template #actions>
-      <BaseButton variant="ghost" icon="plus" aria-label="Add category" @click="openEditor(null)">Add</BaseButton>
+      <BaseButton variant="link" icon="plus" aria-label="Add category" @click="openEditor(null)">Add</BaseButton>
     </template>
 
     <p v-if="loadError" class="px-4 py-6 text-sm text-expense md:px-5">{{ loadError }}</p>
@@ -19,7 +19,7 @@
         </button>
         <button
           type="button"
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted disabled:opacity-30"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted hover:text-accent disabled:opacity-30 disabled:hover:text-ink-muted"
           :aria-label="`Move ${category.name} up`"
           :disabled="index === 0 || moving"
           @click="move(index, -1)"
@@ -28,7 +28,7 @@
         </button>
         <button
           type="button"
-          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted disabled:opacity-30"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted hover:text-accent disabled:opacity-30 disabled:hover:text-ink-muted"
           :aria-label="`Move ${category.name} down`"
           :disabled="index === categories.length - 1 || moving"
           @click="move(index, 1)"
@@ -53,7 +53,7 @@
       </form>
 
       <div v-if="editing" class="mt-6 border-t border-line pt-5">
-        <BaseButton v-if="!confirmingDelete" variant="ghost" block icon="trash" @click="confirmingDelete = true">Delete category</BaseButton>
+        <BaseButton v-if="!confirmingDelete" variant="danger-ghost" block icon="trash" @click="confirmingDelete = true">Delete category</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Delete “{{ editing.name }}”? This can't be undone.</p>
           <div class="grid grid-cols-2 gap-2">

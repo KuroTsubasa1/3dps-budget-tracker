@@ -106,7 +106,7 @@
       </div>
 
       <div v-if="canCancel(commission.status)" class="border-t border-line pt-4">
-        <BaseButton v-if="confirming !== 'cancel'" variant="ghost" block :disabled="busy" @click="confirming = 'cancel'">Cancel commission</BaseButton>
+        <BaseButton v-if="confirming !== 'cancel'" variant="danger-ghost" block :disabled="busy" @click="confirming = 'cancel'">Cancel commission</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Cancel this commission? It moves to Done and can't be reopened.</p>
           <div class="grid grid-cols-2 gap-2">
@@ -117,7 +117,7 @@
       </div>
 
       <div v-if="!commission.anonymised_at" class="border-t border-line pt-4">
-        <BaseButton v-if="confirming !== 'delete'" variant="ghost" block icon="trash" :disabled="busy" @click="confirming = 'delete'">Delete customer data</BaseButton>
+        <BaseButton v-if="confirming !== 'delete'" variant="danger-ghost" block icon="trash" :disabled="busy" @click="confirming = 'delete'">Delete customer data</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Remove the name, email and address for good? The article, price and status stay.</p>
           <div class="grid grid-cols-2 gap-2">

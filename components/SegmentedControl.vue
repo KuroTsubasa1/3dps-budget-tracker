@@ -14,7 +14,7 @@
       class="min-h-[44px] truncate rounded-md font-medium transition-colors"
       :class="[
         dense ? 'px-1 text-xs sm:px-2 sm:text-sm' : 'px-2 text-sm',
-        modelValue === option.value ? ['bg-card shadow-sm', option.activeClass || 'text-ink'] : 'text-ink-muted hover:text-ink'
+        modelValue === option.value ? ['bg-card shadow-sm', option.activeClass || 'text-accent'] : 'text-ink-muted hover:text-ink'
       ]"
       @click="$emit('update:modelValue', option.value)"
     >

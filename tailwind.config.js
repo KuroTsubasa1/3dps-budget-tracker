@@ -25,7 +25,8 @@ module.exports = {
         },
         accent: token('accent'),
         income: token('income'),
-        expense: token('expense')
+        expense: token('expense'),
+        warning: token('warning')
       }
     },
   },

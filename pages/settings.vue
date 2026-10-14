@@ -127,7 +127,7 @@
                     <p class="text-sm font-medium text-ink">Last sync</p>
                     <p class="truncate text-xs text-ink-muted">{{ lastSyncTime || 'Never' }}</p>
                   </div>
-                  <BaseButton icon="refresh" :loading="queueIsSyncing" @click="syncData">
+                  <BaseButton variant="secondary" icon="refresh" :loading="queueIsSyncing" @click="syncData">
                     {{ queueIsSyncing ? 'Syncing...' : 'Sync Now' }}
                   </BaseButton>
                 </div>
@@ -141,7 +141,7 @@
             <div class="border-t border-line pt-5">
               <h3 class="text-sm font-semibold text-expense">Danger Zone</h3>
               <p class="mb-3 text-xs text-ink-muted">Permanent actions that can't be undone</p>
-              <BaseButton variant="danger" block icon="trash" @click="showClearDataConfirm = true">Clear All Local Data</BaseButton>
+              <BaseButton variant="danger-ghost" block icon="trash" @click="showClearDataConfirm = true">Clear All Local Data</BaseButton>
             </div>
           </div>
         </BaseCard>

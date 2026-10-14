@@ -17,7 +17,7 @@
         <label for="inventory-printed" class="label">Add printed</label>
         <input id="inventory-printed" v-model="printedCount" type="text" inputmode="numeric" class="input" placeholder="0">
       </div>
-      <BaseButton type="submit" variant="secondary" icon="plus" :loading="busy === 'printed'">Add</BaseButton>
+      <BaseButton type="submit" icon="plus" :loading="busy === 'printed'">Add</BaseButton>
     </form>
 
     <form class="space-y-2" novalidate @submit.prevent="correct">

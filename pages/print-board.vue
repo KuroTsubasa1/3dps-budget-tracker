@@ -60,7 +60,7 @@
               @increment="setQuantity(card, quantityFor(card) + 1)"
               @decrement="setQuantity(card, quantityFor(card) - 1)"
             />
-            <BaseButton icon="printer" :loading="busy === keyOf(card)" :disabled="!!busy" @click="start(card)">Print {{ quantityFor(card) }}</BaseButton>
+            <BaseButton variant="secondary" icon="printer" :loading="busy === keyOf(card)" :disabled="!!busy" @click="start(card)">Print {{ quantityFor(card) }}</BaseButton>
           </div>
           <BaseButton
             v-else-if="column.id === 'toPrint'"

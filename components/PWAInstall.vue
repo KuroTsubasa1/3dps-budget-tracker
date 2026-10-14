@@ -3,15 +3,15 @@
     <div v-if="updateAvailable" class="rounded-xl border border-line bg-card p-4 shadow-lg">
       <h3 class="text-sm font-semibold text-ink">Update Available</h3>
       <p class="mb-3 text-sm text-ink-muted">A new version of the app is available.</p>
-      <button type="button" class="btn btn-primary" @click="updateApp">Update Now</button>
+      <BaseButton @click="updateApp">Update Now</BaseButton>
     </div>
 
     <div v-if="isInstallable && !isInstalled && showInstallPrompt" class="rounded-xl border border-line bg-card p-4 shadow-lg">
       <h3 class="text-sm font-semibold text-ink">Install App</h3>
       <p class="mb-3 text-sm text-ink-muted">Install this app on your device for a better experience.</p>
       <div class="flex gap-2">
-        <button type="button" class="btn btn-primary" @click="installApp">Install</button>
-        <button type="button" class="btn btn-ghost" @click="dismissInstall">Not Now</button>
+        <BaseButton @click="installApp">Install</BaseButton>
+        <BaseButton variant="ghost" @click="dismissInstall">Not Now</BaseButton>
       </div>
     </div>
   </div>

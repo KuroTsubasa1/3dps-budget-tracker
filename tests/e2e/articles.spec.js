@@ -11,7 +11,7 @@ test.describe('managing articles', () => {
   })
 
   test('creating an article with starting stock', async ({ page, api }) => {
-    await page.getByRole('button', { name: '+ New article' }).click()
+    await page.getByRole('button', { name: 'New article' }).click()
     await sheet(page).getByLabel('Name').fill('Evoli Keychain')
     await sheet(page).getByLabel('Category').selectOption({ label: 'Keychain' })
     await sheet(page).getByLabel('Starting stock').fill('3')
@@ -28,7 +28,7 @@ test.describe('managing articles', () => {
 
   test('a failed starting stock still keeps the new article', async ({ page, api }) => {
     api.fail('stock_movements', 500)
-    await page.getByRole('button', { name: '+ New article' }).click()
+    await page.getByRole('button', { name: 'New article' }).click()
     await sheet(page).getByLabel('Name').fill('Evoli Keychain')
     await sheet(page).getByLabel('Category').selectOption({ label: 'Keychain' })
     await sheet(page).getByLabel('Starting stock').fill('3')
@@ -43,7 +43,7 @@ test.describe('managing articles', () => {
   })
 
   test('validation names the missing field', async ({ page }) => {
-    await page.getByRole('button', { name: '+ New article' }).click()
+    await page.getByRole('button', { name: 'New article' }).click()
     await sheet(page).getByRole('button', { name: 'Create article' }).click()
     await expect(sheet(page).getByRole('alert')).toHaveText('Enter a name')
     await sheet(page).getByLabel('Name').fill('Nameless')
@@ -62,6 +62,7 @@ test.describe('managing articles', () => {
   test('adding printed items and correcting the count are logged', async ({ page, api }) => {
     await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
     await sheet(page).getByLabel('Add printed').fill('2')
+    await expect(sheet(page).getByRole('button', { name: 'Add', exact: true })).toHaveClass(/btn-primary/)
     await sheet(page).getByRole('button', { name: 'Add', exact: true }).click()
     await expect(sheet(page).getByTestId('article-stock')).toHaveText('7')
 

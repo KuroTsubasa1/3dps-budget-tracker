@@ -4,7 +4,7 @@
       <div class="min-w-0">
         <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products">
           <template v-if="isOwner" #actions>
-            <BaseButton :variant="managing ? 'primary' : 'secondary'" icon="cog" :aria-pressed="managing" @click="managing = !managing">
+            <BaseButton variant="secondary" :class="managing ? 'border-accent bg-accent/10 text-accent' : ''" icon="cog" :aria-pressed="managing" @click="managing = !managing">
               {{ managing ? 'Done' : 'Manage' }}
             </BaseButton>
           </template>
@@ -27,7 +27,7 @@
               <option value="name">Sort by Name</option>
               <option value="price">Sort by Price</option>
             </select>
-            <button type="button" class="chip chip-idle" @click="sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'">
+            <button type="button" class="chip" :class="sortOption !== 'name' || sortDirection !== 'asc' ? 'chip-active' : 'chip-idle'" @click="sortDirection = sortDirection === 'asc' ? 'desc' : 'asc'">
               <AppIcon name="sort" class="h-4 w-4" />
               {{ sortDirection === 'asc' ? 'A to Z' : 'Z to A' }}
             </button>
@@ -56,7 +56,7 @@
           </div>
         </div>
 
-        <BaseButton v-if="managing" class="mb-4" block icon="plus" @click="openEditor(null)">+ New article</BaseButton>
+        <BaseButton v-if="managing" class="mb-4" block icon="plus" @click="openEditor(null)">New article</BaseButton>
 
         <div v-if="loading" class="card flex h-48 flex-col items-center justify-center gap-3">
           <span class="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-accent" aria-hidden="true" />
@@ -159,7 +159,7 @@
       <button
         v-if="showCartBar"
         type="button"
-        class="fixed inset-x-4 z-30 flex min-h-[52px] items-center justify-between gap-3 rounded-xl bg-accent px-4 text-white shadow-lg bottom-above-nav md:bottom-6 md:left-auto md:right-6 md:w-80"
+        class="fixed inset-x-4 z-30 flex min-h-[52px] items-center justify-between gap-3 rounded-xl bg-accent px-4 text-white shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 bottom-above-nav md:bottom-6 md:left-auto md:right-6 md:w-80"
         @click="isCartOpen = true"
       >
         <span class="text-sm font-medium">
@@ -213,7 +213,7 @@ import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
 
 const STOCK_BADGE = {
   out: 'bg-expense/10 text-expense',
-  low: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  low: 'bg-warning/10 text-warning',
   ok: 'bg-muted text-ink-muted'
 }
 

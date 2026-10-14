@@ -2,7 +2,7 @@
   <div>
     <PageHeader title="Commissions" subtitle="Made-to-order prints">
       <template #actions>
-        <BaseButton @click="openNew">+ New commission</BaseButton>
+        <BaseButton icon="plus" @click="openNew">New commission</BaseButton>
       </template>
     </PageHeader>
 

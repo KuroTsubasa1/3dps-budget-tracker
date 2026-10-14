@@ -9,12 +9,11 @@
       <p class="text-sm font-medium text-ink">{{ syncStatus.isOnline ? 'Online' : 'Offline' }}</p>
       <p class="truncate text-xs text-ink-muted">{{ syncStatus.isOnline ? 'Connected to server' : 'Working in offline mode' }}</p>
     </div>
-    <span v-if="pendingTransactions.length" class="shrink-0 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+    <span v-if="pendingTransactions.length" class="shrink-0 rounded-full bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning">
       {{ pendingTransactions.length }} pending
     </span>
     <BaseButton
       v-if="syncStatus.isOnline && pendingTransactions.length"
-      variant="secondary"
       icon="refresh"
       :loading="queueSyncStatus === 'syncing'"
       @click="syncTransactionsQueue"

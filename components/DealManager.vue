@@ -1,7 +1,7 @@
 <template>
   <BaseCard title="Deals" subtitle="Cart prices for several items" icon="cash" flush>
     <template #actions>
-      <BaseButton variant="ghost" icon="plus" aria-label="Add deal" @click="openEditor(null)">Add</BaseButton>
+      <BaseButton variant="link" icon="plus" aria-label="Add deal" @click="openEditor(null)">Add</BaseButton>
     </template>
 
     <p v-if="loadError" class="px-4 py-6 text-sm text-expense md:px-5">{{ loadError }}</p>
@@ -10,7 +10,7 @@
       <li v-for="deal in deals" :key="deal.id">
         <button
           type="button"
-          class="flex min-h-[56px] w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted md:px-5"
+          class="flex min-h-[56px] w-full items-center gap-3 px-4 py-2 text-left hover:bg-muted hover:text-accent md:px-5"
           :aria-label="`Edit ${deal.name}`"
           @click="openEditor(deal)"
         >
@@ -66,7 +66,7 @@
       </form>
 
       <div v-if="editing" class="mt-6 border-t border-line pt-5">
-        <BaseButton v-if="!confirmingDelete" variant="ghost" block icon="trash" @click="confirmingDelete = true">Delete deal</BaseButton>
+        <BaseButton v-if="!confirmingDelete" variant="danger-ghost" block icon="trash" @click="confirmingDelete = true">Delete deal</BaseButton>
         <div v-else class="space-y-3">
           <p class="text-sm text-ink-muted">Delete “{{ editing.name }}”? Carts stop using it straight away.</p>
           <div class="grid grid-cols-2 gap-2">

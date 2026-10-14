@@ -16,6 +16,12 @@ test.describe('categories', () => {
     await expect(rows(page).nth(1)).toContainText('Keychain')
   })
 
+  test('Add is an accent link and Delete reads as danger before confirming', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Add category' })).toHaveClass(/btn-link/)
+    await page.getByRole('button', { name: 'Edit Keychain' }).click()
+    await expect(editor(page).getByRole('button', { name: 'Delete category' })).toHaveClass(/btn-danger-ghost/)
+  })
+
   test('adding a category puts it last', async ({ page, api }) => {
     await page.getByRole('button', { name: 'Add category' }).click()
     await editor(page).getByLabel('Name').fill('Sticker')

@@ -40,8 +40,8 @@
       </div>
 
       <div class="grid gap-2 print:hidden" :class="canShare ? 'grid-cols-2' : 'grid-cols-1'">
-        <BaseButton v-if="canShare" variant="secondary" icon="share" @click="share">Share</BaseButton>
-        <BaseButton variant="secondary" icon="printer" @click="print">Print</BaseButton>
+        <BaseButton v-if="canShare" icon="share" @click="share">Share</BaseButton>
+        <BaseButton :variant="canShare ? 'secondary' : 'primary'" icon="printer" @click="print">Print</BaseButton>
       </div>
     </div>
   </div>

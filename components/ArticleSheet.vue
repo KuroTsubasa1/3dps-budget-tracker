@@ -78,7 +78,7 @@
     </section>
 
     <div v-if="article" class="mt-6 border-t border-line pt-5">
-      <BaseButton v-if="!confirmingDelete" variant="ghost" block icon="trash" @click="confirmingDelete = true">Delete article</BaseButton>
+      <BaseButton v-if="!confirmingDelete" variant="danger-ghost" block icon="trash" @click="confirmingDelete = true">Delete article</BaseButton>
       <div v-else class="space-y-3">
         <p class="text-sm text-ink-muted">Hide “{{ article.name }}” from the catalog? Its sales and stock history are kept.</p>
         <div class="grid grid-cols-2 gap-2">

@@ -117,7 +117,7 @@
 
     <BaseCard title="Recent Transactions" subtitle="For the selected period" icon="clipboard" flush>
       <template #actions>
-        <BaseButton variant="ghost" icon="download">Export</BaseButton>
+        <BaseButton variant="link" icon="download">Export</BaseButton>
       </template>
       <div class="divide-y divide-line md:hidden">
         <ListRow
@@ -229,40 +229,40 @@ const topExpenseCategories = ref([
     amount: -750.25,
     percentage: 40,
     change: 5.2,
-    bgColor: 'bg-red-500',
-    barColor: 'bg-red-500'
+    bgColor: 'bg-accent',
+    barColor: 'bg-accent'
   },
   {
     name: 'Equipment',
     amount: -450.75,
     percentage: 24,
     change: 12.7,
-    bgColor: 'bg-blue-500',
-    barColor: 'bg-blue-500'
+    bgColor: 'bg-income',
+    barColor: 'bg-income'
   },
   {
     name: 'Marketing',
     amount: -325.40,
     percentage: 18,
     change: -3.5,
-    bgColor: 'bg-green-500',
-    barColor: 'bg-green-500'
+    bgColor: 'bg-expense',
+    barColor: 'bg-expense'
   },
   {
     name: 'Software',
     amount: -214.90,
     percentage: 12,
     change: 1.8,
-    bgColor: 'bg-yellow-500',
-    barColor: 'bg-yellow-500'
+    bgColor: 'bg-warning',
+    barColor: 'bg-warning'
   },
   {
     name: 'Other',
     amount: -101.00,
     percentage: 6,
     change: -8.3,
-    bgColor: 'bg-purple-500',
-    barColor: 'bg-purple-500'
+    bgColor: 'bg-ink-muted',
+    barColor: 'bg-ink-muted'
   }
 ])
 
