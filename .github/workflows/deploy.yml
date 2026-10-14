@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DEPLOY_PATH: /opt/budge-tracker
+  DEPLOY_PATH: /opt/budget-tracker
 
 jobs:
   deploy:

@@ -184,7 +184,7 @@ Each run writes the resulting schema to `pocketbase/schema.json`.
 
 Every push to `master` runs `.github/workflows/deploy.yml`, which can also be started by hand under Actions → Deploy → Run workflow. It does the following:
 1. Installs the dependencies, runs the unit tests and builds the app.
-2. Uploads the build to `/opt/budge-tracker/releases/<commit>` on the VPS and points `/opt/budge-tracker/current` at it.
+2. Uploads the build to `/opt/budget-tracker/releases/<commit>` on the VPS and points `/opt/budget-tracker/current` at it.
 3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker`, listening on `127.0.0.1:3000`).
 4. Checks that https://budget-tracker.lasseharm.space answers.
 
@@ -197,7 +197,7 @@ The 5 newest releases are kept on the server.
    ```
 2. Create the app folder and hand it to `deploy`:
    ```bash
-   mkdir -p /opt/budge-tracker && chown deploy:deploy /opt/budge-tracker
+   mkdir -p /opt/budget-tracker && chown deploy:deploy /opt/budget-tracker
    ```
 3. Make pm2 start the app after a reboot. Run `pm2 startup` as `deploy`, then run the command it prints as root.
 4. Point nginx for `budget-tracker.lasseharm.space` at `http://127.0.0.1:3000` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
@@ -215,7 +215,7 @@ The 5 newest releases are kept on the server.
 **Rollback:** start an older release:
 ```bash
 pm2 delete budget-tracker
-pm2 start /opt/budge-tracker/releases/<older-commit>/ecosystem.config.cjs
+pm2 start /opt/budget-tracker/releases/<older-commit>/ecosystem.config.cjs
 pm2 save
 ```
 
