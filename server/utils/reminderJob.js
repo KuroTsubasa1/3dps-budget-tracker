@@ -51,7 +51,12 @@ async function deliver ({ store, send, subscriptions, message, summary }) {
   for (const subscription of [...subscriptions]) {
     try {
       if (!isPushEndpointAllowed(subscription.endpoint)) {
-        await forget({ store, subscription, subscriptions, summary, problem: deviceProblem(subscription.endpoint) })
+        try {
+          await forget({ store, subscription, subscriptions, summary, problem: deviceProblem(subscription.endpoint) })
+        } catch (deleteError) {
+          failed++
+          summary.stateErrors.push(deleteError?.message || String(deleteError))
+        }
         continue
       }
       await send(subscription, message)
@@ -123,12 +128,13 @@ const listed = problems => [...new Set(problems.map(({ status, host }) => `${sta
 // The run's line in the server log, or null for a run that sent, removed, failed and left waiting nothing:
 // "[reminders] sent 1, removed 1 (410 web.push.apple.com), failed 0"
 export function runLogLine (summary) {
-  const failed = summary.errors.length
+  // Devices that could not be reached, or reminders left unsent because a device could not be deleted
+  const failed = Math.max(summary.errors.length, summary.failed)
   if (!summary.sent && !summary.removed && !failed && !summary.waiting && !summary.missed) return null
   const parts = [
     `sent ${summary.sent}`,
     `removed ${summary.removed}${summary.removed ? ` (${listed(summary.removals)})` : ''}`,
-    `failed ${failed}${failed ? ` (${listed(summary.errors)})` : ''}`
+    `failed ${failed}${summary.errors.length ? ` (${listed(summary.errors)})` : ''}`
   ]
   if (summary.waiting) parts.push(`waiting ${summary.waiting} (no device)`)
   if (summary.missed) parts.push(`missed ${summary.missed}`)

@@ -62,8 +62,9 @@ const IPHONE = { id: 'sub000000000003', endpoint: 'https://web.push.apple.com/QG
 const remindersOf = (store, id) => store.db.conventions.find(item => item.id === id).reminders
 // A log that keeps every line, and one that drops them
 const recordingLog = () => {
-  const lines = []
-  return { lines, info: line => lines.push(line), error: line => lines.push(line) }
+  const infos = []
+  const errors = []
+  return { infos, errors, info: line => infos.push(line), error: line => errors.push(line) }
 }
 const QUIET = { info () {}, error () {} }
 const EMPTY_SUMMARY = { sent: 0, skipped: 0, missed: 0, failed: 0, waiting: 0, removed: 0, removals: [], errors: [], stateErrors: [] }
@@ -427,7 +428,8 @@ test('the status line says whether a device or the saved reminder state failed',
   const log = recordingLog()
   await createReminderRunner({ store, send: fakeSend().send, status: state, log }).run(NOW)
   assert.equal(state.lastError, 'Could not save reminder state: PocketBase is unreachable')
-  assert.deepEqual(log.lines, ['[reminders] sent 1, removed 0, failed 0', '[reminders] Could not save reminder state: PocketBase is unreachable'])
+  assert.deepEqual(log.infos, ['[reminders] sent 1, removed 0, failed 0'])
+  assert.deepEqual(log.errors, ['[reminders] Could not save reminder state: PocketBase is unreachable'])
 })
 
 test('every run that sends, removes or fails writes one line with the push host and status only', async () => {
@@ -439,21 +441,21 @@ test('every run that sends, removes or fails writes one line with the push host 
   const send = fakeSend({ [PHONE.endpoint]: pushError(403), [IPHONE.endpoint]: pushError(410) }).send
   const runner = createReminderRunner({ store, send, status: { lastRun: null, lastError: null, lastProblem: null }, log })
   await runner.run(NOW)
-  assert.deepEqual(log.lines, ['[reminders] sent 1, removed 1 (410 web.push.apple.com), failed 1 (403 fcm.googleapis.com)'])
+  assert.deepEqual(log.infos, ['[reminders] sent 1, removed 1 (410 web.push.apple.com), failed 1 (403 fcm.googleapis.com)'])
   // Never the endpoint's path, the keys or the push service's own message
   for (const secret of ['/fcm/send', 'QGuiYsecret', 'iphone-p256dh', 'iphone-auth', 'push 403']) {
-    assert.ok(!log.lines.join('\n').includes(secret), secret)
+    assert.ok(!log.infos.join('\n').includes(secret), secret)
   }
   // A run with nothing to do writes nothing
   await runner.run(local(10, 29, 9, 10))
-  assert.equal(log.lines.length, 1)
+  assert.equal(log.infos.length, 1)
 })
 
 test('a run whose reminders wait for a device says so in its line', async () => {
   const log = recordingLog()
   const store = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])] })
   await createReminderRunner({ store, send: fakeSend().send, status: { lastRun: null, lastError: null, lastProblem: null }, log }).run(NOW)
-  assert.deepEqual(log.lines, ['[reminders] sent 0, removed 0, failed 0, waiting 1 (no device)'])
+  assert.deepEqual(log.infos, ['[reminders] sent 0, removed 0, failed 0, waiting 1 (no device)'])
 })
 
 test('the last delivery problem stays on the status line until a later run delivers without one', async () => {
@@ -518,4 +520,18 @@ test('the notifier gives up on a PocketBase request that never answers', async (
     clearInterval(keepAlive)
     globalThis.fetch = realFetch
   }
+})
+
+test('a blocked device whose deletion fails is a saved-state error, not a push service problem', async () => {
+  const evil = { id: 'sub000000000009', endpoint: 'https://169.254.169.254/latest', keys: { p256dh: 'p', auth: 'a' } }
+  const store = fakeStore({ conventions: [convention('dokomi', 'interested', [reminder('r', 'custom', iso(10, 29, 9))])], subscriptions: [evil] })
+  store.deleteSubscription = async () => { throw Object.assign(new Error('PocketBase answered 500'), { status: 500 }) }
+  const status = { lastRun: null, lastError: null, lastProblem: null }
+  const log = recordingLog()
+  const summary = await createReminderRunner({ store, send: fakeSend().send, status, log }).run(NOW)
+  assert.deepEqual([summary.failed, summary.errors, summary.stateErrors, summary.removed], [1, [], ['PocketBase answered 500'], 0])
+  assert.equal(status.lastProblem, null)
+  assert.equal(status.lastError, 'Could not save reminder state: PocketBase answered 500')
+  // The run still writes its line, though no device problem is listed
+  assert.deepEqual(log.infos, ['[reminders] sent 0, removed 0, failed 1'])
 })

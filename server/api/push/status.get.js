@@ -5,12 +5,17 @@ import { requireCaller } from '../../utils/requireCaller.js'
 import { useNotifier } from '../../utils/notifier.js'
 import { reminderStatus } from '../../utils/reminderJob.js'
 
+const DEVICES_TIMEOUT_MS = 5000
+
 export default defineEventHandler(async (event) => {
   const settings = notifierSettings(process.env)
   if (!settings.push) return { configured: false, feed: settings.feed }
   await requireCaller(event, settings)
-  // How many devices get reminders; null when PocketBase can't say right now
-  const devices = await useNotifier(settings).listSubscriptions().then(list => list.length, () => null)
+  // How many devices get reminders; null when PocketBase can't say within a few seconds
+  let timer
+  const timeout = new Promise((resolve) => { timer = setTimeout(resolve, DEVICES_TIMEOUT_MS, null) })
+  const devices = await Promise.race([useNotifier(settings).listSubscriptions().then(list => list.length, () => null), timeout])
+  clearTimeout(timer)
   return {
     configured: true,
     feed: settings.feed,
