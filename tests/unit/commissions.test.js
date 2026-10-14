@@ -16,7 +16,13 @@ import {
   validateCommission,
   setLineQuantity,
   removeLine,
-  suggestedPriceFor
+  suggestedPriceFor,
+  isPaid,
+  bookedOnDelivery,
+  paymentStep,
+  paidPatch,
+  unpaidPatch,
+  PRICE_LOCKED
 } from '../../utils/commissions.js'
 
 const NOW = new Date('2026-10-13T12:00:00.000Z')
@@ -86,8 +92,14 @@ test('the six-month cutoff clamps month ends and uses UTC', () => {
   assert.equal(dueForAnonymising(delivered('2026-03-01 00:00:00.000Z'), august), false)
 })
 
-test('the anonymised patch wipes name, email and address', () => {
-  assert.deepEqual(anonymisedPatch(NOW), { customer_name: '—', customer_email: '', address: '—', anonymised_at: NOW.toISOString() })
+test('the anonymised patch wipes name, email, phone and address', () => {
+  assert.deepEqual(anonymisedPatch(NOW), { customer_name: '—', customer_email: '', customer_phone: '', address: '—', anonymised_at: NOW.toISOString() })
+})
+
+test('a finished commission that still holds only a phone number is due for anonymising', () => {
+  const old = { status: 'delivered', delivered_at: '2020-01-01 00:00:00.000Z', customer_name: '—', customer_email: '', address: '—' }
+  assert.equal(dueForAnonymising({ ...old, customer_phone: '+49 151 1234567' }, NOW), true)
+  assert.equal(dueForAnonymising({ ...old, customer_phone: '' }, NOW), false)
 })
 
 test('delivery income names every line with its quantity, and the customer', () => {
@@ -228,4 +240,52 @@ test('a bad quantity on any line is refused', () => {
   assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 0 }] }), QUANTITY)
   assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 2.5 }] }), QUANTITY)
   assert.equal(validateCommission({ ...VALID, items: [LINE, { article: 't1', name: 'Totoro', quantity: 1 }] }), '')
+})
+
+const paid = overrides => ({ status: 'open', delivered_at: '', paid_at: '', payment_transaction: '', ...overrides })
+
+test('a commission is paid while paid_at is set', () => {
+  assert.equal(isPaid(paid({ paid_at: '2026-10-14 10:00:00.000Z' })), true)
+  assert.equal(isPaid(paid()), false)
+  assert.equal(isPaid({}), false)
+})
+
+test('only a delivered commission without a payment transaction had its income booked on delivery', () => {
+  assert.equal(bookedOnDelivery(paid({ status: 'delivered', delivered_at: '2026-10-01 10:00:00.000Z' })), true)
+  assert.equal(bookedOnDelivery(paid({ status: 'delivered', delivered_at: '2026-10-01 10:00:00.000Z', payment_transaction: 'tx1' })), false)
+  assert.equal(bookedOnDelivery(paid({ status: 'delivered', delivered_at: '' })), false)
+  assert.equal(bookedOnDelivery(paid({ status: 'ready' })), false)
+  assert.equal(bookedOnDelivery(paid({ status: 'cancelled', delivered_at: '' })), false)
+})
+
+test('the payment step follows the re-read commission', () => {
+  const at = '2026-10-14 10:00:00.000Z'
+  // Paid elsewhere with an income: check that income exists before booking it again
+  assert.deepEqual(paymentStep(paid({ paid_at: at, payment_transaction: 'tx1' })), { step: 'verify', recordId: 'tx1' })
+  // Paid without an income ("Only mark paid"): nothing to book
+  assert.deepEqual(paymentStep(paid({ paid_at: at })), { step: 'done' })
+  assert.deepEqual(paymentStep(paid({ paid_at: at, status: 'delivered', delivered_at: at })), { step: 'done' })
+  // An old delivered commission asks first; the owner's choice decides
+  const old = paid({ status: 'delivered', delivered_at: at })
+  assert.deepEqual(paymentStep(old), { step: 'ask' })
+  assert.deepEqual(paymentStep(old, 'only'), { step: 'mark' })
+  assert.deepEqual(paymentStep(old, 'book'), { step: 'book' })
+  // Not paid: book
+  assert.deepEqual(paymentStep(paid()), { step: 'book' })
+  assert.deepEqual(paymentStep(paid({ status: 'cancelled' })), { step: 'book' })
+})
+
+test('the paid patch names the income, the unpaid patch clears both fields', () => {
+  assert.deepEqual(paidPatch('tx0000000000001', NOW), { paid_at: NOW.toISOString(), payment_transaction: 'tx0000000000001' })
+  assert.deepEqual(paidPatch('', NOW), { paid_at: NOW.toISOString() })
+  assert.deepEqual(unpaidPatch(), { paid_at: '', payment_transaction: '' })
+})
+
+test('a paid commission refuses a changed price and allows everything else', () => {
+  assert.equal(PRICE_LOCKED, 'Switch to Unpaid to change the price')
+  assert.equal(validateCommission({ ...VALID, price: '7,00', lockedPrice: 7 }), '')
+  assert.equal(validateCommission({ ...VALID, price: '7', lockedPrice: 7 }), '')
+  assert.equal(validateCommission({ ...VALID, price: '8,00', lockedPrice: 7 }), PRICE_LOCKED)
+  assert.equal(validateCommission({ ...VALID, price: '8,00', lockedPrice: null }), '')
+  assert.equal(validateCommission({ ...VALID, price: '8,00' }), '')
 })

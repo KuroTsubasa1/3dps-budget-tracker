@@ -43,6 +43,7 @@ function monthsBefore (now) {
 const holdsCustomerData = commission =>
   commission.customer_name !== '—' ||
   !!commission.customer_email ||
+  !!commission.customer_phone ||
   (!!commission.address && commission.address !== '—')
 
 // Privacy fails safe: a missing or unparseable finish date counts as due. anonymised_at is not consulted,
@@ -56,9 +57,40 @@ export function dueForAnonymising (commission, now = new Date()) {
   return at < monthsBefore(now)
 }
 
-// The email field type rejects '—', so the email is cleared instead
+// The email field type rejects '—', so the email is cleared instead; so is the phone
 export const anonymisedPatch = (now = new Date()) =>
-  ({ customer_name: '—', customer_email: '', address: '—', anonymised_at: now.toISOString() })
+  ({ customer_name: '—', customer_email: '', customer_phone: '', address: '—', anonymised_at: now.toISOString() })
+
+// Payment: paid_at marks the commission paid; payment_transaction names the income booked for it
+export const isPaid = commission => !!commission?.paid_at
+
+// Before the Paid switch, delivering booked the income: such a commission has no payment_transaction
+export const bookedOnDelivery = commission =>
+  commission.status === 'delivered' && !!commission.delivered_at && !commission.payment_transaction
+
+// What turning Paid on does, from the commission as the server has it now. `choice` is the owner's
+// answer for an old delivered commission: 'only' marks it paid, 'book' books the income again.
+//  verify: paid elsewhere; book the named income only if it does not exist (a lost reply)
+//  done: paid without an income, nothing to do
+//  ask: the income may already be booked, ask first
+//  mark: set paid_at only
+//  book: name a new income on the commission, then book it
+export function paymentStep (commission, choice = '') {
+  if (isPaid(commission)) return commission.payment_transaction ? { step: 'verify', recordId: commission.payment_transaction } : { step: 'done' }
+  if (bookedOnDelivery(commission)) {
+    if (choice === 'only') return { step: 'mark' }
+    if (choice === 'book') return { step: 'book' }
+    return { step: 'ask' }
+  }
+  return { step: 'book' }
+}
+
+export const paidPatch = (recordId, now = new Date()) =>
+  (recordId ? { paid_at: now.toISOString(), payment_transaction: recordId } : { paid_at: now.toISOString() })
+
+export const unpaidPatch = () => ({ paid_at: '', payment_transaction: '' })
+
+export const PRICE_LOCKED = 'Switch to Unpaid to change the price'
 
 export const UNKNOWN_ARTICLE = 'Unknown article'
 
@@ -134,5 +166,7 @@ export function validateCommission (form) {
   if (!items.every(line => isWholeAtLeastOne(line.quantity))) return 'Quantity must be a whole number of 1 or more'
   const priceText = String(form.price ?? '').trim()
   if (!/^\d+([.,]\d{1,2})?$/.test(priceText) || !(parseNumber(priceText) > 0)) return 'Agreed price must be above 0'
+  // A paid commission keeps its price: the booked income is that amount
+  if (form.lockedPrice != null && Math.round(parseNumber(priceText) * 100) !== Math.round(Number(form.lockedPrice) * 100)) return PRICE_LOCKED
   return ''
 }

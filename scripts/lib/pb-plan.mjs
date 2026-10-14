@@ -59,6 +59,9 @@ const json = (name, { required = false, maxSize = 2000000 } = {}) =>
 const url = (name, required = false) =>
   ({ name, type: 'url', required, presentable: false, options: { exceptDomains: null, onlyDomains: null } })
 
+// Optional, no data conversion: a commission without them is unpaid and has no phone
+const PAYMENT_FIELDS = () => [text('customer_phone'), date('paid_at'), text('payment_transaction')]
+
 const byName = (collections, name) => collections.find(collection => collection.name === name)
 const findField = (collection, name) => collection?.schema.find(field => field.name === name)
 
@@ -173,7 +176,8 @@ export function planSchema (collections) {
           date('delivered_at'),
           date('cancelled_at'),
           date('anonymised_at'),
-          date('ready_at')
+          date('ready_at'),
+          ...PAYMENT_FIELDS()
         ],
         indexes: [],
         ...LOCKED
@@ -185,6 +189,8 @@ export function planSchema (collections) {
     if (!findField(commissions, 'ready_at')) added.push(date('ready_at'))
     // Servers migrated before multi-article commissions need the line list
     if (!findField(commissions, 'items')) added.push(json('items'))
+    // The Paid switch and the phone number; the income a paid commission booked is named by its record id
+    added.push(...PAYMENT_FIELDS().filter(field => !findField(commissions, field.name)))
     if (added.length) ops.push({ op: 'addFields', collection: 'commissions', fields: added })
     // New commissions keep their lines in items and leave article/quantity empty
     for (const name of ['article', 'quantity']) {

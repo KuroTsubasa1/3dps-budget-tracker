@@ -372,15 +372,51 @@ const withoutDate = collections => withoutFields(collections, ['date', ...REPORT
 const withoutPrizes = collections => collections.map(collection => collection.name === ARTICLES
   ? { ...collection, schema: collection.schema.filter(field => field.name !== 'prize_categories') }
   : collection)
+const PAYMENT_FIELDS = ['customer_phone', 'paid_at', 'payment_transaction']
+const PAYMENT_OP = {
+  op: 'addFields',
+  collection: 'commissions',
+  fields: [
+    { name: 'customer_phone', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '' } },
+    { name: 'paid_at', type: 'date', required: false, presentable: false, options: { min: '', max: '' } },
+    { name: 'payment_transaction', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '' } }
+  ]
+}
+const withoutPayment = collections => collections.map(collection => collection.name === 'commissions'
+  ? { ...collection, schema: collection.schema.filter(field => !PAYMENT_FIELDS.includes(field.name)) }
+  : collection)
 // The live schema with everything this plan adds, whether or not the owner has applied it yet
 const upToDate = () => simulate(live(), planSchema(live()))
 const CALENDAR_KEYS = CALENDAR.map(name => `createCollection:${name}`)
 
-test('the live schema needs nothing beyond the prize categories', () => {
-  const hasPrizes = live().find(collection => collection.name === ARTICLES).schema.some(field => field.name === 'prize_categories')
+test('the live schema needs nothing beyond the commission payment fields', () => {
+  const hasPayment = live().find(collection => collection.name === 'commissions').schema.some(field => field.name === 'paid_at')
   const ops = planSchema(live())
-  assert.deepEqual(ops, hasPrizes ? [] : [{ op: 'addFields', collection: ARTICLES, fields: [PRIZE_FIELD] }])
+  assert.deepEqual(ops, hasPayment ? [] : [PAYMENT_OP])
   assert.deepEqual(planSchema(simulate(live(), ops)), [])
+})
+
+test('without the payment fields the live schema needs exactly those three in one op, and only once', () => {
+  const before = withoutPayment(upToDate())
+  const ops = planSchema(before)
+  assert.deepEqual(ops, [PAYMENT_OP])
+  assert.equal(describeOp(ops[0]), 'add to "commissions": customer_phone, paid_at, payment_transaction')
+  const after = simulate(before, ops)
+  const field = name => after.find(collection => collection.name === 'commissions').schema.find(item => item.name === name)
+  assert.deepEqual([field('customer_phone').type, field('paid_at').type, field('payment_transaction').type], ['text', 'date', 'text'])
+  assert.ok(PAYMENT_FIELDS.every(name => field(name).required === false))
+  assert.deepEqual(planSchema(after), [])
+})
+
+test('the payment fields change no access rules', () => {
+  const ruled = simulate(withoutPayment(upToDate()), planRules(withoutPayment(upToDate()), OWNER_ID, NOTIFIER_ID))
+  const withPayment = simulate(ruled, planSchema(ruled))
+  assert.deepEqual(planRules(withPayment, OWNER_ID, NOTIFIER_ID), [])
+})
+
+test('a fresh install creates commissions with the phone and payment fields', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === 'commissions')
+  assert.deepEqual(op.body.schema.filter(field => PAYMENT_FIELDS.includes(field.name)), PAYMENT_OP.fields)
 })
 
 test('without the prize categories the live schema needs exactly that field, and only once', () => {
