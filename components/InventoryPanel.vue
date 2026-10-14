@@ -47,6 +47,8 @@
 import { ref, onMounted } from 'vue'
 import { useInventory } from '~/composables/useInventory'
 import { usePrintJobs } from '~/composables/usePrintJobs'
+import { useGatchaPrizes } from '~/composables/useGatchaPrizes'
+import { useTransactions } from '~/composables/useTransactions'
 import { stockNowMovement, newRecordId } from '~/utils/inventory'
 import { formatDateTime } from '~/utils/date'
 
@@ -56,10 +58,13 @@ const props = defineProps({
 const emit = defineEmits(['changed'])
 
 const CONNECTION_ERROR = 'Could not save the stock change. Check your connection and try again.'
+const STILL_WAITING = "Changes for this article are still waiting to sync. Try again once they're sent."
 const REASON_LABEL = { sale: 'Sold', printed: 'Printed', correction: 'Correction' }
 
 const { applyMovements, recomputeStock, listMovements } = useInventory()
 const { findPrintingJob } = usePrintJobs()
+const { syncPrizes, outbox: prizeOutbox } = useGatchaPrizes()
+const { syncTransactionsQueue, hasWaitingStock } = useTransactions()
 
 const stock = ref(props.article.stock ?? 0)
 const movements = ref([])
@@ -84,11 +89,19 @@ onMounted(() => {
 // A higher count is recorded as printed, a lower one as a correction. The change is worked out from the
 // live stock (re-derived from the movement log), so another device's sale or an earlier half-saved
 // attempt cannot make the result differ from the number typed.
+// The number shown already counts this device's waiting prize picks and queued sales, the server's not yet:
+// those are sent first, and while one for this article still waits nothing is written (it would count twice).
 const save = async () => {
   error.value = ''
   notice.value = ''
   busy.value = true
   try {
+    await Promise.all([syncPrizes(), syncTransactionsQueue()]).catch(() => {})
+    const articleId = props.article.id
+    if (prizeOutbox.value.some(movement => movement.article === articleId) || hasWaitingStock(articleId)) {
+      error.value = STILL_WAITING
+      return
+    }
     let live
     try {
       live = await recomputeStock(props.article.id)

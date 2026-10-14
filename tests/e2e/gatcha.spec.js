@@ -385,3 +385,113 @@ test.describe('prize sync and its bookkeeping', () => {
     await expect(picker.getByRole('status')).toHaveText('All prizes picked')
   })
 })
+
+test.describe('Stock now and waiting prize changes', () => {
+  const stockNowSheet = async (page, name) => {
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await card(page, name).click()
+    return sheet(page)
+  }
+  const corrections = api => api.db.stock_movements.filter(movement => movement.reason === 'correction' && movement.note !== 'opening stock')
+
+  test('Stock now sends a waiting pick first, so saving the shown number changes nothing', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.failOnce('stock_movements', 500)
+    const failed = page.waitForResponse(response => response.url().includes('stock_movements') && response.status() === 500)
+    await prizeSheet(page).getByRole('button', { name: /^Pikachu Keychain/ }).click()
+    await failed
+    await expect(prizeSheet(page)).toHaveCount(0)
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('1 left')
+
+    const panel = await stockNowSheet(page, 'Pikachu Keychain')
+    await expect(panel.getByLabel('Stock now')).toHaveValue('1')
+    await panel.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(panel.getByRole('status')).toHaveText('Stock unchanged')
+    expect(prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+    expect(corrections(api)).toEqual([])
+    expect(stockOf(api, 'k1')).toBe(1)
+  })
+
+  test('Stock now refuses while a pick for the article still cannot be sent', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.fail('stock_movements', 500)
+    await prizeSheet(page).getByRole('button', { name: /^Pikachu Keychain/ }).click()
+    await expect(page.getByTestId('prize-waiting')).toHaveText('1 prize change waiting to sync')
+
+    const panel = await stockNowSheet(page, 'Pikachu Keychain')
+    await panel.getByLabel('Stock now').fill('5')
+    await panel.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(panel.getByRole('alert')).toHaveText("Changes for this article are still waiting to sync. Try again once they're sent.")
+    expect(api.db.stock_movements.filter(movement => movement.note !== 'opening stock')).toEqual([])
+    expect(stockOf(api, 'k1')).toBe(2)
+    expect(prizeMovements(api)).toEqual([])
+  })
+})
+
+test.describe('open prizes on this device', () => {
+  test('Discard drops the open prizes after a confirm, and keeps the picks already made', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 3 })
+    await prizeSheet(page).getByRole('button', { name: /^Pikachu Keychain/ }).click()
+    await expect.poll(() => prizeMovements(api).length).toBe(1)
+    await prizeSheet(page).getByRole('button', { name: 'Later' }).click()
+    await expect(page.getByTestId('gatcha-banner')).toContainText('2 gatcha prizes to pick')
+
+    await page.getByTestId('gatcha-banner').getByRole('button', { name: 'Pick now' }).click()
+    await prizeSheet(page).getByRole('button', { name: 'Discard', exact: true }).click()
+    await expect(prizeSheet(page)).toContainText('Discard 2 open prizes?')
+    // Cancel keeps them
+    await prizeSheet(page).getByRole('button', { name: 'Cancel' }).click()
+    await expect(prizeSheet(page)).toHaveAccessibleName('Gatcha prizes · 1 of 3')
+    await prizeSheet(page).getByRole('button', { name: 'Discard', exact: true }).click()
+    await prizeSheet(page).getByRole('button', { name: 'Discard', exact: true }).click()
+
+    await expect(prizeSheet(page)).toHaveCount(0)
+    await expect(page.getByTestId('gatcha-banner')).toHaveCount(0)
+    expect(await page.evaluate(() => localStorage.getItem('akinai-gatcha-open'))).toBeNull()
+    expect(prizeMovements(api).map(m => [m.article, m.change])).toEqual([['k1', -1]])
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'GatchaPon' })).toBeVisible()
+    await expect(page.getByTestId('gatcha-banner')).toHaveCount(0)
+  })
+
+  test('after a reload the catalog still counts a pick that waits to sync', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await checkout(page, { GatchaPon: 1 })
+    await expect.poll(() => api.posted.length).toBe(1)
+    api.fail('stock_movements', 500)
+    await prizeSheet(page).getByRole('button', { name: /^Pikachu Keychain/ }).click()
+    await expect(page.getByTestId('prize-waiting')).toHaveText('1 prize change waiting to sync')
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('1 left')
+
+    await page.reload()
+    await expect(page.getByTestId('prize-waiting')).toHaveText('1 prize change waiting to sync')
+    await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('1 left')
+    expect(stockOf(api, 'k1')).toBe(2)
+  })
+
+  test('the catalog loads when the browser blocks storage entirely', async ({ page, api }) => {
+    await page.addInitScript(() => {
+      const real = window.localStorage
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get () {
+          // Only the app's own code is refused: `nuxt dev`'s devtools (in node_modules) do not survive it,
+          // and a production build does not ship them
+          const caller = new Error().stack.split('\n')[2] || ''
+          if (caller.includes('/node_modules/')) return real
+          throw new DOMException('The operation is insecure.', 'SecurityError')
+        }
+      })
+    })
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await openGatchaShop(page, api)
+    await expect(page.getByRole('heading', { name: 'Pikachu Keychain' })).toBeVisible()
+    expect(errors).toEqual([])
+  })
+})

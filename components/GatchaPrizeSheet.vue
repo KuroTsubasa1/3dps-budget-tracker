@@ -44,7 +44,19 @@
         </ul>
       </section>
 
-      <BaseButton v-if="!allPicked" variant="secondary" block @click="$emit('update:open', false)">Later</BaseButton>
+      <template v-if="!allPicked">
+        <div v-if="confirmingDiscard" class="space-y-3">
+          <p class="text-sm text-ink-muted">{{ discardQuestion }}</p>
+          <div class="grid grid-cols-2 gap-2">
+            <BaseButton variant="secondary" @click="confirmingDiscard = false">Cancel</BaseButton>
+            <BaseButton variant="danger" @click="discard">Discard</BaseButton>
+          </div>
+        </div>
+        <template v-else>
+          <BaseButton variant="secondary" block @click="$emit('update:open', false)">Later</BaseButton>
+          <BaseButton variant="danger-ghost" block @click="confirmingDiscard = true">Discard</BaseButton>
+        </template>
+      </template>
     </div>
   </BottomSheet>
 </template>
@@ -65,9 +77,11 @@ const emit = defineEmits(['update:open', 'picked', 'undone'])
 // How long "All prizes picked" shows before the sheet closes
 const CLOSE_AFTER_MS = 1200
 
-const { openPrizes, picks, pick, undo, isWaiting, endRound } = useGatchaPrizes()
+const { openPrizes, picks, pick, undo, discardOpenPrizes, isWaiting, endRound } = useGatchaPrizes()
 
 const query = ref('')
+const confirmingDiscard = ref(false)
+const discardQuestion = computed(() => (openPrizes.value.count === 1 ? 'Discard 1 open prize?' : `Discard ${openPrizes.value.count} open prizes?`))
 const allPicked = computed(() => openPrizes.value.count === 0 && picks.value.length > 0)
 const title = computed(() => `Gatcha prizes · ${picks.value.length} of ${picks.value.length + openPrizes.value.count}`)
 const groups = computed(() => prizeChoices({
@@ -79,6 +93,13 @@ const groups = computed(() => prizeChoices({
 
 const choose = (article) => {
   if (pick(article)) emit('picked', article.id)
+}
+
+// The open prizes go (the banner with them); picks already made stay recorded
+const discard = () => {
+  confirmingDiscard.value = false
+  discardOpenPrizes()
+  emit('update:open', false)
 }
 
 const undoOne = (item) => {
@@ -95,6 +116,7 @@ watch(allPicked, (done) => {
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
     query.value = ''
+    confirmingDiscard.value = false
     return
   }
   clearTimeout(closeTimer)

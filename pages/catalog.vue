@@ -259,6 +259,9 @@ watch(isDesktop, (desktop) => { if (desktop) isCartOpen.value = false })
 const searchInput = ref(null)
 const sortSelect = ref(null)
 
+const { openPrizes, outbox: prizeOutbox, addOpenPrizes, startPrizeSync, syncedStocks, pendingChange } = useGatchaPrizes()
+const withPendingPrizes = (id, stock) => Math.max(0, Number(stock) + pendingChange(id))
+
 const fetchProducts = async () => {
   loading.value = true
   error.value = null
@@ -266,7 +269,8 @@ const fetchProducts = async () => {
     // A missing `deals` collection (deploy made before the migration's --apply) means no deals
     const noDealsIfMissing = listDeals().catch(err => (err?.status === 404 ? [] : Promise.reject(err)))
     const [articles, categoryList, dealList] = await Promise.all([listActive(), listCategories(), noDealsIfMissing])
-    products.value = articles.map(item => ({ ...item, quantity: 0 }))
+    // The server's stock, plus prize changes still waiting on this device (picks from before a reload)
+    products.value = articles.map(item => ({ ...item, stock: withPendingPrizes(item.id, item.stock), quantity: 0 }))
     categories.value = categoryList
     deals.value = dealList
   } catch (err) {
@@ -392,12 +396,11 @@ const changeStock = (id, by) => {
   if (product) product.stock = Math.max(0, Number(product.stock) + by)
 }
 
-const { openPrizes, outbox: prizeOutbox, addOpenPrizes, startPrizeSync, syncedStocks, pendingChange } = useGatchaPrizes()
 // The server's stock after a send, plus what still waits on this device
 watch(syncedStocks, (synced) => {
   for (const [id, stock] of Object.entries(synced?.stocks || {})) {
     const product = products.value.find(item => item.id === id)
-    if (product) product.stock = Math.max(0, Number(stock) + pendingChange(id))
+    if (product) product.stock = withPendingPrizes(id, stock)
   }
 })
 const prizeWaiting = computed(() => (prizeOutbox.value.length === 1 ? '1 prize change waiting to sync' : `${prizeOutbox.value.length} prize changes waiting to sync`))

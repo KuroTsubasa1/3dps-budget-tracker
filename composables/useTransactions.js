@@ -19,6 +19,8 @@ const orphans = ref([])
 const uploadingOrphans = ref([])
 // Record ids whose POST is in flight right now: neither on the server yet nor in the queue
 const sending = new Set()
+// The stock movements of those in-flight sales, by record id, so Stock now can tell they are not in yet
+const sendingMovements = new Map()
 // The refresh under way, so callers (logout) can wait for it; a second call asks it to run again
 let refreshRun = null
 let refreshAgain = false
@@ -82,18 +84,28 @@ export const useTransactions = () => {
   })
 
   const loadTransactions = () => {
-    const stored = localStorage.getItem(STORAGE_KEY)
+    // A browser that blocks storage (the getter throws) starts with an empty list
+    let storage
+    try {
+      storage = localStorage
+    } catch {
+      return
+    }
+    const stored = storage.getItem(STORAGE_KEY)
     if (stored) {
       transactions.value = JSON.parse(stored)
     }
-    const storedOrphans = localStorage.getItem(ORPHANS_KEY)
+    const storedOrphans = storage.getItem(ORPHANS_KEY)
     if (storedOrphans) {
       orphans.value = JSON.parse(storedOrphans)
     }
   }
 
+  // Best effort: a browser that blocks storage keeps the list in memory only
   const saveOrphans = () => {
-    localStorage.setItem(ORPHANS_KEY, JSON.stringify(orphans.value))
+    try {
+      localStorage.setItem(ORPHANS_KEY, JSON.stringify(orphans.value))
+    } catch {}
   }
 
   const orphanKey = entry => entry.recordId || entry.id
@@ -162,7 +174,9 @@ export const useTransactions = () => {
   }
 
   const saveTransactions = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions.value))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions.value))
+    } catch {}
   }
 
   // The owner's session token replaces the shared x-token; PocketBase rules check @request.auth.
@@ -270,6 +284,7 @@ export const useTransactions = () => {
     transactions.value = [...transactions.value, historyEntry]
     saveTransactions()
     sending.add(newTransaction.recordId)
+    sendingMovements.set(newTransaction.recordId, stockMovements || [])
     localVersion++
     
     // Then try to send to PocketBase
@@ -290,6 +305,7 @@ export const useTransactions = () => {
       // Error already handled in sendToPocketbase
     } finally {
       sending.delete(newTransaction.recordId)
+      sendingMovements.delete(newTransaction.recordId)
       localVersion++
     }
     // The server's copy replaces the local one, so a sale shows up once everywhere
@@ -365,6 +381,11 @@ export const useTransactions = () => {
     }
   })
 
+  // Whether a sale's stock movement for the article has not reached the server yet: queued, or out right now
+  const hasWaitingStock = articleId =>
+    offlineQueue.value.some(item => item.status !== 'synced' && (item.stockMovements || []).some(movement => movement.article === articleId)) ||
+    [...sendingMovements.values()].some(movements => movements.some(movement => movement.article === articleId))
+
   const clearApiError = () => {
     apiError.value = ''
   }
@@ -423,6 +444,7 @@ export const useTransactions = () => {
     clearApiError,
     syncStatus,
     syncTransactionsQueue,
+    hasWaitingStock,
     queueSyncStatus,
     pendingTransactions: computed(() => offlineQueue.value.filter(t => t.status !== 'synced'))
   }

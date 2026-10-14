@@ -10,17 +10,24 @@ const queueKey = item => `${item.id}:${item.queuedAt}`
 
 export const useOfflineQueue = () => {
   
-  // Load saved queue from local storage
+  // Load saved queue from local storage; a browser that blocks storage (the getter throws) starts empty
   const loadQueue = () => {
-    const stored = localStorage.getItem(QUEUE_STORAGE_KEY)
+    let stored
+    try {
+      stored = localStorage.getItem(QUEUE_STORAGE_KEY)
+    } catch {
+      return
+    }
     if (stored) {
       offlineQueue.value = JSON.parse(stored)
     }
   }
 
-  // Save queue to local storage
+  // Save queue to local storage (best effort: a browser that blocks storage keeps it in memory only)
   const saveQueue = () => {
-    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(offlineQueue.value))
+    try {
+      localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(offlineQueue.value))
+    } catch {}
   }
 
   // Add transaction to queue

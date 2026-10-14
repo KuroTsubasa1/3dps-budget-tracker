@@ -36,12 +36,22 @@ const RETRY_EVERY_MS = 60000
 let retryTimer = null
 let retry = () => {}
 
+// The device's storage, or null where the browser blocks it (reading window.localStorage can throw then).
+// The read/write helpers treat null like an empty store, so the prizes then only live in memory.
+const storage = () => {
+  try {
+    return localStorage
+  } catch {
+    return null
+  }
+}
+
 // localStorage only exists in the browser, so the state is read on first use there
 const load = () => {
   if (loaded) return
   loaded = true
-  open.value = readOpenPrizes(localStorage)
-  outbox.value = readOutbox(localStorage)
+  open.value = readOpenPrizes(storage())
+  outbox.value = readOutbox(storage())
 }
 
 const stopRetrying = () => {
@@ -50,8 +60,8 @@ const stopRetrying = () => {
 }
 
 const save = () => {
-  writeOpenPrizes(localStorage, open.value)
-  writeOutbox(localStorage, outbox.value)
+  writeOpenPrizes(storage(), open.value)
+  writeOutbox(storage(), outbox.value)
   if (!outbox.value.length) stopRetrying()
   else if (!retryTimer) retryTimer = setInterval(() => retry(), RETRY_EVERY_MS)
 }
@@ -68,9 +78,9 @@ export function forgetGatchaPrizes ({ keepOutbox = true } = {}) {
   loaded = true
   open.value = NO_PRIZES
   picks.value = []
-  outbox.value = keepOutbox ? readOutbox(localStorage) : []
+  outbox.value = keepOutbox ? readOutbox(storage()) : []
   stopRetrying()
-  forgetPrizes(localStorage, { keepOutbox })
+  forgetPrizes(storage(), { keepOutbox })
 }
 
 export const useGatchaPrizes = () => {
@@ -169,6 +179,13 @@ export const useGatchaPrizes = () => {
     return true
   }
 
+  // The owner gives up on the prizes still open; picks already made (and their waiting movements) stay
+  const discardOpenPrizes = () => {
+    load()
+    open.value = NO_PRIZES
+    save()
+  }
+
   const isWaiting = item => outbox.value.some(movement => movement.id === item.id)
 
   // The sheet closed: once every prize is picked, the round is over and Picked starts empty next time
@@ -176,5 +193,5 @@ export const useGatchaPrizes = () => {
     if (!open.value.count) picks.value = []
   }
 
-  return { openPrizes: open, picks, outbox, addOpenPrizes, pick, undo, isWaiting, endRound, syncPrizes, startPrizeSync, syncedStocks, pendingChange }
+  return { openPrizes: open, picks, outbox, addOpenPrizes, pick, undo, discardOpenPrizes, isWaiting, endRound, syncPrizes, startPrizeSync, syncedStocks, pendingChange }
 }

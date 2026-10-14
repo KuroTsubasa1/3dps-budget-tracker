@@ -160,3 +160,61 @@ test('printing after a double sale of the last item counts in full', async ({ pa
   await expect(sheet.getByTestId('article-stock')).toHaveText('3')
   expect(api.db.budget_tracket_catalog[0].stock).toBe(3)
 })
+
+const stockNowPanel = async (page) => {
+  await page.getByRole('button', { name: 'Manage' }).click()
+  await card(page, 'Pikachu Keychain').click()
+  return page.getByRole('dialog')
+}
+
+test('Stock now refuses while a queued sale of the article cannot be sent, and sends it first once it can', async ({ page, api }) => {
+  api.seed({ articles: [keychain()] })
+  api.fail('budget_tracker_transactions', 500)
+  await gotoReady(page, '/catalog')
+  await addToCart(page, 'Pikachu Keychain', 1)
+  await openCart(page)
+  await page.getByRole('button', { name: 'Add to Balance' }).click()
+  await expect.poll(() => transactionPosts(api).length).toBe(1)
+  await expect(page.locator('article', { hasText: 'Pikachu Keychain' })).toContainText('4 left')
+
+  const panel = await stockNowPanel(page)
+  await expect(panel.getByLabel('Stock now')).toHaveValue('4')
+  await panel.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(panel.getByRole('alert')).toHaveText("Changes for this article are still waiting to sync. Try again once they're sent.")
+  expect(loggedMovements(api)).toEqual([])
+  expect(api.db.budget_tracket_catalog[0].stock).toBe(5)
+
+  // The server takes the sale again: Save sends it first and the shown number is the stock
+  api.fail('budget_tracker_transactions', 0)
+  await panel.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(panel.getByRole('status')).toHaveText('Stock unchanged')
+  expect(api.posted).toHaveLength(1)
+  expect(loggedMovements(api).map(m => [m.change, m.reason])).toEqual([[-1, 'sale']])
+  expect(api.db.budget_tracket_catalog[0].stock).toBe(4)
+})
+
+test('Stock now right after an offline checkout comes back online waits for the sale', async ({ page, api, context }) => {
+  api.seed({ articles: [keychain()] })
+  await gotoReady(page, '/catalog')
+  await context.setOffline(true)
+  await addToCart(page, 'Pikachu Keychain', 1)
+  await openCart(page)
+  await page.getByRole('button', { name: 'Add to Balance' }).click()
+  const panel = await stockNowPanel(page)
+  await expect(panel.getByLabel('Stock now')).toHaveValue('4')
+
+  // Back online, the queue starts sending the sale; Save comes while it is still out
+  api.delayNext('budget_tracker_transactions', 2000)
+  const posting = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/budget_tracker_transactions/records'))
+  await context.setOffline(false)
+  await posting
+  await panel.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(panel.getByRole('alert')).toHaveText("Changes for this article are still waiting to sync. Try again once they're sent.")
+  expect(loggedMovements(api)).toEqual([])
+
+  await expect.poll(() => loggedMovements(api).length).toBe(1)
+  await expect.poll(() => api.db.budget_tracket_catalog[0].stock).toBe(4)
+  await panel.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(panel.getByRole('status')).toHaveText('Stock unchanged')
+  expect(loggedMovements(api).map(m => [m.change, m.reason])).toEqual([[-1, 'sale']])
+})
