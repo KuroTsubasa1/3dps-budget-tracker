@@ -156,8 +156,13 @@ test('a transaction refresh still loading at logout does not write the data back
   api.posted.push({ id: 'srv000000000002', collectionName: 'budget_tracker_transactions', description: 'Commission: Totoro × 1 (Anna Example)', amount: 8, notes: '', created: '2026-10-10 10:00:00.000Z', updated: '2026-10-10 10:00:00.000Z' })
   await gotoReady(page, '/settings#api')
   await expect.poll(() => page.evaluate(() => localStorage.getItem('budget-tracker-transactions') || '')).toContain('Anna Example')
+  // An entry only on this device makes Log out ask first, which leaves time for a new refresh to start
+  await page.evaluate(() => localStorage.setItem('budget-tracker-orphans', JSON.stringify([{ id: 1, description: 'Old stand sale', amount: 4, date: '2026-01-01' }])))
+  await page.reload()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await expect(page.getByRole('button', { name: 'Log out anyway' })).toBeVisible()
 
-  // Hold the next transactions read for a moment, then let the fake answer it
+  // While the confirmation is open, a refresh starts and its answer is held back
   let held = 0
   await page.route('**/api/collections/budget_tracker_transactions/records**', async (route) => {
     if (route.request().method() === 'GET') {
@@ -168,11 +173,26 @@ test('a transaction refresh still loading at logout does not write the data back
   })
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect.poll(() => held).toBeGreaterThan(0)
-  await page.getByRole('button', { name: 'Log out' }).click()
+  await page.getByRole('button', { name: 'Log out anyway' }).click()
   await page.waitForURL(url => url.pathname === '/login')
   await page.waitForTimeout(2000)
 
   expect(await page.evaluate(() => localStorage.getItem('budget-tracker-transactions'))).toBeNull()
+})
+
+test('logging out does not hang when the server stops answering', async ({ page, api }) => {
+  api.seed()
+  await gotoReady(page, '/settings#api')
+  await page.route('**/api/collections/budget_tracker_transactions/records**', async (route) => {
+    // Longer than the 5 s logout limit; it is let through afterwards so nothing is left open
+    if (route.request().method() === 'GET') await new Promise(resolve => setTimeout(resolve, 7000))
+    await route.fallback()
+  })
+  const started = Date.now()
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await page.waitForURL(url => url.pathname === '/login', { timeout: 6500 })
+  expect(Date.now() - started).toBeLessThan(6500)
+  await page.waitForTimeout(2000)
 })
 
 test('transactions are sent with the owner session instead of the shared token', async ({ page, api }) => {

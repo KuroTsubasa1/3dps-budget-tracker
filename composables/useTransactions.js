@@ -383,8 +383,10 @@ export const useTransactions = () => {
   // Entries that exist on this device only: orphans, sales still waiting to sync, and listed entries
   // the server has not confirmed. Refreshes first (a failure just leaves the last known state).
   const countLocalOnly = async () => {
+    // A stalled connection must not keep the owner from logging out: after 5 s count from what is known
+    const timeout = new Promise(resolve => setTimeout(resolve, 5000))
     try {
-      await refreshTransactions()
+      await Promise.race([refreshTransactions(), timeout])
     } catch {
       // Offline or unreachable: count against what is known
     }
