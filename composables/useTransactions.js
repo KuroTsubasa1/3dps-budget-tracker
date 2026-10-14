@@ -3,6 +3,7 @@ import { useRuntimeConfig } from 'nuxt/app'
 import { useOfflineQueue } from './useOfflineQueue'
 import { usePocketBase } from './usePocketBase'
 import { useInventory } from './useInventory'
+import { forgetGatchaPrizes } from './useGatchaPrizes'
 import { newRecordId } from '~/utils/inventory'
 import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds } from '~/utils/transactions'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
@@ -380,6 +381,8 @@ export const useTransactions = () => {
     localStorage.removeItem(ORPHANS_KEY)
     // The calendar's offline copy goes with the rest of the owner's data
     forgetCopy(localStorage)
+    // So do the open gatcha prizes; prize movements still waiting stay queued like the sales
+    forgetGatchaPrizes({ keepOutbox: keepQueue })
     if (keepQueue) {
       clearCompletedItems()
     } else {

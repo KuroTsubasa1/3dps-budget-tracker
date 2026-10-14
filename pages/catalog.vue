@@ -10,6 +10,11 @@
           </template>
         </PageHeader>
 
+        <div v-if="isOwner && openPrizes.count > 0" class="card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3" data-testid="gatcha-banner">
+          <p class="min-w-0 text-sm font-medium text-ink">{{ prizeBanner }}</p>
+          <BaseButton @click="isPrizeSheetOpen = true">Pick now</BaseButton>
+        </div>
+
         <div class="mb-4 space-y-3">
           <div class="relative">
             <AppIcon name="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
@@ -189,6 +194,15 @@
       </BottomSheet>
     </template>
 
+    <GatchaPrizeSheet
+      v-if="isOwner"
+      v-model:open="isPrizeSheetOpen"
+      :articles="products"
+      :categories="categories"
+      @picked="id => changeStock(id, -1)"
+      @undone="id => changeStock(id, 1)"
+    />
+
     <ArticleSheet
       v-model:open="isEditorOpen"
       :article="editingArticle"
@@ -201,8 +215,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { useGatchaPrizes } from '~/composables/useGatchaPrizes'
 import { localDate } from '~/utils/transactions'
 import { useArticles } from '~/composables/useArticles'
 import { useCategories } from '~/composables/useCategories'
@@ -216,7 +231,7 @@ import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
 import { saleLines } from '~/utils/reports/lines'
 import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
-import { isGatcha } from '~/utils/gatcha'
+import { isGatcha, prizesFor } from '~/utils/gatcha'
 
 const STOCK_BADGE = {
   out: 'bg-expense/10 text-expense',
@@ -369,6 +384,16 @@ const onArticleDeleted = (id) => {
   products.value = products.value.filter(product => product.id !== id)
 }
 
+// A prize picked (or undone) shows in the catalog's stock at once; the server follows when it syncs
+const changeStock = (id, by) => {
+  const product = products.value.find(item => item.id === id)
+  if (product) product.stock = Math.max(0, Number(product.stock) + by)
+}
+
+const { openPrizes, addOpenPrizes, startPrizeSync } = useGatchaPrizes()
+const isPrizeSheetOpen = ref(false)
+const prizeBanner = computed(() => (openPrizes.value.count === 1 ? '1 gatcha prize to pick' : `${openPrizes.value.count} gatcha prizes to pick`))
+
 const onStockChanged = (id, stock) => {
   const product = products.value.find(item => item.id === id)
   if (product) product.stock = stock
@@ -391,6 +416,8 @@ const submitToBalance = () => {
   if (selectedProducts.value.length === 0) return
 
   const total = totalAmount.value
+  // One prize per gatcha unit, picked right after the checkout
+  const prizes = prizesFor(selectedProducts.value)
   const productNames = selectedProducts.value
     .map(product => `${product.name} (${formatCurrency(priceOf(product))} × ${product.quantity})`)
     .join('\n')
@@ -422,6 +449,11 @@ const submitToBalance = () => {
   })
   isCartOpen.value = false
   toast(`Added ${formatCurrency(total)} to balance`)
+  if (prizes.count) {
+    addOpenPrizes(prizes)
+    // Opens once the cart sheet has let go of the page
+    nextTick(() => { isPrizeSheetOpen.value = true })
+  }
 }
 
 // Ctrl/Cmd+F focuses search, Ctrl/Cmd+S focuses sort
@@ -438,6 +470,8 @@ const handleKeyboardShortcuts = (event) => {
 
 onMounted(() => {
   fetchProducts()
+  // Open prizes from earlier, and picks still waiting to sync (sent only with the owner's session)
+  startPrizeSync()
   window.addEventListener('keydown', handleKeyboardShortcuts)
 })
 

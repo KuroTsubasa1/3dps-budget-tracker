@@ -1,6 +1,7 @@
 import { test, expect, gotoReady } from './fixtures.js'
 import { openReports } from './report-data.js'
 import { CONVENTIONS, convention, openCalendar } from './calendar-data.js'
+import { GATCHA, GATCHA_CATEGORIES, checkout, prizeSheet } from './gatcha-data.js'
 
 const PAGES = [
   '/',
@@ -200,6 +201,33 @@ test.describe('phone layout sweep', () => {
     })
   }
 
+  for (const dark of [false, true]) {
+    test(`the gatcha prize picker and its banner fit at 375px with long names${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
+      await page.addInitScript((dark) => {
+        localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))
+      }, dark)
+      const long = 'Supercalifragilisticexpialidocious-Keychain-With-A-Very-Long-Unbroken-Name'
+      api.seed({
+        categories: GATCHA_CATEGORIES,
+        articles: [GATCHA, { id: 'k1', name: long, category: 'cat-keychain', stock: 1234567 }]
+      })
+      await gotoReady(page, '/catalog')
+      const fits = async (label) => {
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+        expect(scrollWidth, label).toBeLessThanOrEqual(page.viewportSize().width)
+        expect(await smallTargets(page), label).toEqual([])
+      }
+      await checkout(page, { GatchaPon: 2 })
+      const picker = prizeSheet(page)
+      await picker.getByRole('button', { name: new RegExp(`^${long}`) }).click()
+      await expect(picker.getByRole('button', { name: `Undo ${long}` })).toBeVisible()
+      await fits('picker')
+      expect(await picker.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
+      await picker.getByRole('button', { name: 'Later' }).click()
+      await expect(page.getByTestId('gatcha-banner')).toContainText('1 gatcha prize to pick')
+      await fits('banner')
+    })
+  }
   for (const dark of [false, true]) {
     test(`the calendar fits at 375px with long names, in Upcoming, Month and the sheet${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
       await page.addInitScript((dark) => {
