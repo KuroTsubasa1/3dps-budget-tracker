@@ -10,8 +10,8 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs', 'conventions']
-const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions'])
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions']
+const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
   budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '' },
@@ -35,7 +35,8 @@ const DEFAULTS = {
     fee_paid_at: '',
     fee_transaction: '',
     reminders: null
-  }
+  },
+  push_subscriptions: { device: '' }
 }
 
 let counter = 0
@@ -206,6 +207,10 @@ export function createFakePocketBase () {
     }
 
     if (method === 'POST') {
+      // push_subscriptions.endpoint has a unique index
+      if (name === 'push_subscriptions' && records.some(record => record.endpoint === body.endpoint)) {
+        return reply(400, { code: 400, message: 'Failed to create record.', data: { endpoint: { code: 'validation_not_unique', message: 'Value must be unique.' } } })
+      }
       if (body.id && records.some(record => record.id === body.id)) {
         return reply(400, { code: 400, message: 'Failed to create record.', data: { id: { code: 'validation_invalid_id', message: 'The model id is invalid or already exists.' } } })
       }

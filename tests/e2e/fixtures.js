@@ -3,6 +3,11 @@ import { createFakePocketBase, FAKE_TOKEN, OWNER } from './fake-pocketbase.js'
 
 const API_HOST = 'https://pocket.lasseharm.space/**'
 const isApiRequest = url => url.startsWith('https://pocket.lasseharm.space/')
+// Akinai's own server routes for push and the calendar link. The tests never reach the real ones
+// (they would ask PocketBase): the `api` fixture answers them from `api.notifier`.
+const NOTIFIER_ROUTES = /\/api\/(push\/(status|test)|calendar\/link)$/
+// A real P-256 public key (made for the tests, its private half thrown away): subscribe() needs a valid one
+export const TEST_VAPID_KEY = 'BGHxbo5dwKMN5gGwSeCpYcjC_YxtaoR14Ex7zi3-5eL0L3yRPC3xJTnR-dV6QBszCl30NysrCA9zjmyfeZjmXhQ'
 
 export const SAMPLE_CATEGORIES = [
   { id: 'cat-figure', name: 'Big Figure', base_price: 30, sort_order: 0 },
@@ -61,13 +66,14 @@ export const test = base.extend({
       requests: fake.requests,
       get posted () { return fake.db.budget_tracker_transactions },
       enable () { fake.state.enabled = true },
-      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [], commissions = [], printJobs = [], conventions = [] } = {}) {
+      seed ({ categories = SAMPLE_CATEGORIES, articles = [], deals = [], commissions = [], printJobs = [], conventions = [], pushSubscriptions = [] } = {}) {
         api.enable()
         fake.db.categories.push(...structuredClone(categories))
         fake.db.deals.push(...structuredClone(deals))
         fake.db.commissions.push(...structuredClone(commissions))
         fake.db.print_jobs.push(...structuredClone(printJobs))
         fake.db.conventions.push(...structuredClone(conventions))
+        fake.db.push_subscriptions.push(...structuredClone(pushSubscriptions))
         fake.db.budget_tracket_catalog.push(...articles.map(article => ({
           collectionId: 'articles0000001',
           active: true,
@@ -110,8 +116,28 @@ export const test = base.extend({
       // Write replies for the collection come back without `items` (a server that is not migrated yet)
       stripItems (collection) { fake.stripItems.add(collection) },
       // The next write to the collection succeeds but answers only after `ms`
-      delayNext (collection, ms) { fake.delays[collection] = ms }
+      delayNext (collection, ms) { fake.delays[collection] = ms },
+      // What the server's push routes answer: unconfigured by default, like `nuxt dev` without the env file.
+      // `tests` collects the bodies sent to /api/push/test; `testStatus` is its answer.
+      notifier: { configured: false, feed: false, publicKey: TEST_VAPID_KEY, lastRun: null, lastError: null, secret: 'feedsecret', testStatus: 200, tests: [] }
     }
+
+    await context.route(NOTIFIER_ROUTES, (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      const state = api.notifier
+      const json = (status, body) => route.fulfill({ status, json: body })
+      if (path === '/api/push/status' && !state.configured) return json(200, { configured: false, feed: state.feed })
+      if (request.headers().authorization !== FAKE_TOKEN) return json(401, { statusCode: 401, message: 'Log in again' })
+      if (path === '/api/push/status') {
+        return json(200, { configured: true, feed: state.feed, publicKey: state.publicKey, lastRun: state.lastRun, lastError: state.lastError })
+      }
+      if (path === '/api/calendar/link') {
+        return state.feed ? json(200, { path: `/api/calendar/${state.secret}.ics` }) : json(503, { statusCode: 503, message: "The calendar feed isn't configured on the server" })
+      }
+      state.tests.push(request.postDataJSON())
+      return json(state.testStatus, state.testStatus === 200 ? { sent: true } : { statusCode: state.testStatus, message: 'This device has to turn notifications on again' })
+    })
     await use(api)
 
     // Fail loudly if anything reached the real backend without being intercepted

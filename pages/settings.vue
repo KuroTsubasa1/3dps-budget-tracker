@@ -88,24 +88,7 @@
         <CategoryManager v-if="activeCategory === 'categories'" />
         <DealManager v-if="activeCategory === 'deals'" />
 
-        <BaseCard v-if="activeCategory === 'notifications'" title="Notification Settings" subtitle="Configure when and how you receive alerts" icon="bell">
-          <form class="space-y-5" @submit.prevent="handleSaveNotificationSettings">
-            <ToggleSwitch
-              v-model="notificationSettings.pushEnabled"
-              label="Push Notifications"
-              description="Receive notifications even when the app is closed"
-            />
-            <div>
-              <p class="label">Notify me about</p>
-              <div class="divide-y divide-line border-y border-line">
-                <ToggleSwitch v-model="notificationSettings.newTransactions" label="New transactions" :disabled="!notificationSettings.pushEnabled" />
-                <ToggleSwitch v-model="notificationSettings.syncCompleted" label="Sync completion" :disabled="!notificationSettings.pushEnabled" />
-                <ToggleSwitch v-model="notificationSettings.balanceUpdates" label="Balance updates" :disabled="!notificationSettings.pushEnabled" />
-              </div>
-            </div>
-            <BaseButton type="submit" block icon="check" :disabled="!notificationSettings.pushEnabled">Save Notification Settings</BaseButton>
-          </form>
-        </BaseCard>
+        <NotificationSettings v-if="activeCategory === 'notifications'" />
 
         <BaseCard
           v-if="activeCategory === 'data' && orphans.length"
@@ -230,10 +213,8 @@ const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
   accountSettings,
   displaySettings,
-  notificationSettings,
   saveAccountSettings,
   saveDisplaySettings,
-  saveNotificationSettings,
   exportData,
   clearAllData
 } = useAppSettings()
@@ -279,7 +260,7 @@ const SETTINGS_CATEGORIES = [
   { id: 'display', name: 'Display Settings', description: 'Customize appearance', icon: 'desktop' },
   { id: 'categories', name: 'Categories', description: 'Base prices and order', icon: 'bag' },
   { id: 'deals', name: 'Deals', description: 'Cart prices for several items', icon: 'cash' },
-  { id: 'notifications', name: 'Notifications', description: 'Configure alerts and reminders', icon: 'bell' },
+  { id: 'notifications', name: 'Notifications', description: 'Reminders and the calendar link', icon: 'bell' },
   { id: 'data', name: 'Data Management', description: 'Export, backup or clear data', icon: 'database' }
 ]
 const CURRENCY_OPTIONS = [
@@ -349,10 +330,6 @@ const handleSaveAccountSettings = async () => {
 // app.vue watches displaySettings.darkMode and applies html.dark, so saving only persists
 const handleSaveDisplaySettings = async () => {
   if (await saveDisplaySettings()) toast('Display settings saved successfully')
-}
-
-const handleSaveNotificationSettings = async () => {
-  if (await saveNotificationSettings()) toast('Notification settings saved successfully')
 }
 
 const handleExportData = async (format) => {
