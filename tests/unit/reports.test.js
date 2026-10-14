@@ -97,7 +97,7 @@ test('a day report adds takings, items and sales, per hour from sold_at or else 
   const report = dayReport({ transactions: TRANSACTIONS, day: '2026-10-14' })
   assert.deepEqual([report.takings, report.items, report.sales], [65, 6, 4])
   assert.equal(report.perHour.length, 24)
-  assert.deepEqual(report.perHour.map((value, hour) => [hour, value]).filter(([, value]) => value), [[10, 37], [11, 4], [12, 19]])
+  assert.deepEqual(report.perHour.map((value, hour) => [hour, value]).filter(([, value]) => value), [[10, 41], [12, 19]])
   // The queued 5 € has no time: it counts in the takings, not in an hour
   assert.deepEqual(dayReport({ transactions: TRANSACTIONS, day: '2026-10-10' }), {
     takings: 37, items: 3, sales: 1, perHour: Array.from({ length: 24 }, (_, hour) => (hour === 14 ? 37 : 0))
@@ -134,13 +134,13 @@ test('money per week: income, expenses, profit, the running balance and Japan', 
   assert.deepEqual(money.buckets, [
     { label: '1 Oct', income: 12, expenses: 0, profit: 12 },
     { label: '5 Oct', income: 37, expenses: 20, profit: 17 },
-    { label: '12 Oct', income: 65, expenses: 0, profit: 65 },
+    { label: '12 Oct', income: 65, expenses: 15, profit: 50 },
     { label: '19 Oct', income: 0, expenses: 0, profit: 0 },
     { label: '26 Oct', income: 0, expenses: 0, profit: 0 }
   ])
   // The balance starts from everything before the period (48 € in September)
-  assert.deepEqual(money.balanceLine.map(point => point.balance), [60, 77, 142, 142, 142])
-  assert.deepEqual(money.totals, { income: 114, expenses: 20, profit: 94, balance: 142 })
+  assert.deepEqual(money.balanceLine.map(point => point.balance), [60, 77, 127, 127, 127])
+  assert.deepEqual(money.totals, { income: 114, expenses: 35, profit: 79, balance: 127 })
   assert.equal(money.japan, 11.4)
 })
 
@@ -148,12 +148,12 @@ test('money per month over a year, and a single day', () => {
   const year = moneySeries({ transactions: TRANSACTIONS, range: YEAR, bucket: 'month' })
   assert.equal(year.buckets.length, 12)
   assert.deepEqual(year.buckets[8], { label: 'Sep 2026', income: 48, expenses: 0, profit: 48 })
-  assert.deepEqual(year.buckets[9], { label: 'Oct 2026', income: 114, expenses: 20, profit: 94 })
-  assert.deepEqual(year.balanceLine.slice(7, 10).map(point => point.balance), [0, 48, 142])
+  assert.deepEqual(year.buckets[9], { label: 'Oct 2026', income: 114, expenses: 35, profit: 79 })
+  assert.deepEqual(year.balanceLine.slice(7, 10).map(point => point.balance), [0, 48, 127])
   assert.equal(year.japan, 16.2)
   const today = moneySeries({ transactions: TRANSACTIONS, range: TODAY })
-  assert.deepEqual(today.buckets, [{ label: '14 Oct', income: 65, expenses: 0, profit: 65 }])
-  assert.deepEqual(today.balanceLine, [{ label: '14 Oct', balance: 142 }])
+  assert.deepEqual(today.buckets, [{ label: '14 Oct', income: 65, expenses: 15, profit: 50 }])
+  assert.deepEqual(today.balanceLine, [{ label: '14 Oct', balance: 127 }])
 })
 
 test('an empty period has zero buckets and keeps the balance it started with', () => {
@@ -203,4 +203,14 @@ test('commission figures: open value, delivered in the period and average days t
   assert.deepEqual(commissionFigures(COMMISSIONS, YEAR), { openCount: 3, openValue: 50, deliveredCount: 3, deliveredValue: 90, averageDays: 6.8 })
   assert.deepEqual(commissionFigures(COMMISSIONS, EMPTY), { openCount: 3, openValue: 50, deliveredCount: 0, deliveredValue: 0, averageDays: null })
   assert.deepEqual(commissionFigures([], MONTH), { openCount: 0, openValue: 0, deliveredCount: 0, deliveredValue: 0, averageDays: null })
+})
+
+test('amounts add up to the cent, not as floats', () => {
+  const day = (id, amount, items) => ({ id, amount, date: '2026-10-14', created: '2026-10-14 08:00:00.000Z', ...(items && { items }) })
+  const money = moneySeries({ transactions: [day('a', 0.1), day('b', 0.2)], range: TODAY })
+  assert.deepEqual(money.totals, { income: 0.3, expenses: 0, profit: 0.3, balance: 0.3 })
+  assert.equal(dayReport({ transactions: [day('a', 0.1), day('b', 0.2)], day: '2026-10-14' }).takings, 0.3)
+  const lines = [{ article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', quantity: 1, unitPrice: 0.1, lineTotal: 0.1, discount: 0 }]
+  const sales = [day('a', 0.1, lines), day('b', 0.2, [{ ...lines[0], unitPrice: 0.2, lineTotal: 0.2 }])]
+  assert.equal(salesSummary({ transactions: sales, range: TODAY }).topArticles[0].revenue, 0.3)
 })

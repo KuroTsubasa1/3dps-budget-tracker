@@ -53,14 +53,17 @@ export const TRANSACTIONS = [
   sale('t1', at(9, 20), 48),
   sale('t2', at(10, 2), 12),
   sale('t3', at(10, 5, 9), -20, { description: 'Filament' }),
-  // The first sale with lines reached the server at 14:01 on 10 October
-  sale('t4', at(10, 10, 14, 1), 37, { sold_at: at(10, 10, 14).toISOString(), items: [line('f1', 1, 30), line('k1', 2, 4, 1, KEYCHAIN_DEAL)] }),
+  // The first sale with lines reached the server at 14:01 on 10 October; the phone's clock ran ahead (14:05)
+  sale('t4', at(10, 10, 14, 1), 37, { sold_at: at(10, 10, 14, 5).toISOString(), items: [line('f1', 1, 30), line('k1', 2, 4, 1, KEYCHAIN_DEAL)] }),
   sale('t5', at(10, 14, 10, 31), 37, { sold_at: at(10, 14, 10, 30).toISOString(), items: [line('k1', 2, 4, 1, KEYCHAIN_DEAL), line('f1', 1, 30)] }),
-  sale('t6', at(10, 14, 11, 11), 4, { sold_at: at(10, 14, 11, 10).toISOString(), items: [line('k1', 1, 4)] }),
+  // Sold at 10:58, synced at 11:01: the hour comes from sold_at
+  sale('t6', at(10, 14, 11, 1), 4, { sold_at: at(10, 14, 10, 58).toISOString(), items: [line('k1', 1, 4)] }),
   // Synced before the server had sold_at: its hour comes from created
   sale('t7', at(10, 14, 12, 5), 19, { items: [line('c1', 2, 9.5)] }),
   // Queued on this device by the old app: no created, no sold_at, no lines
-  { id: 8, description: 'Cash tip', amount: 5, notes: '', date: '2026-10-14' }
+  { id: 8, description: 'Cash tip', amount: 5, notes: '', date: '2026-10-14' },
+  // An expense on a market day: not a sale
+  sale('t9', at(10, 14, 12, 30), -15, { description: 'Market stall fee' })
 ]
 
 const movement = (id, articleId, change, reason, created, extra = {}) =>
