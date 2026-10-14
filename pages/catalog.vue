@@ -199,6 +199,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { localDate } from '~/utils/transactions'
 import { useArticles } from '~/composables/useArticles'
 import { useCategories } from '~/composables/useCategories'
 import { useDeals } from '~/composables/useDeals'
@@ -399,7 +400,7 @@ const submitToBalance = () => {
   addTransaction({
     description: `3D Printing Products:\n${productNames}${dealNote}`,
     amount: total,
-    date: new Date().toISOString().split('T')[0],
+    date: localDate(),
     stockMovements
   })
 

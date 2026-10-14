@@ -67,6 +67,7 @@
 <script setup>
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { localDate } from '~/utils/transactions'
 
 const emit = defineEmits(['saved'])
 
@@ -124,7 +125,7 @@ const handleSubmit = async () => {
     id: Date.now(),
     description: transactionDescription.value.trim(),
     amount: transactionType.value === 'expense' ? -amount : amount,
-    date: new Date().toISOString().split('T')[0],
+    date: localDate(),
     notes: transactionNotes.value
   })
 

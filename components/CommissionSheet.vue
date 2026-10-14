@@ -134,6 +134,7 @@
 import { ref, computed, watch } from 'vue'
 import { useCommissions } from '~/composables/useCommissions'
 import { useTransactions } from '~/composables/useTransactions'
+import { localDate } from '~/utils/transactions'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import {
@@ -308,7 +309,7 @@ const save = async () => {
 const bookDelivery = (record) => {
   emit('changed', record)
   const income = incomeFor(record, props.articles)
-  addTransaction({ ...income, date: new Date().toISOString().split('T')[0] })
+  addTransaction({ ...income, date: localDate() })
   toast(`Delivered — ${formatCurrency(income.amount)} added to balance`)
 }
 

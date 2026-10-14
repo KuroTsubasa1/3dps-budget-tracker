@@ -107,6 +107,31 @@
           </form>
         </BaseCard>
 
+        <BaseCard
+          v-if="activeCategory === 'data' && orphans.length"
+          class="mb-4"
+          title="Local entries not on the server"
+          subtitle="Recorded on this device only. Upload them or discard them."
+          icon="database"
+          flush
+        >
+          <div class="divide-y divide-line">
+            <div v-for="entry in orphans" :key="entry.recordId || entry.id" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 md:px-5">
+              <div class="min-w-0 flex-1 basis-40">
+                <p class="truncate text-sm font-medium text-ink">{{ entry.description }}</p>
+                <p class="truncate text-xs text-ink-muted">{{ formatDate(entry.date, displaySettings.dateFormat || 'DD/MM/YYYY') }}</p>
+              </div>
+              <span class="shrink-0 text-sm font-semibold tabular-nums" :class="entry.amount < 0 ? 'text-expense' : 'text-income'">
+                {{ formatCurrency(entry.amount, displaySettings.currencyFormat || 'EUR') }}
+              </span>
+              <div class="flex shrink-0 gap-2">
+                <BaseButton variant="secondary" @click="uploadOrphan(entry)">Upload</BaseButton>
+                <BaseButton variant="danger-ghost" @click="orphanToDiscard = entry">Discard</BaseButton>
+              </div>
+            </div>
+          </div>
+        </BaseCard>
+
         <BaseCard v-if="activeCategory === 'data'" title="Data Management" subtitle="Export and backup your financial data" icon="database">
           <div class="space-y-6">
             <div>
@@ -148,6 +173,16 @@
       </section>
     </div>
 
+    <BottomSheet v-model:open="showDiscardConfirm" title="Discard local entry">
+      <p class="mb-4 text-sm text-ink-muted">
+        Discard "{{ orphanToDiscard?.description }}"? It is not on the server, so it will be gone for good.
+      </p>
+      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <BaseButton variant="secondary" @click="orphanToDiscard = null">Cancel</BaseButton>
+        <BaseButton variant="danger" @click="confirmDiscard">Discard</BaseButton>
+      </div>
+    </BottomSheet>
+
     <BottomSheet v-model:open="showClearDataConfirm" title="Clear All Data">
       <p class="mb-4 text-sm text-ink-muted">
         Are you sure you want to clear all local data? This action cannot be undone. All of your transactions, settings and offline data will be permanently removed.
@@ -168,10 +203,12 @@ import { useAuth } from '~/composables/useAuth'
 import { useOfflineQueue } from '~/composables/useOfflineQueue'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
+import { formatCurrency } from '~/utils/currency'
+import { formatDate } from '~/utils/date'
 
 definePageMeta({ middleware: 'owner' })
 
-const { syncStatus, syncTransactionsQueue } = useTransactions()
+const { syncStatus, syncTransactionsQueue, orphans, uploadOrphan, discardOrphan } = useTransactions()
 const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
   accountSettings,
@@ -229,6 +266,17 @@ const activeCategory = computed(() => requestedCategory.value || (isWide.value ?
 
 const openCategory = id => router.push({ hash: `#${id}` })
 const backToList = () => router.replace({ hash: '' })
+
+// Local entries the server does not have: discarding asks first
+const orphanToDiscard = ref(null)
+const showDiscardConfirm = computed({
+  get: () => !!orphanToDiscard.value,
+  set: (open) => { if (!open) orphanToDiscard.value = null }
+})
+const confirmDiscard = () => {
+  discardOrphan(orphanToDiscard.value)
+  orphanToDiscard.value = null
+}
 
 // Data management state
 const showClearDataConfirm = ref(false)

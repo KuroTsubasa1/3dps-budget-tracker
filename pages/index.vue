@@ -25,6 +25,18 @@
         </BaseCard>
 
         <NuxtLink
+          v-if="orphans.length > 0"
+          to="/settings#data"
+          class="card flex min-h-[56px] items-center justify-between gap-3 px-4 text-sm font-medium text-ink hover:bg-muted md:px-5"
+        >
+          <span class="flex items-center gap-3">
+            <AppIcon name="clipboard" class="h-5 w-5 text-expense" />
+            {{ orphans.length }} local {{ orphans.length === 1 ? 'entry is' : 'entries are' }} not on the server — review in Settings
+          </span>
+          <AppIcon name="chevron-right" class="h-4 w-4 text-ink-muted" />
+        </NuxtLink>
+
+        <NuxtLink
           v-if="openCommissions > 0"
           to="/commissions"
           class="card flex min-h-[56px] items-center justify-between gap-3 px-4 text-sm font-medium text-ink hover:bg-muted md:px-5"
@@ -61,7 +73,7 @@
           <div v-else class="divide-y divide-line">
             <ListRow
               v-for="transaction in sortedTransactions"
-              :key="transaction.id"
+              :key="transaction.recordId || transaction.id"
               :title="transaction.description"
               :subtitle="transactionSubtitle(transaction)"
               :icon="transaction.amount < 0 ? 'minus' : 'plus'"
@@ -111,7 +123,7 @@ import { buildBoard } from '~/utils/printBoard'
 
 definePageMeta({ middleware: 'owner' })
 
-const { transactions, earnings, todayEarnings } = useTransactions()
+const { transactions, orphans, earnings, todayEarnings } = useTransactions()
 const { displaySettings } = useAppSettings()
 const { listCommissions, anonymiseDue } = useCommissions()
 const { loadBoardData } = usePrintJobs()
@@ -145,8 +157,8 @@ watch(isDesktop, (desktop) => { if (desktop) isFormOpen.value = false })
 const formatMoney = amount => formatCurrency(amount, displaySettings.value.currencyFormat || 'EUR')
 const moneyClass = amount => (amount < 0 ? 'text-expense' : 'text-income')
 
-// Newest first (ids are creation timestamps)
-const sortedTransactions = computed(() => [...transactions.value].sort((a, b) => b.id - a.id))
+// Newest first: the list is kept oldest first (by date, then creation order)
+const sortedTransactions = computed(() => [...transactions.value].reverse())
 
 const transactionSubtitle = transaction =>
   [formatDate(transaction.date, displaySettings.value.dateFormat || 'DD/MM/YYYY'), transaction.notes]
