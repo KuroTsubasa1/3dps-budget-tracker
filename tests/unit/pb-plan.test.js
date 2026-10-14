@@ -38,7 +38,7 @@ test('plans the new collections, article fields and optional price', () => {
     `updateField:${ARTICLES}.price`,
     `addFields:${TRANSACTIONS}`
   ])
-  assert.deepEqual(ops[7].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock'])
+  assert.deepEqual(ops[7].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock', 'prize_categories'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -363,28 +363,47 @@ test('transactions gain an optional sale date, sale lines and sale time', () => 
 // Every check holds before and after `npm run pb:migrate -- --apply` refreshes the snapshot.
 const REPORT_FIELDS = ['items', 'sold_at']
 const CALENDAR = ['conventions', 'push_subscriptions']
+const PRIZE_FIELD = { name: 'prize_categories', type: 'relation', required: false, presentable: false, options: { collectionId: '@categories', cascadeDelete: false, minSelect: null, maxSelect: null, displayFields: null } }
 const withoutFields = (collections, names) => collections.map(collection => collection.name === TRANSACTIONS
   ? { ...collection, schema: collection.schema.filter(field => !names.includes(field.name)) }
   : collection)
 const withoutCalendar = collections => collections.filter(collection => !CALENDAR.includes(collection.name))
 const withoutDate = collections => withoutFields(collections, ['date', ...REPORT_FIELDS])
+const withoutPrizes = collections => collections.map(collection => collection.name === ARTICLES
+  ? { ...collection, schema: collection.schema.filter(field => field.name !== 'prize_categories') }
+  : collection)
+// The live schema with everything this plan adds, whether or not the owner has applied it yet
+const upToDate = () => simulate(live(), planSchema(live()))
 const CALENDAR_KEYS = CALENDAR.map(name => `createCollection:${name}`)
 
-test('the live schema needs nothing beyond the report fields and the calendar collections', () => {
-  const has = name => live().find(collection => collection.name === TRANSACTIONS).schema.some(field => field.name === name)
-  const missingFields = [ITEMS_FIELD, SOLD_AT_FIELD].filter(field => !has(field.name))
-  const missingCollections = CALENDAR.filter(name => !live().some(collection => collection.name === name))
+test('the live schema needs nothing beyond the prize categories', () => {
+  const hasPrizes = live().find(collection => collection.name === ARTICLES).schema.some(field => field.name === 'prize_categories')
   const ops = planSchema(live())
-  assert.deepEqual(opKeys(ops), [
-    ...missingCollections.map(name => `createCollection:${name}`),
-    ...(missingFields.length ? [`addFields:${TRANSACTIONS}`] : [])
-  ])
-  if (missingFields.length) assert.deepEqual(ops.at(-1).fields, missingFields)
+  assert.deepEqual(ops, hasPrizes ? [] : [{ op: 'addFields', collection: ARTICLES, fields: [PRIZE_FIELD] }])
   assert.deepEqual(planSchema(simulate(live(), ops)), [])
 })
 
+test('without the prize categories the live schema needs exactly that field, and only once', () => {
+  const before = withoutPrizes(upToDate())
+  const ops = planSchema(before)
+  assert.deepEqual(ops, [{ op: 'addFields', collection: ARTICLES, fields: [PRIZE_FIELD] }])
+  assert.equal(describeOp(ops[0]), `add to "${ARTICLES}": prize_categories`)
+  const after = simulate(before, ops)
+  const field = after.find(collection => collection.name === ARTICLES).schema.find(item => item.name === 'prize_categories')
+  // A relation to the categories that already exist on the server, several allowed, deleting a category keeps the article
+  assert.equal(field.options.collectionId, after.find(collection => collection.name === 'categories').id)
+  assert.deepEqual([field.required, field.options.maxSelect, field.options.cascadeDelete], [false, null, false])
+  assert.deepEqual(planSchema(after), [])
+})
+
+test('the prize categories change no access rules', () => {
+  const ruled = simulate(withoutPrizes(upToDate()), planRules(withoutPrizes(upToDate()), OWNER_ID, NOTIFIER_ID))
+  const withPrizes = simulate(ruled, planSchema(ruled))
+  assert.deepEqual(planRules(withPrizes, OWNER_ID, NOTIFIER_ID), [])
+})
+
 test('without the calendar collections the live schema needs exactly those two, and only once', () => {
-  const before = withoutCalendar(simulate(live(), planSchema(live())))
+  const before = withoutCalendar(upToDate())
   const ops = planSchema(before)
   assert.deepEqual(opKeys(ops), CALENDAR_KEYS)
   assert.equal(describeOp(ops[1]), 'create collection "push_subscriptions" (endpoint, keys, device)')
@@ -392,7 +411,7 @@ test('without the calendar collections the live schema needs exactly those two, 
 })
 
 test('without the report fields the live schema needs exactly those two, and only once', () => {
-  const before = withoutFields(withoutCalendar(live()), REPORT_FIELDS)
+  const before = withoutFields(withoutCalendar(upToDate()), REPORT_FIELDS)
   const ops = planSchema(before)
   assert.deepEqual(opKeys(ops), [...CALENDAR_KEYS, `addFields:${TRANSACTIONS}`])
   assert.deepEqual(ops[2], { op: 'addFields', collection: TRANSACTIONS, fields: [ITEMS_FIELD, SOLD_AT_FIELD] })
@@ -401,7 +420,7 @@ test('without the report fields the live schema needs exactly those two, and onl
 })
 
 test('before the date field the live schema needs it and the report fields, and only once', () => {
-  const before = withoutDate(withoutCalendar(live()))
+  const before = withoutDate(withoutCalendar(upToDate()))
   const ops = planSchema(before)
   assert.deepEqual(opKeys(ops), [...CALENDAR_KEYS, `addFields:${TRANSACTIONS}`])
   assert.deepEqual(ops[2], { op: 'addFields', collection: TRANSACTIONS, fields: [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD] })

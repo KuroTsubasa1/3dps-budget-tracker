@@ -1,6 +1,7 @@
 // Sales tab: what sells best in the period. Revenue comes from sale lines; units from lines plus, for
 // older sales without lines, their stock movements.
 import { UNKNOWN_ARTICLE } from '../commissions.js'
+import { PRIZE_NOTE } from '../gatcha.js'
 import { toCents, toEuros, toDate, isIncome, hasLines, linesOf, lineCents, saleTime, soldUnits } from './common.js'
 import { inPeriod } from './period.js'
 
@@ -55,6 +56,8 @@ export function salesSummary ({ transactions, movements = [], articles = [], cat
   for (const movement of movements) {
     const at = toDate(movement.created)
     if (movement.reason !== 'sale' || !at || at.getTime() >= start || !inPeriod(at, range)) continue
+    // A gatcha prize was paid for on the gatcha's own line; it is never an article sale of its own
+    if (movement.note === PRIZE_NOTE) continue
     const article = articles.find(item => item.id === movement.article) ?? movement.expand?.article
     const units = soldUnits(movement)
     add(articleRows, movement.article, article?.name ?? UNKNOWN_ARTICLE, 0, units)

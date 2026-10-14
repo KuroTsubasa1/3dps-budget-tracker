@@ -262,6 +262,8 @@ export function planSchema (collections) {
   if (!findField(articles, 'stock')) missing.push(number('stock', { min: 0, noDecimal: true }))
   if (!findField(articles, 'low_stock_threshold')) missing.push(number('low_stock_threshold', { min: 0, noDecimal: true }))
   if (!findField(articles, 'target_stock')) missing.push(number('target_stock', { min: 0, noDecimal: true }))
+  // Gatcha prizes: the categories a gatcha's prizes come from. Several, optional; an article with any is a gatcha
+  if (!findField(articles, 'prize_categories')) missing.push(relation('prize_categories', '@categories', false, null))
   if (missing.length) ops.push({ op: 'addFields', collection: ARTICLES, fields: missing })
 
   if (findField(articles, 'price')?.required) {

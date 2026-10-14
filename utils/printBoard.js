@@ -1,5 +1,6 @@
 // Print board rules. See docs/superpowers/specs/2026-10-13-print-board-design.md
 import { itemsOf } from './commissions.js'
+import { isGatcha } from './gatcha.js'
 
 // PocketBase returns dates as "YYYY-MM-DD HH:MM:SS.sssZ"; the app itself writes ISO strings
 const parseDate = value => new Date(String(value).replace(' ', 'T'))
@@ -24,10 +25,11 @@ const oldestFirst = (a, b) => String(a.created ?? '').localeCompare(String(b.cre
 const newestFirst = field => (a, b) => parseDate(b[field]) - parseDate(a[field])
 
 // Active articles with a threshold whose stock is at or below it, lowest stock first, then by name.
-// The reminder job's stock check uses the same rule.
+// A gatcha is never printed: its prizes are. The reminder job's stock check uses the same rule.
 export const lowStockArticles = articles => articles
   .filter(article =>
     article.active &&
+    !isGatcha(article) &&
     Number(article.low_stock_threshold) > 0 &&
     stockOf(article) <= Number(article.low_stock_threshold))
   .sort((a, b) => stockOf(a) - stockOf(b) || String(a.name).localeCompare(String(b.name)))
