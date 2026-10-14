@@ -117,6 +117,25 @@ test.describe('reports', () => {
     await expect(page.getByTestId('stock-value')).toContainText('130,00')
   })
 
+  test('a request that drops while online shows Needs a connection with Try Again, which loads the figures', async ({ page, api }) => {
+    await openReports(page, api, { before: api => { api.failReads('stock_movements', 'drop') } })
+    await expect(page.getByText('Needs a connection')).toBeVisible()
+    const retry = page.getByRole('button', { name: 'Try Again' })
+    expect((await retry.boundingBox()).height).toBeGreaterThanOrEqual(44)
+    await retry.click()
+    await expect(rowsOf(page, 'Top articles').first()).toContainText('60,00')
+    await expect(page.getByText('Needs a connection')).toHaveCount(0)
+  })
+
+  test('a real failure after a dropped request replaces Needs a connection', async ({ page, api }) => {
+    await openReports(page, api, { before: api => { api.failReads('stock_movements', 'drop') } })
+    await expect(page.getByText('Needs a connection')).toBeVisible()
+    api.failReads('stock_movements', 500)
+    await page.getByRole('button', { name: 'Try Again' }).click()
+    await expect(page.getByText('Could not load the report. Check your connection and try again.')).toBeVisible()
+    await expect(page.getByText('Needs a connection')).toHaveCount(0)
+  })
+
   test('a locked or missing collection reports as empty instead of failing', async ({ page, api }) => {
     await openReports(page, api, {
       before (api) {

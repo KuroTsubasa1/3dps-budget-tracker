@@ -50,6 +50,8 @@ export const useReportData = (range) => {
       loading.value = false
       return
     }
+    // Past the offline check a stale 'needs a connection' must not outlive this attempt
+    needsConnection.value = false
     loading.value = true
     const now = new Date()
     const { start, end } = range.value

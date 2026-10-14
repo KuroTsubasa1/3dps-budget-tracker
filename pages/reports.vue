@@ -50,7 +50,8 @@
     <template v-if="needsData && (needsConnection || error || loading)">
       <div v-if="needsConnection" class="card px-4 py-8 text-center">
         <AppIcon name="exclamation" class="mx-auto mb-3 h-8 w-8 text-ink-muted" />
-        <p class="text-sm font-medium text-ink">Needs a connection</p>
+        <p class="mb-3 text-sm font-medium text-ink">Needs a connection</p>
+        <BaseButton variant="secondary" icon="refresh" @click="reload">Try Again</BaseButton>
       </div>
       <div v-else-if="error" class="card px-4 py-6 text-center">
         <p class="mb-3 text-sm text-expense">{{ error }}</p>

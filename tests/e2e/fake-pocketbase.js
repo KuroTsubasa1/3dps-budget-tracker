@@ -146,6 +146,11 @@ export function createFakePocketBase () {
     const isOwner = authorization === FAKE_TOKEN
 
     if (method === 'GET') {
+      // 'drop' is one-shot here too: the read dies without a reply, like a request lost in transit
+      if (readFailures[name] === 'drop') {
+        readFailures[name] = 0
+        return route.abort()
+      }
       if (readFailures[name]) return reply(readFailures[name], { code: readFailures[name], message: 'Only admins can perform this action.', data: {} })
       const perPage = Number(url.searchParams.get('perPage') || 30)
       if (OWNER_READ_ONLY.has(name) && !isOwner) return reply(200, { page: 1, perPage, totalItems: 0, totalPages: 0, items: [] })

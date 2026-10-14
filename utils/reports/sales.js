@@ -68,6 +68,7 @@ export function salesSummary ({ transactions, movements = [], articles = [], cat
     deals: [...dealRows.values()]
       .map(({ discountCents, ...deal }) => ({ ...deal, discount: toEuros(discountCents) }))
       .sort((a, b) => b.times - a.times || b.discount - a.discount || a.name.localeCompare(b.name)),
-    olderSalesCount: sales.filter(sale => !hasLines(sale)).length
+    // Line-less income from before the line data; an entry still queued on the device has no created stamp, so its own day decides
+    olderSalesCount: sales.filter(sale => !hasLines(sale) && (toDate(sale.created) ?? toDate(sale.date))?.getTime() < start).length
   }
 }

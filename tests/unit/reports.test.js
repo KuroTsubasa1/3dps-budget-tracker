@@ -48,10 +48,26 @@ test('deals count once per sale with their total discount', () => {
   assert.equal(renamed.deals[0].name, 'Keychain pair')
 })
 
-test('older sales without lines are counted for the hint', () => {
-  assert.equal(summary(MONTH).olderSalesCount, 2)
-  assert.equal(summary(WEEK).olderSalesCount, 1)
-  assert.equal(summary(YEAR).olderSalesCount, 3)
+test('older sales without lines are counted for the hint, not income dated after the line data began', () => {
+  assert.equal(summary(MONTH).olderSalesCount, 1)
+  assert.equal(summary(WEEK).olderSalesCount, 0)
+  assert.equal(summary(YEAR).olderSalesCount, 2)
+})
+
+test('only line-less income from before the line data counts as an older sale', () => {
+  const lines = [{ article: 'k1', name: 'Keychain', category: 'c1', categoryName: 'Keychain', quantity: 1, unitPrice: 4, lineTotal: 4, discount: 0, deal: '', dealName: '' }]
+  const entry = (id, created, extra = {}) => ({ id, description: id, amount: 5, notes: '', date: created.slice(0, 10), created, ...extra })
+  const transactions = [
+    entry('before', '2026-10-08 10:00:00.000Z'),
+    entry('first', '2026-10-10 12:00:00.000Z', { amount: 4, items: lines }),
+    entry('manual-after', '2026-10-12 12:00:00.000Z'),
+    // Queued by the old app: no created stamp, so its own day decides
+    { id: 'pending-before', description: 'x', amount: 5, notes: '', date: '2026-10-09' },
+    { id: 'pending-after', description: 'y', amount: 5, notes: '', date: '2026-10-13' }
+  ]
+  assert.equal(summary(YEAR, transactions).olderSalesCount, 2)
+  // Without any sale with lines every line-less sale is older
+  assert.equal(summary(YEAR, transactions.filter(sale => !hasLines(sale))).olderSalesCount, 4)
 })
 
 test('movements after the first sale with lines are not counted twice', () => {
