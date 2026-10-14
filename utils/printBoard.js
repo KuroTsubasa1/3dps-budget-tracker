@@ -23,16 +23,19 @@ export function isSameLocalDay (value, now) {
 const oldestFirst = (a, b) => String(a.created ?? '').localeCompare(String(b.created ?? ''))
 const newestFirst = field => (a, b) => parseDate(b[field]) - parseDate(a[field])
 
+// Active articles with a threshold whose stock is at or below it, lowest stock first, then by name.
+// The reminder job's stock check uses the same rule.
+export const lowStockArticles = articles => articles
+  .filter(article =>
+    article.active &&
+    Number(article.low_stock_threshold) > 0 &&
+    stockOf(article) <= Number(article.low_stock_threshold))
+  .sort((a, b) => stockOf(a) - stockOf(b) || String(a.name).localeCompare(String(b.name)))
+
 export function buildBoard ({ articles = [], jobs = [], commissions = [], now = new Date() }) {
   const printingJobs = jobs.filter(job => job.status === 'printing').sort(oldestFirst)
   const printingArticles = new Set(printingJobs.map(job => job.article))
-  const lowStock = articles
-    .filter(article =>
-      article.active &&
-      Number(article.low_stock_threshold) > 0 &&
-      stockOf(article) <= Number(article.low_stock_threshold) &&
-      !printingArticles.has(article.id))
-    .sort((a, b) => stockOf(a) - stockOf(b) || String(a.name).localeCompare(String(b.name)))
+  const lowStock = lowStockArticles(articles).filter(article => !printingArticles.has(article.id))
 
   const withStatus = status => commissions.filter(commission => commission.status === status).sort(oldestFirst)
   const articleOf = job => job.expand?.article ?? articles.find(article => article.id === job.article) ?? null
