@@ -79,6 +79,36 @@ test('logging out from Settings returns to login and stays logged out', async ({
   await page.waitForURL(url => url.pathname === '/login')
 })
 
+test('logging out removes the cached transactions but keeps sales that still need to sync', async ({ page, api }) => {
+  api.seed()
+  api.posted.push({ id: 'srv000000000001', collectionName: 'budget_tracker_transactions', description: 'Commission: Totoro × 1 (Anna Example)', amount: 8, notes: '', created: '2026-10-10 10:00:00.000Z', updated: '2026-10-10 10:00:00.000Z' })
+  await gotoReady(page, '/')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('budget-tracker-transactions') || '')).toContain('Anna Example')
+
+  // The server keeps refusing new sales, so the queued one really is still waiting
+  api.fail('budget_tracker_transactions', 500)
+  await page.evaluate(() => {
+    localStorage.setItem('budget-tracker-orphans', JSON.stringify([{ id: 1, description: 'Old stand sale', amount: 4, date: '2026-01-01' }]))
+    localStorage.setItem('budget-tracker-offline-queue', JSON.stringify([
+      { id: 2, recordId: 'pending00000001', description: 'Unsent sale', amount: 7, date: '2026-10-14', status: 'pending', queuedAt: '2026-10-14T10:00:00.000Z' },
+      { id: 3, recordId: 'synced000000001', description: 'Commission: Pokeball × 1 (Ben Example)', amount: 30, date: '2026-10-13', status: 'synced', queuedAt: '2026-10-13T10:00:00.000Z' }
+    ]))
+  })
+
+  await gotoReady(page, '/settings#api')
+  await page.getByRole('button', { name: 'Log out' }).click()
+  await page.waitForURL(url => url.pathname === '/login')
+
+  const stored = await page.evaluate(() => ({
+    transactions: localStorage.getItem('budget-tracker-transactions'),
+    orphans: localStorage.getItem('budget-tracker-orphans'),
+    queue: JSON.parse(localStorage.getItem('budget-tracker-offline-queue') || '[]')
+  }))
+  expect(stored.transactions).toBeNull()
+  expect(stored.orphans).toBeNull()
+  expect(stored.queue.map(item => item.description)).toEqual(['Unsent sale'])
+})
+
 test('transactions are sent with the owner session instead of the shared token', async ({ page, api }) => {
   await api.mockTransactions()
   await gotoReady(page, '/')

@@ -37,7 +37,8 @@ export const useTransactions = () => {
   const { 
     offlineQueue, 
     addToQueue, 
-    processQueue, 
+    processQueue,
+    clearCompletedItems, 
     isSyncing, 
     syncStatus: queueSyncStatus,
     isOnline 
@@ -308,10 +309,21 @@ export const useTransactions = () => {
     apiError.value = ''
   }
 
+  // Logging out must not leave customer names and takings readable on the device. Sales that
+  // have not reached the server yet stay queued (they hold no server data) and sync after the next login.
+  const forgetLocalData = () => {
+    transactions.value = []
+    orphans.value = []
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(ORPHANS_KEY)
+    clearCompletedItems()
+  }
+
   return {
     transactions,
     orphans,
     refreshTransactions,
+    forgetLocalData,
     uploadOrphan,
     discardOrphan,
     earnings,

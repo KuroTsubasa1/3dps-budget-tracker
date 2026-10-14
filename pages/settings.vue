@@ -208,7 +208,7 @@ import { formatDate } from '~/utils/date'
 
 definePageMeta({ middleware: 'owner' })
 
-const { syncStatus, syncTransactionsQueue, orphans, uploadOrphan, discardOrphan } = useTransactions()
+const { syncStatus, syncTransactionsQueue, orphans, uploadOrphan, discardOrphan, forgetLocalData } = useTransactions()
 const { offlineQueue, isSyncing: queueIsSyncing } = useOfflineQueue()
 const {
   accountSettings,
@@ -225,6 +225,7 @@ const { user, logout } = useAuth()
 const pocketbaseUrl = useRuntimeConfig().public.pocketbaseUrl
 
 const handleLogout = () => {
+  forgetLocalData()
   logout()
   navigateTo('/login')
 }
