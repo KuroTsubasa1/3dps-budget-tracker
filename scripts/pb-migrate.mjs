@@ -193,8 +193,10 @@ async function migrateSchema () {
 }
 
 async function migrateRules () {
+  const notifierArg = argValue('--notifier')
+  if (process.argv.includes('--notifier') && (!notifierArg || notifierArg.startsWith('--'))) throw new Error('--notifier needs an email address.')
   const users = (await api('GET', '/collections/users/records?perPage=200&fields=id,email')).items
-  const { owner, notifier } = resolveAccounts(users, { owner: argValue('--owner'), notifier: argValue('--notifier') })
+  const { owner, notifier } = resolveAccounts(users, { owner: argValue('--owner'), notifier: notifierArg })
   console.log(`Owner: ${owner.email} (${owner.id})`)
   console.log(notifier
     ? `Notifier: ${notifier.email} (${notifier.id}), may read conventions and push subscriptions`
@@ -207,7 +209,9 @@ async function migrateRules () {
     await applyOp(op)
   }
   await writeSnapshot()
-  console.log('Rules applied. Only the logged-in owner can write now.')
+  console.log(notifier
+    ? `Rules applied. Only the owner can write now; the notifier ${notifier.email} can read conventions, mark reminders sent and remove dead push subscriptions.`
+    : 'Rules applied. Only the logged-in owner can write now.')
 }
 
 // fetch only says "fetch failed"; the network reason (ECONNRESET, ETIMEDOUT, a TLS error …) is in error.cause

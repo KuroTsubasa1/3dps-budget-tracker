@@ -359,7 +359,6 @@ test('transactions gain an optional sale date, sale lines and sale time', () => 
   assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date, items, sold_at`)
 })
 
-
 // The snapshot follows production, so it is checked as it is and as it was before these changes.
 // Every check holds before and after `npm run pb:migrate -- --apply` refreshes the snapshot.
 const REPORT_FIELDS = ['items', 'sold_at']
@@ -469,10 +468,9 @@ test('the notifier may read and update conventions and read and delete subscript
   const others = ops.filter(op => !CALENDAR.includes(op.collection))
   assert.deepEqual(others, planRules(afterSchema, OWNER_ID).filter(op => !CALENDAR.includes(op.collection)))
   assert.ok(others.every(op => !JSON.stringify(op.rules).includes(NOTIFIER_ID)))
-  // Applied once, the same rules plan nothing; dropping the notifier again plans the two calendar collections
+  // Applied once, the same rules plan nothing (dropping the notifier is refused, see below)
   const applied = simulate(afterSchema, ops)
   assert.deepEqual(planRules(applied, OWNER_ID, NOTIFIER_ID), [])
-  assert.deepEqual(opKeys(planRules(applied, OWNER_ID)), ['setRules:conventions', 'setRules:push_subscriptions'])
 })
 
 test('the notifier id is checked like the owner id and must be another account', () => {
@@ -490,4 +488,13 @@ test('--notifier needs --owner, and both are looked up by email', () => {
   assert.throws(() => resolveAccounts(users, { owner: 'lasse@x.de', notifier: 'nobody@x.de' }), /No user with email nobody@x.de/)
   // Two accounts and no --owner: the existing message names them
   assert.throws(() => resolveAccounts(users), /Pass --owner <email> to choose the owner account/)
+})
+
+test('a later --apply-rules without --notifier does not silently drop an existing notifier', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const withNotifier = simulate(afterSchema, planRules(afterSchema, OWNER_ID, NOTIFIER_ID))
+  assert.throws(() => planRules(withNotifier, OWNER_ID), new RegExp(`The calendar rules still allow the notifier ${NOTIFIER_ID}\\. Pass --notifier <email> to keep it\\.`))
+  assert.deepEqual(planRules(withNotifier, OWNER_ID, NOTIFIER_ID), [])
+  const ownerOnly = simulate(afterSchema, planRules(afterSchema, OWNER_ID))
+  assert.deepEqual(planRules(ownerOnly, OWNER_ID), [])
 })

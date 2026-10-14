@@ -306,6 +306,18 @@ export function planCommissionItems (commissions, articles) {
 }
 
 export function planRules (collections, ownerId, notifierId = null) {
+  // Without --notifier an earlier notifier would be dropped silently, so name it instead
+  if (!notifierId) {
+    for (const name of ['conventions', 'push_subscriptions']) {
+      const collection = byName(collections, name)
+      const rules = collection ? [collection.listRule, collection.viewRule, collection.updateRule, collection.deleteRule] : []
+      for (const rule of rules) {
+        for (const [, id] of String(rule ?? '').matchAll(/@request\.auth\.id = "([^"]*)"/g)) {
+          if (id !== ownerId) throw new Error(`The calendar rules still allow the notifier ${id}. Pass --notifier <email> to keep it.`)
+        }
+      }
+    }
+  }
   return Object.entries(rulesFor(ownerId, notifierId))
     .filter(([name]) => byName(collections, name))
     .filter(([name, rules]) => Object.entries(rules).some(([key, value]) => byName(collections, name)[key] !== value))
