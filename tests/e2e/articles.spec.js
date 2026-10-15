@@ -42,6 +42,18 @@ test.describe('managing articles', () => {
     expect(api.db.budget_tracket_catalog.filter(article => article.name === 'Evoli Keychain')).toHaveLength(1)
   })
 
+  test('Take photo opens the rear camera and adds the photo to the new images', async ({ page }) => {
+    await page.getByRole('button', { name: 'New article' }).click()
+    const camera = sheet(page).getByLabel('Take photo')
+    await expect(camera).toHaveAttribute('capture', 'environment')
+    await expect(camera).toHaveAttribute('accept', 'image/*')
+    await camera.setInputFiles({ name: 'photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
+    await expect(sheet(page).getByText('photo.jpg (new)')).toBeVisible()
+    const button = sheet(page).locator('label', { hasText: 'Take photo' })
+    const box = await button.boundingBox()
+    expect(box.height).toBeGreaterThanOrEqual(44)
+  })
+
   test('validation names the missing field', async ({ page }) => {
     await page.getByRole('button', { name: 'New article' }).click()
     await sheet(page).getByRole('button', { name: 'Create article' }).click()

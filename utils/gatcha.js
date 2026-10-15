@@ -17,6 +17,11 @@ export const prizeCategoriesOf = article =>
 
 export const isGatcha = article => prizeCategoriesOf(article).length > 0
 
+// Only articles of this category can be gatchas (matched by name; renaming the category hides Prize categories)
+export const GATCHA_CATEGORY_NAME = 'GatchaPon'
+export const isGatchaCategory = category =>
+  typeof category?.name === 'string' && category.name.trim().toLowerCase() === GATCHA_CATEGORY_NAME.toLowerCase()
+
 // The prizes a cart owes: one per gatcha unit, from the union of its gatchas' prize categories
 export function prizesFor (cart) {
   const gatchas = cart.filter(item => isGatcha(item) && Number(item.quantity) > 0)

@@ -31,6 +31,23 @@ test.describe('the gatcha article', () => {
     await expect(page.locator('article', { hasText: 'GatchaPon' })).toContainText('7 left')
   })
 
+  test('Prize categories only show for an article in the GatchaPon category, and moving it out clears them', async ({ page, api }) => {
+    await openGatchaShop(page, api)
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await card(page, 'Pikachu Keychain').click()
+    await expect(sheet(page).getByLabel('Category')).toBeVisible()
+    await expect(sheet(page).getByRole('group', { name: 'Prize categories' })).toHaveCount(0)
+    await sheet(page).getByRole('button', { name: 'Close' }).click()
+
+    await card(page, 'GatchaPon').click()
+    await expect(sheet(page).getByRole('group', { name: 'Prize categories' })).toBeVisible()
+    await sheet(page).getByLabel('Category').selectOption('cat-keychain')
+    await expect(sheet(page).getByRole('group', { name: 'Prize categories' })).toHaveCount(0)
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(api.db.budget_tracket_catalog.find(article => article.id === 'g1').prize_categories).toEqual([])
+  })
+
   test('a gatcha sells at its category price with a sale line and no stock movement', async ({ page, api }) => {
     await openGatchaShop(page, api)
     await checkout(page, { GatchaPon: 2, 'Pikachu Keychain': 1 })

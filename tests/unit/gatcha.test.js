@@ -7,6 +7,7 @@ import {
   PRIZE_OUTBOX_KEY,
   NO_PRIZES,
   isGatcha,
+  isGatchaCategory,
   prizesFor,
   addPrizes,
   takePrize,
@@ -213,4 +214,12 @@ test('in Reports the gatcha sale is its own line and a prize is no article sale,
     ['Zubat Keychain', 1, 0]
   ])
   assert.deepEqual(runsOutSoonest({ articles: ARTICLES, movements, now: NOW }).map(row => row.id), ['k1', 'k2'])
+})
+
+test('only the GatchaPon category can hold gatchas, whatever its case or spacing', () => {
+  assert.equal(isGatchaCategory({ id: 'c', name: 'GatchaPon' }), true)
+  assert.equal(isGatchaCategory({ id: 'c', name: ' gatchapon ' }), true)
+  assert.equal(isGatchaCategory({ id: 'c', name: 'Keychain' }), false)
+  assert.equal(isGatchaCategory(undefined), false)
+  assert.equal(isGatchaCategory({ id: 'c' }), false)
 })

@@ -34,7 +34,7 @@
         <p class="hint">Empty = 2× low-stock threshold</p>
       </div>
 
-      <fieldset>
+      <fieldset v-if="inGatchaCategory">
         <legend class="label">Prize categories</legend>
         <div class="divide-y divide-line rounded-lg border border-line">
           <label v-for="category in categories" :key="category.id" class="flex min-h-[44px] cursor-pointer items-center gap-3 px-3">
@@ -71,14 +71,22 @@
           </li>
           <li v-for="file in newImages" :key="file.name" class="truncate px-3 py-3 text-ink-muted">{{ file.name }} (new)</li>
         </ul>
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          aria-label="Add images"
-          class="block w-full text-sm text-ink-muted file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-muted file:px-4 file:text-sm file:font-semibold file:text-ink"
-          @change="addImages"
-        >
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            aria-label="Add images"
+            class="block min-w-0 flex-1 text-sm text-ink-muted file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-muted file:px-4 file:text-sm file:font-semibold file:text-ink"
+            @change="addImages"
+          >
+          <!-- Opens the rear camera on phones; elsewhere it falls back to the file picker -->
+          <label class="btn btn-secondary shrink-0 cursor-pointer">
+            <AppIcon name="camera" class="h-4 w-4" />
+            <span>Take photo</span>
+            <input type="file" accept="image/*" capture="environment" class="sr-only" @change="addImages">
+          </label>
+        </div>
       </div>
 
       <BaseButton type="submit" size="lg" block :loading="saving">{{ article ? 'Save changes' : 'Create article' }}</BaseButton>
@@ -108,7 +116,7 @@ import { useInventory } from '~/composables/useInventory'
 import { useToast } from '~/composables/useToast'
 import { formatCurrency } from '~/utils/currency'
 import { correctionMovement, newRecordId } from '~/utils/inventory'
-import { prizeCategoriesOf } from '~/utils/gatcha'
+import { isGatchaCategory, prizeCategoriesOf } from '~/utils/gatcha'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -156,6 +164,7 @@ watch(() => props.open, (isOpen) => {
 }, { immediate: true })
 
 const selectedCategory = computed(() => props.categories.find(category => category.id === form.value.category))
+const inGatchaCategory = computed(() => isGatchaCategory(selectedCategory.value))
 const categoryPricePlaceholder = computed(() =>
   selectedCategory.value ? `${formatCurrency(selectedCategory.value.base_price)} (category)` : 'Category price'
 )
@@ -198,8 +207,11 @@ const save = async () => {
     // 0 means "use 2× the threshold"
     target_stock: isBlank(form.value.targetStock) ? 0 : parseNumber(form.value.targetStock),
     description: form.value.description.trim(),
-    // An article with prize categories is a gatcha; a category deleted since then is dropped
-    prize_categories: form.value.prizeCategories.filter(id => props.categories.some(category => category.id === id))
+    // An article with prize categories is a gatcha; a category deleted since then is dropped, and only a
+    // GatchaPon article keeps any
+    prize_categories: inGatchaCategory.value
+      ? form.value.prizeCategories.filter(id => props.categories.some(category => category.id === id))
+      : []
   }
   try {
     let article
