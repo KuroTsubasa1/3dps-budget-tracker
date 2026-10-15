@@ -235,3 +235,25 @@ test.describe('target stock', () => {
     expect(api.db.budget_tracket_catalog[0].target_stock).toBe(0)
   })
 })
+
+test('Manage and the search stay on screen while the product list scrolls', async ({ page, api }) => {
+  const articles = Array.from({ length: 24 }, (_, i) => ({ id: `k${String(i).padStart(2, '0')}`, name: `Keychain ${i}`, category: 'cat-keychain', price: 0, stock: 5 }))
+  api.seed({ articles })
+  await gotoReady(page, '/catalog')
+  await page.locator('h3', { hasText: 'Keychain 23' }).scrollIntoViewIfNeeded()
+  await page.mouse.wheel(0, 5000)
+  const manage = page.getByRole('button', { name: 'Manage' })
+  const search = page.getByLabel('Search products')
+  await expect(manage).toBeInViewport()
+  await expect(search).toBeInViewport()
+  // Not tucked under the app's top bar
+  const header = await page.locator('header').first().boundingBox()
+  const box = await manage.boundingBox()
+  expect(box.y).toBeGreaterThanOrEqual(header.y + header.height - 1)
+  expect(box.height).toBeGreaterThanOrEqual(44)
+
+  // Editing from far down the list works without scrolling back up
+  await manage.click()
+  await page.locator('h3', { hasText: 'Keychain 23' }).click()
+  await expect(page.getByRole('dialog').getByLabel('Name')).toHaveValue('Keychain 23')
+})

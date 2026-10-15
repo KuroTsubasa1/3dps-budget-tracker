@@ -2,13 +2,7 @@
   <div :class="{ 'pb-20': showCartBar }">
     <div class="lg:grid lg:items-start lg:gap-6" :class="{ 'lg:grid-cols-[minmax(0,1fr)_20rem]': isOwner }">
       <div class="min-w-0">
-        <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products">
-          <template v-if="isOwner" #actions>
-            <BaseButton variant="secondary" :class="managing ? 'border-accent bg-accent/10 text-accent' : ''" icon="cog" :aria-pressed="managing" @click="managing = !managing">
-              {{ managing ? 'Done' : 'Manage' }}
-            </BaseButton>
-          </template>
-        </PageHeader>
+        <PageHeader title="Product Catalog" subtitle="Browse and select 3D printing products" />
 
         <div v-if="isOwner && openPrizes.count > 0" class="card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3" data-testid="gatcha-banner">
           <p class="min-w-0 text-sm font-medium text-ink">{{ prizeBanner }}</p>
@@ -17,8 +11,9 @@
 
         <p v-if="isOwner && prizeOutbox.length" class="mb-4 text-sm text-ink-muted" data-testid="prize-waiting">{{ prizeWaiting }}</p>
 
-        <div class="mb-4 space-y-3">
-          <div class="relative">
+        <!-- Search and Manage stay pinned under the top bar, so an article far down the list can be edited without scrolling back -->
+        <div class="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 mb-3 flex items-center gap-2 bg-surface px-4 py-2 md:-mx-6 md:px-6" data-testid="catalog-toolbar">
+          <div class="relative min-w-0 flex-1">
             <AppIcon name="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               ref="searchInput"
@@ -29,6 +24,12 @@
               aria-label="Search products"
             >
           </div>
+          <BaseButton v-if="isOwner" variant="secondary" class="shrink-0" :class="managing ? 'border-accent bg-accent/10 text-accent' : ''" icon="cog" :aria-pressed="managing" @click="managing = !managing">
+            {{ managing ? 'Done' : 'Manage' }}
+          </BaseButton>
+        </div>
+
+        <div class="mb-4 space-y-3">
           <div class="flex gap-2">
             <select ref="sortSelect" v-model="sortOption" class="input w-auto flex-1 pr-9 sm:flex-none" aria-label="Sort by">
               <option value="name">Sort by Name</option>
