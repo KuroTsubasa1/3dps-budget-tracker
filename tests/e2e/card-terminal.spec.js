@@ -1,0 +1,67 @@
+import { test, expect, gotoReady } from './fixtures.js'
+
+// Settings → Card terminal against the faked /api/card/* routes (api.card): SumUp is never contacted
+// The BaseCard (the page's own <section id="card"> holds it too)
+const section = page => page.locator('section.card', { has: page.getByRole('heading', { name: 'Card terminal', exact: true }) })
+
+test.describe('Settings → Card terminal', () => {
+  test('without SumUp on the server it says so', async ({ page, api }) => {
+    api.enable()
+    await gotoReady(page, '/settings#card')
+    await expect(section(page)).toContainText("Card payments aren't configured on the server")
+    await expect(section(page).getByLabel('Pairing code')).toHaveCount(0)
+  })
+
+  test('pairing sends the code, then shows the Solo; Unpair brings the code field back', async ({ page, api }) => {
+    api.enable()
+    api.card.configured = true
+    await gotoReady(page, '/settings#card')
+    const card = section(page)
+    await card.getByLabel('Pairing code').fill('ab12cd34')
+    await card.getByRole('button', { name: 'Pair terminal' }).click()
+    await expect(page.getByText('Terminal paired')).toBeVisible()
+    expect(api.card.pairs).toEqual([{ code: 'ab12cd34' }])
+    await expect(card.getByTestId('card-reader-name')).toHaveText('Akinai')
+    await expect(card.getByTestId('card-reader-status')).toHaveText('Status unknown')
+
+    // SumUp's status on the next visit
+    await page.reload()
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect(section(page).getByTestId('card-reader-status')).toHaveText('Online')
+
+    await section(page).getByRole('button', { name: 'Unpair' }).click()
+    await expect(page.getByText('Terminal unpaired')).toBeVisible()
+    expect(api.card.unpairs).toBe(1)
+    await expect(section(page).getByLabel('Pairing code')).toBeVisible()
+  })
+
+  test('an empty code is refused here, a wrong one with the server\'s message', async ({ page, api }) => {
+    api.enable()
+    api.card.configured = true
+    await gotoReady(page, '/settings#card')
+    const card = section(page)
+    await card.getByRole('button', { name: 'Pair terminal' }).click()
+    await expect(card.getByRole('alert')).toHaveText('Enter the code the Solo shows')
+    expect(api.card.pairs).toEqual([])
+
+    api.card.pairStatus = 400
+    api.card.message = "That code didn't work. Start pairing on the Solo again and enter the new code."
+    await card.getByLabel('Pairing code').fill('ZZZZ9999')
+    await card.getByRole('button', { name: 'Pair terminal' }).click()
+    await expect(card.getByRole('alert')).toHaveText("That code didn't work. Start pairing on the Solo again and enter the new code.")
+    await expect(card.getByLabel('Pairing code')).toHaveValue('ZZZZ9999')
+  })
+
+  test('an offline Solo shows Offline; offline the section needs a connection', async ({ page, api, context }) => {
+    api.enable()
+    api.pairTerminal()
+    api.card.reader.status = 'offline'
+    await gotoReady(page, '/settings#card')
+    await expect(section(page).getByTestId('card-reader-status')).toHaveText('Offline')
+    await context.setOffline(true)
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')))
+    await expect(section(page)).toContainText('Needs a connection')
+    await context.setOffline(false)
+    await expect(section(page).getByTestId('card-reader-status')).toHaveText('Offline')
+  })
+})

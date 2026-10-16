@@ -19,6 +19,7 @@ const PAGES = [
   '/settings#categories',
   '/settings#deals',
   '/settings#notifications',
+  '/settings#card',
   '/settings#data'
 ]
 

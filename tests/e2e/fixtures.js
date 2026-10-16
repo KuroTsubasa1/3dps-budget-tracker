@@ -6,6 +6,8 @@ const isApiRequest = url => url.startsWith('https://pocket.lasseharm.space/')
 // Akinai's own server routes for push and the calendar link. The tests never reach the real ones
 // (they would ask PocketBase): the `api` fixture answers them from `api.notifier`.
 const NOTIFIER_ROUTES = /\/api\/(push\/(status|test)|calendar\/link)$/
+// The card routes, answered from `api.card`: the tests never reach SumUp
+const CARD_ROUTES = /\/api\/card\/(terminal|pair|unpair|charge|cancel|refresh)$/
 // A real P-256 public key (made for the tests, its private half thrown away): subscribe() needs a valid one
 export const TEST_VAPID_KEY = 'BGHxbo5dwKMN5gGwSeCpYcjC_YxtaoR14Ex7zi3-5eL0L3yRPC3xJTnR-dV6QBszCl30NysrCA9zjmyfeZjmXhQ'
 
@@ -124,7 +126,39 @@ export const test = base.extend({
       // `tests` collects the bodies sent to /api/push/test; `testStatus` is its answer.
       // `devices` is the server's count of devices with notifications on (null: it could not tell), and
       // `lastProblem` the reminder job's last delivery problem.
-      notifier: { configured: false, feed: false, publicKey: TEST_VAPID_KEY, lastRun: null, lastError: null, lastProblem: null, devices: null, secret: 'feedsecret', testStatus: 200, tests: [] }
+      notifier: { configured: false, feed: false, publicKey: TEST_VAPID_KEY, lastRun: null, lastError: null, lastProblem: null, devices: null, secret: 'feedsecret', testStatus: 200, tests: [] },
+      // What the server's card routes answer: unconfigured by default. `charges`, `pairs` and `cancels` collect
+      // the bodies sent; a charge creates its card_payments record in the fake PocketBase, as the server would.
+      // A status other than 200 answers with `message`, like the server's errors.
+      card: {
+        configured: false,
+        paired: false,
+        reader: { id: 'rdr_3MSAFM23CK82VSTT4BN6RWSQ65', name: 'Akinai', status: 'online' },
+        pairStatus: 200,
+        chargeStatus: 200,
+        cancelStatus: 200,
+        refreshStatus: 200,
+        message: '',
+        cancelResult: 'cancelled',
+        charges: [],
+        pairs: [],
+        cancels: [],
+        unpairs: 0,
+        refreshes: 0,
+        // What SumUp would answer when the server refreshes a payment: (payment) => changes it, or null
+        onRefresh: null
+      },
+      // A configured server with a paired Solo
+      pairTerminal () {
+        api.card.configured = true
+        api.card.paired = true
+      },
+      // SumUp's result for the latest card payment, as the callback or the poll would record it
+      settleCard (status, sumupTransaction = '') {
+        const payment = fake.db.card_payments.at(-1)
+        payment.status = status
+        if (sumupTransaction) payment.sumup_transaction = sumupTransaction
+      }
     }
 
     await context.route(NOTIFIER_ROUTES, (route) => {
@@ -142,6 +176,64 @@ export const test = base.extend({
       }
       state.tests.push(request.postDataJSON())
       return json(state.testStatus, state.testStatus === 200 ? { sent: true } : { statusCode: state.testStatus, message: `Push server answered ${state.testStatus}` })
+    })
+    await context.route(CARD_ROUTES, (route) => {
+      const request = route.request()
+      const path = new URL(request.url()).pathname
+      const state = api.card
+      const json = (status, body) => route.fulfill({ status, json: body })
+      const failed = status => json(status, { statusCode: status, message: state.message })
+      if (path === '/api/card/terminal' && !state.configured) return json(200, { configured: false, paired: false, reader: null })
+      if (!state.configured) return json(503, { statusCode: 503, message: "Card payments aren't configured on the server" })
+      if (request.headers().authorization !== FAKE_TOKEN) return json(401, { statusCode: 401, message: 'Log in again' })
+      const body = request.postDataJSON() ?? {}
+      if (path === '/api/card/terminal') return json(200, { configured: true, paired: state.paired, reader: state.paired ? state.reader : null })
+      if (path === '/api/card/pair') {
+        state.pairs.push(body)
+        if (state.pairStatus !== 200) return failed(state.pairStatus)
+        state.paired = true
+        return json(200, { paired: true, reader: { ...state.reader, status: 'unknown' } })
+      }
+      if (path === '/api/card/unpair') {
+        state.unpairs++
+        state.paired = false
+        return json(200, { paired: false, reader: null })
+      }
+      if (path === '/api/card/charge') {
+        state.charges.push(body)
+        if (state.chargeStatus !== 200) return failed(state.chargeStatus)
+        const id = `pay${String(state.charges.length).padStart(12, '0')}`
+        fake.db.card_payments.push({
+          id,
+          collectionName: 'card_payments',
+          amount: body.amount,
+          description: 'Akinai sale',
+          source: body.source,
+          cart: body.cart,
+          status: 'pending',
+          sumup_checkout: '',
+          sumup_transaction: '',
+          booked_transaction: '',
+          callback_token: '0'.repeat(64),
+          created: new Date().toISOString().replace('T', ' ')
+        })
+        return json(200, { id })
+      }
+      if (path === '/api/card/refresh') {
+        // The server would ask SumUp here; the fake answers what api.settleCard() or onRefresh recorded
+        state.refreshes++
+        if (state.refreshStatus !== 200) return failed(state.refreshStatus)
+        const found = fake.db.card_payments.find(item => item.id === body.id)
+        if (!found) return json(404, { statusCode: 404, message: 'Unknown payment' })
+        if (found.status === 'pending' && state.onRefresh) state.onRefresh(found)
+        const { callback_token: secret, ...visible } = found
+        return json(200, { payment: visible })
+      }
+      state.cancels.push(body.id)
+      if (state.cancelStatus !== 200) return failed(state.cancelStatus)
+      const payment = fake.db.card_payments.find(item => item.id === body.id)
+      if (payment?.status === 'pending') payment.status = state.cancelResult
+      return json(200, { status: payment?.status ?? 'cancelled' })
     })
     await use(api)
 

@@ -10,8 +10,8 @@ export const FAKE_TOKEN = [
   'fake-signature'
 ].join('.')
 
-const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions']
-const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions'])
+const COLLECTIONS = ['categories', 'budget_tracket_catalog', 'stock_movements', 'budget_tracker_transactions', 'deals', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions', 'card_payments']
+const OWNER_READ_ONLY = new Set(['stock_movements', 'budget_tracker_transactions', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions', 'card_payments'])
 const DEFAULTS = {
   categories: { sort_order: 0 },
   budget_tracket_catalog: { collectionId: 'articles0000001', active: true, stock: 0, low_stock_threshold: 2, target_stock: 0, images: [], price: 0, description: '', prize_categories: [] },
@@ -36,7 +36,8 @@ const DEFAULTS = {
     fee_transaction: '',
     reminders: null
   },
-  push_subscriptions: { device: '' }
+  push_subscriptions: { device: '' },
+  card_payments: { description: '', cart: null, sumup_checkout: '', sumup_transaction: '', booked_transaction: '', callback_token: '' }
 }
 
 let counter = 0
@@ -234,6 +235,10 @@ export function createFakePocketBase () {
     }
     const record = records.find(item => item.id === id)
     if (!record) return reply(404, { code: 404, message: 'Not found.', data: {} })
+    // The owner may change a card payment's status only while it is pending (the collection's update rule)
+    if (method === 'PATCH' && name === 'card_payments' && 'status' in body && record.status !== 'pending') {
+      return reply(404, { code: 404, message: 'The requested resource wasn\'t found.', data: {} })
+    }
     if (method === 'PATCH') return done(200, withExpand(applyChanges(record, { ...body, updated: stamp() }), expand))
     if (method === 'DELETE') {
       // Mirrors PocketBase: a required relation blocks deleting the referenced record

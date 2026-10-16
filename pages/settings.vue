@@ -90,6 +90,8 @@
 
         <NotificationSettings v-if="activeCategory === 'notifications'" />
 
+        <CardTerminalSettings v-if="activeCategory === 'card'" />
+
         <BaseCard
           v-if="activeCategory === 'data' && orphans.length"
           class="mb-4"
@@ -265,6 +267,7 @@ const SETTINGS_CATEGORIES = [
   { id: 'categories', name: 'Categories', description: 'Base prices and order', icon: 'bag' },
   { id: 'deals', name: 'Deals', description: 'Cart prices for several items', icon: 'cash' },
   { id: 'notifications', name: 'Notifications', description: 'Reminders and the calendar link', icon: 'bell' },
+  { id: 'card', name: 'Card terminal', description: 'SumUp Solo for card payments', icon: 'credit-card' },
   { id: 'data', name: 'Data Management', description: 'Export, backup or clear data', icon: 'database' }
 ]
 const CURRENCY_OPTIONS = [
