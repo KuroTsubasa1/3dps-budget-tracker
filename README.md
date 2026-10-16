@@ -108,7 +108,7 @@ Every push to `main` runs `.github/workflows/deploy.yml`, which can also be star
 1. Installs the dependencies, runs the unit tests and builds the app.
 2. Uploads the build to `/opt/budget-tracker/releases/<commit>` on the VPS and points `/opt/budget-tracker/current` at it.
 3. Restarts it with pm2 (`ecosystem.config.cjs`: process `budget-tracker` on `127.0.0.1:3668`, `TZ=Europe/Berlin`, and the env file when it exists).
-4. Checks that https://akinai.lasseharm.space answers.
+4. Checks that the app's public address (`APP_URL` in `utils/branding.js`) answers.
 
 The 5 newest releases are kept on the server.
 
@@ -122,7 +122,7 @@ The 5 newest releases are kept on the server.
    mkdir -p /opt/budget-tracker && chown deploy:deploy /opt/budget-tracker
    ```
 3. Make pm2 start the app after a reboot. Run `pm2 startup` as `deploy`, then run the command it prints as root.
-4. Point nginx for `akinai.lasseharm.space` at `http://127.0.0.1:3668` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
+4. Point nginx for your app's domain (e.g. `akinai.example.com`) at `http://127.0.0.1:3668` (`proxy_pass`, plus the usual `proxy_set_header Host $host;` and the `X-Forwarded-*` headers).
 5. Put the public half of a key made only for GitHub into `/home/deploy/.ssh/authorized_keys`.
 
 **Repository secrets** (Settings → Secrets and variables → Actions):
@@ -130,9 +130,9 @@ The 5 newest releases are kept on the server.
 | Secret | Value |
 |---|---|
 | `DEPLOY_SSH_KEY` | the private half of that key |
-| `DEPLOY_HOST` | `46.101.138.222` |
+| `DEPLOY_HOST` | `<server IP or host name>` |
 | `DEPLOY_USER` | `deploy` |
-| `DEPLOY_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 46.101.138.222` (pins the server's identity) |
+| `DEPLOY_KNOWN_HOSTS` | the output of `ssh-keyscan -t ed25519 <server IP or host name>` (pins the server's identity) |
 
 **Rollback:** start an older release:
 ```bash
@@ -149,7 +149,7 @@ Reminders run only in the built server (never in `nuxt dev`), every 5 minutes. T
 
 | Variable | What it is |
 |---|---|
-| `POCKETBASE_URL` | **required**: the PocketBase address, starting with `https://` (for example `https://pocket.lasseharm.space`). There is no fallback, so the notifier's password never goes to a guessed or plain-http address. |
+| `POCKETBASE_URL` | **required**: the PocketBase address, starting with `https://` (for example `https://pocket.example.com`). There is no fallback, so the notifier's password never goes to a guessed or plain-http address. |
 | `OWNER_ID` | the owner's record id in `users`: the 15-character id that `--apply-rules` prints. The server's push and calendar-link routes accept only this account (and the notifier). |
 | `NOTIFIER_EMAIL`, `NOTIFIER_PASSWORD` | the `akinai-notifier` account's login |
 | `NUXT_PUBLIC_VAPID_PUBLIC_KEY` | the VAPID public key (public by design) |
@@ -160,7 +160,7 @@ Reminders run only in the built server (never in `nuxt dev`), every 5 minutes. T
 | `SUMUP_MERCHANT_CODE` | the merchant code of that SumUp account (letters and digits) |
 | `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID` | the affiliate key and the app id it was made for; SumUp's Cloud API needs them on every checkout |
 | `SUMUP_API_URL` | optional, `https://api.sumup.com` by default; https only |
-| `CARD_PUBLIC_URL` | optional: the app's public https address for SumUp's return URL (just the origin, for example `https://akinai.example.com`). Without it the built server uses `https://akinai.lasseharm.space`, and `nuxt dev` sends no return URL. Set it only if the app moves to another domain. |
+| `CARD_PUBLIC_URL` | optional: the app's public https address for SumUp's return URL (just the origin, for example `https://akinai.example.com`). Without it the built server uses `APP_URL` from `utils/branding.js`, and `nuxt dev` sends no return URL. Set it only if the app moves to another domain. |
 
 Push goes only to the real push services (Apple, Google FCM, Mozilla and Microsoft), and only over https.
 
@@ -197,7 +197,7 @@ Run these yourself, in this order. Each step names what to check.
    nano /opt/budget-tracker/shared/akinai.env
    ```
    ```bash
-   POCKETBASE_URL=https://pocket.lasseharm.space
+   POCKETBASE_URL=https://pocket.example.com
    OWNER_ID=<owner id from step 2>
    NOTIFIER_EMAIL=<notifier email>
    NOTIFIER_PASSWORD=<notifier password>
@@ -242,7 +242,7 @@ Run these yourself, in this order.
 1. **Schema.** Run `npm run pb:migrate`. The dry run should list exactly `create collection "card_payments" (amount, description, source, cart, status, sumup_checkout, sumup_transaction, booked_transaction, callback_token)` and `add to "budget_tracker_transactions": payment_method, sumup_transaction`. Then run `npm run pb:migrate -- --apply`.
 2. **Rules.** Run `npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>`. It should list only `set access rules on "card_payments"`: the owner may do everything, except that a payment's `status` can be changed only while it is `pending` (a settled payment stays settled; marking it booked still works). The notifier may read payments and set the status and SumUp's ids, also only while pending. Both steps run **before** the laptop test and before the deploy: the app needs the collection open to take any card payment.
 3. **Sandbox test on the laptop** (`nuxt dev`, with the sandbox merchant and the Virtual Solo at virtual-solo.sumup.com):
-   1. Put into the local `.env`: the four sandbox keys `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID`, plus `POCKETBASE_URL=https://pocket.lasseharm.space` and `OWNER_ID=<the id --apply-rules printed>`. **Never the notifier login.**
+   1. Put into the local `.env`: the four sandbox keys `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID`, plus `POCKETBASE_URL=<your PocketBase address>` and `OWNER_ID=<the id --apply-rules printed>`. **Never the notifier login.**
    2. Optional: `npm run sumup:sandbox-check` checks the keys without the app. It stops unless SumUp marks the account as a sandbox, lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). `-- --pair <code>` pairs the Virtual Solo first. It watches for 5 minutes: SumUp only lists a payment once the card has been presented, and in the sandbox it can show up a minute or two after paying, so `Transaction: not found yet` before that is normal.
    3. Restart `npm run dev`. Its log shows `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`: expected on the laptop. The open payment sheet asks for the result every 2 s instead, and the next start settles a payment whose sheet was closed.
    4. Log in and open Settings → Card terminal. The Virtual Solo is already paired with the sandbox account, so the section shows it as *Online*. (If it shows the code field instead, get a code as described under [Pairing a Solo](#pairing-a-solo) and tap *Pair terminal*.)
@@ -263,7 +263,7 @@ Run these yourself, in this order.
       - Then delete the `[Sandbox] ` card payments themselves.
 
       Afterwards remove the four `SUMUP_*` lines from `.env` (or keep them, with the Virtual Solo paired, for the next test). The sandbox and the live account have separate readers, so the Virtual Solo never shows up for the live keys.
-4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there; `CARD_PUBLIC_URL` only if the app no longer runs at `https://akinai.lasseharm.space`), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`; pm2 reads the file only when the process starts, so if it still shows one of them, restart it as described there.
+4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there; `CARD_PUBLIC_URL` only if the app no longer runs at the address in `APP_URL`), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`; pm2 reads the file only when the process starts, so if it still shows one of them, restart it as described there.
 5. **Pair the real Solo** in Settings → Card terminal: get a code as described under [Pairing a Solo](#pairing-a-solo) and tap *Pair terminal*. The section shows the Solo as *Online*. (A Solo already paired with the live account through the Cloud API shows up as paired without this step.)
 6. **First live payments:**
    - [ ] A small real payment: `Paid ✓`, and the code in `pm2 logs budget-tracker` (`[card] <id> approved (<SumUp code>)`) matches the SumUp app.
