@@ -10,7 +10,7 @@ import { cardSettings } from '../server/utils/cardSettings.js'
 import { normalisePairingCode, PAIRING_CODE, READER_NAME, statusFromTransaction, sumupTransactionOf } from '../server/utils/cardPayments.js'
 
 const POLL_MS = 3000
-const WAIT_MS = 2 * 60_000
+const WAIT_MS = 5 * 60_000
 
 const settings = cardSettings(process.env)
 const sumupMissing = settings.missing.filter(name => name.startsWith('SUMUP_'))
