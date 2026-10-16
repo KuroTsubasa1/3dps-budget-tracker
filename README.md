@@ -243,14 +243,14 @@ Run these yourself, in this order.
 2. **Rules.** Run `npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>`. It should list only `set access rules on "card_payments"`: the owner may do everything, except that a payment's `status` can be changed only while it is `pending` (a settled payment stays settled; marking it booked still works). The notifier may read payments and set the status and SumUp's ids, also only while pending. Both steps run **before** the laptop test and before the deploy: the app needs the collection open to take any card payment.
 3. **Sandbox test on the laptop** (`nuxt dev`, with the sandbox merchant and the Virtual Solo at virtual-solo.sumup.com):
    1. Put into the local `.env`: the four sandbox keys `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID`, plus `POCKETBASE_URL=https://pocket.lasseharm.space` and `OWNER_ID=<the id --apply-rules printed>`. **Never the notifier login.**
-   2. Optional: `npm run sumup:sandbox-check` checks the keys without the app. It stops unless SumUp marks the account as a sandbox, lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). `-- --pair <code>` pairs the Virtual Solo first.
+   2. Optional: `npm run sumup:sandbox-check` checks the keys without the app. It stops unless SumUp marks the account as a sandbox, lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). `-- --pair <code>` pairs the Virtual Solo first. It watches for 5 minutes: SumUp only lists a payment once the card has been presented, and in the sandbox it can show up a minute or two after paying, so `Transaction: not found yet` before that is normal.
    3. Restart `npm run dev`. Its log shows `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`: expected on the laptop. The open payment sheet asks for the result every 2 s instead, and the next start settles a payment whose sheet was closed.
-   4. Log in and open Settings → Card terminal. The Virtual Solo is already paired with the sandbox account, so the section shows it as *Online*. (If it shows the code field instead, enter the code the Virtual Solo shows under *Connections → API → Connect* and tap *Pair terminal*.)
+   4. Log in and open Settings → Card terminal. The Virtual Solo is already paired with the sandbox account, so the section shows it as *Online*. (If it shows the code field instead, get a code as described under [Pairing a Solo](#pairing-a-solo) and tap *Pair terminal*.)
    5. Checklist:
       - [ ] Cart → *Pay by card · <total>*: the Solo shows the amount, the sheet shows `Waiting for card`.
       - [ ] Pay: `Paid ✓`, the cart empties, the sale is in the history once, as card, its description starting with `[Sandbox] `. Its SumUp code matches the sandbox transaction.
       - [ ] *Cancel on terminal* while the Solo waits: `Cancelled`, nothing booked.
-      - [ ] Cancel on the Solo itself: `Cancelled` (or `Card declined`: note which; SumUp may report a cancel on the terminal as failed).
+      - [ ] Cancel on the Solo itself: shows `Card declined`, nothing booked. (Checked on the live Solo on 16 October 2026: SumUp records a cancel on the terminal as `FAILED` with no card read, and Akinai shows every `FAILED` as declined. Either way nothing was paid.)
       - [ ] Decline a card on the Solo (the Virtual Solo can simulate one): `Card declined`, nothing booked. **Does the Solo then offer a retry on the same checkout?** Note it: if it does, a card that goes through on the retry would arrive after Akinai already showed `Card declined`.
       - [ ] Home → *Pay by card* for an income: booked with its description (with `[Sandbox] `), as card.
       - [ ] Reload the page while the customer pays, pay, then open the app again: `Card payment of <amount> booked`, once.
@@ -264,7 +264,7 @@ Run these yourself, in this order.
 
       Afterwards remove the four `SUMUP_*` lines from `.env` (or keep them, with the Virtual Solo paired, for the next test). The sandbox and the live account have separate readers, so the Virtual Solo never shows up for the live keys.
 4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there; `CARD_PUBLIC_URL` only if the app no longer runs at `https://akinai.lasseharm.space`), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`; pm2 reads the file only when the process starts, so if it still shows one of them, restart it as described there.
-5. **Pair the real Solo** in Settings → Card terminal: enter the code the Solo shows under *Connections → API → Connect* and tap *Pair terminal*. The section shows the Solo as *Online*.
+5. **Pair the real Solo** in Settings → Card terminal: get a code as described under [Pairing a Solo](#pairing-a-solo) and tap *Pair terminal*. The section shows the Solo as *Online*. (A Solo already paired with the live account through the Cloud API shows up as paired without this step.)
 6. **First live payments:**
    - [ ] A small real payment: `Paid ✓`, and the code in `pm2 logs budget-tracker` (`[card] <id> approved (<SumUp code>)`) matches the SumUp app.
    - [ ] **The return URL reaches the server.** The open sheet's 2 s refresh and the 15 s poll write the same log line, so it proves nothing on its own. Check the nginx access log for `POST /api/card/callback/<id>/… 200` from that payment. Or start a payment, tap *Close, book it when it lands* once the sheet offers it (or close the app), pay, and watch `[card] <id> approved` appear within seconds instead of up to 15 s. Refund it in the SumUp app if you like; Akinai keeps the sale (delete it there too).
@@ -272,6 +272,25 @@ Run these yourself, in this order.
    - [ ] **Can the paired Solo still take manually typed amounts** (outside Akinai)? This decides how the stall works, not the code.
 
 A card payment that stays pending is checked every 15 s on the server; after 10 minutes without SumUp knowing it, it is marked failed. Refunds stay in the SumUp app.
+
+#### Pairing a Solo
+
+1. **Log out** of your SumUp account on the Solo itself. SumUp only offers API pairing while no one is logged in on the reader.
+2. Open the menu → **Connections** → **Cloud API** (on some software versions just **API**; it is the last entry in the list) → **Connect**.
+3. The Solo shows an 8–9 character code, valid for about 5 minutes. Enter it in Akinai under Settings → Card terminal → *Pair terminal*.
+
+If the option is missing, update the Solo: the Cloud API needs Solo software **3.3.24.3 or newer**. To use the Solo on its own again, log in on it and unpair it in Akinai (Settings → Card terminal → *Unpair*).
+
+#### Card payments: what is verified
+
+As of 16 October 2026:
+
+- **Sandbox (Virtual Solo), end to end:** the sandbox flag, the reader list and status, a 1,00 € checkout sent to the Virtual Solo, the payment approved there and reported as `SUCCESSFUL` (→ approved), and the lookup by SumUp's id and by Akinai's own reference.
+- **Live:** the live keys are in `akinai.env` on the server (no sandbox flag, merchant country DE) and the real Solo is paired. Three live checkouts reached the Solo, and all three of SumUp's calls to the return URL reached the server (`POST /api/card/callback/… 200` in the nginx log). They were cancelled on the Solo, which SumUp reports as `FAILED` without a card read; Akinai showed `Card declined` and booked nothing.
+- **Still open:**
+  - [ ] **An approved live payment** (tap a real card): `Paid ✓`, the sale booked once as card, stock down. Refund it in the SumUp app and delete the sale afterwards.
+  - [ ] **A declined card followed by a retry on the Solo.** Until this is checked, don't use a retry the Solo offers after a decline: start a new payment from Akinai instead, because Akinai has already recorded the first one as declined.
+  - [ ] **Manually typed amounts** on the paired Solo, outside Akinai.
 
 ## Credits
 
