@@ -3,6 +3,7 @@
 // client logs in again before every call once the token is near its end, and once more on a 401 or 403.
 import PocketBase, { BaseAuthStore, isTokenExpired } from 'pocketbase'
 import { withSentMarks } from '../../utils/calendar/reminders.js'
+import { CARD_PAYMENTS, CARD_NOTIFIER_FIELDS } from './cardPayments.js'
 
 const ARTICLES = 'budget_tracket_catalog'
 // Log in again when the token has less than an hour left
@@ -44,6 +45,11 @@ export function createNotifier ({ PocketBaseClass = PocketBase, url, email, pass
       return found
     }),
     deleteSubscription: id => call(() => pb.collection('push_subscriptions').delete(id)),
+    // Card payments: the notifier reads them and records SumUp's answer, nothing else (its update rule
+    // refuses any other field, so the others are never even sent)
+    getCardPayment: id => call(() => pb.collection(CARD_PAYMENTS).getOne(id)),
+    listPendingCardPayments: () => call(() => pb.collection(CARD_PAYMENTS).getFullList({ filter: 'status = "pending"', sort: 'created' })),
+    updateCardPayment: (id, patch) => call(() => pb.collection(CARD_PAYMENTS).update(id, Object.fromEntries(Object.entries(patch).filter(([key]) => CARD_NOTIFIER_FIELDS.includes(key))))),
     // The notifier's own record id in "users", so its token is accepted by the owner's routes too
     accountId: () => call(async () => pb.authStore.model?.id ?? ''),
     // Read the convention again and mark only the reminders that are still the same, so an edit the owner

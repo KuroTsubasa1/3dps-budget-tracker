@@ -344,6 +344,25 @@ test('the notifier marks reminders on a fresh copy, so an edit made meanwhile su
   })
 })
 
+test('the notifier reads card payments and writes only status and SumUp ids', async () => {
+  const calls = []
+  const { FakePocketBase } = fakeSdk({
+    nextToken: () => jwt(Math.floor(Date.now() / 1000) + 14 * 86400),
+    'card_payments.getOne': async (pb, id) => { calls.push(['getOne', id]); return { id, status: 'pending' } },
+    'card_payments.getFullList': async (pb, options) => { calls.push(['list', options.filter, options.sort]); return [] },
+    'card_payments.update': async (pb, id, body) => { calls.push(['update', id, body]) }
+  })
+  const notifier = createNotifier({ PocketBaseClass: FakePocketBase, url: 'http://pb.test', email: 'n@example.com', password: 'p' })
+  assert.deepEqual(await notifier.getCardPayment('pay000000000001'), { id: 'pay000000000001', status: 'pending' })
+  await notifier.listPendingCardPayments()
+  await notifier.updateCardPayment('pay000000000001', { status: 'approved', sumup_transaction: 'TX1', booked_transaction: 'x', amount: 1 })
+  assert.deepEqual(calls, [
+    ['getOne', 'pay000000000001'],
+    ['list', 'status = "pending"', 'created'],
+    ['update', 'pay000000000001', { status: 'approved', sumup_transaction: 'TX1' }]
+  ])
+})
+
 test('the notifier finds a device by its endpoint', async () => {
   let filter = ''
   const { FakePocketBase } = fakeSdk({
