@@ -4,6 +4,7 @@ import { useTransactions } from './useTransactions'
 import { useCheckout } from './useCheckout'
 import { useToast } from './useToast'
 import { formatCurrency } from '~/utils/currency'
+import { wasCharged, rememberCharged, forgetCharged } from '~/utils/cardCharged'
 
 const CARD_PAYMENTS = 'card_payments'
 // Whether a Solo was paired when the server last said, so Pay by card shows (disabled) offline too.
@@ -17,6 +18,7 @@ const TERMINAL_MAX_AGE_MS = 5 * 60_000
 let fetchedAt = 0
 const bookings = new Map()
 let listening = false
+let bookRun = null
 
 const readSaved = () => {
   try {
@@ -68,7 +70,16 @@ export const useCardPayments = () => {
 
   // request: { source: 'cart' | 'home', amount, description, cart } → { id }
   // The server gives SumUp 15 s; a request that hangs past 45 s fails, so the sheet never waits for ever
-  const charge = request => $fetch('/api/card/charge', { method: 'POST', headers: auth(), body: request, timeout: 45_000 })
+  const charge = async (request) => {
+    const result = await $fetch('/api/card/charge', { method: 'POST', headers: auth(), body: request, timeout: 45_000 })
+    // This device started the payment: it books the gatcha prizes too, whenever it books the sale
+    if (result?.id) {
+      try {
+        rememberCharged(localStorage, result.id)
+      } catch {}
+    }
+    return result
+  }
   // → { status } once SumUp has taken the stop
   const cancel = id => $fetch('/api/card/cancel', { method: 'POST', headers: auth(), body: { id } })
 
@@ -93,7 +104,10 @@ export const useCardPayments = () => {
       }
       if (stopped) return
       if (payment) {
-        onChange(payment)
+        // A callback that throws must not end the watch
+        try {
+          onChange(payment)
+        } catch {}
         if (payment.status !== 'pending') return
       }
       if (!stopped) timer = setTimeout(read, WATCH_MS)
@@ -110,10 +124,21 @@ export const useCardPayments = () => {
   // with that id anyway). Then the payment is marked booked. Resolves true when this call booked the sale.
   // Throws only when it cannot tell whether the sale exists (no connection): it is tried again later.
   const runBooking = async (payment) => {
-    const exists = await transactionExists(payment.id)
+    // Only the server, the queue and sends in flight count: this device's cached history may hold an entry
+    // that never reached the server. Posting the same id again is safe, the server refuses the duplicate.
+    const exists = await transactionExists(payment.id, { history: false })
     if (!exists) {
-      await bookSale(payment.cart, { paymentMethod: 'card', sumupTransaction: payment.sumup_transaction, recordId: payment.id })
+      // The gatcha prizes go to the device that charged
+      let charged = false
+      try {
+        charged = wasCharged(localStorage, payment.id)
+      } catch {}
+      const { prizes, ...withoutPrizes } = payment.cart
+      await bookSale(charged ? payment.cart : withoutPrizes, { paymentMethod: 'card', sumupTransaction: payment.sumup_transaction, recordId: payment.id })
     }
+    try {
+      forgetCharged(localStorage, payment.id)
+    } catch {}
     try {
       await pb.collection(CARD_PAYMENTS).update(payment.id, { booked_transaction: payment.id })
     } catch {
@@ -147,7 +172,7 @@ export const useCardPayments = () => {
 
   // Approved payments that no device has booked yet (the app closed or lost signal while the customer
   // paid): each is booked once, with a toast. Offline or logged out it does nothing.
-  const bookApproved = async () => {
+  const runBookApproved = async () => {
     if (!navigator.onLine || !pb.authStore.isValid) return 0
     await settlePending()
     let approved
@@ -167,6 +192,12 @@ export const useCardPayments = () => {
       } catch {}
     }
     return booked
+  }
+
+  // One run at a time: a second start (catalog and Home mounting, then the online event) shares it
+  const bookApproved = () => {
+    if (!bookRun) bookRun = runBookApproved().finally(() => { bookRun = null })
+    return bookRun
   }
 
   // From the catalog's and Home's onMounted: book what waits now, and whenever the connection returns

@@ -8,6 +8,7 @@ import { newRecordId } from '~/utils/inventory'
 import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds } from '~/utils/transactions'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
 import { forgetCopy } from '~/utils/calendar/copy'
+import { forgetCharged } from '~/utils/cardCharged'
 
 const STORAGE_KEY = 'budget-tracker-transactions'
 const SALE_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -362,8 +363,10 @@ export const useTransactions = () => {
 
   // Is the entry with this record id on the server, in this device's history or waiting in its queue?
   // Only a plain "not found" counts as missing; any other failure is thrown so nothing is booked on a guess.
-  const transactionExists = async (recordId) => {
-    if (transactions.value.some(item => item.recordId === recordId)) return true
+  // `history: false` skips the cached local history, which may hold an entry that never reached the server
+  // (a reload mid-booking): only the server, the queue and the sends in flight count then.
+  const transactionExists = async (recordId, { history = true } = {}) => {
+    if (history && transactions.value.some(item => item.recordId === recordId)) return true
     if (offlineQueue.value.some(item => item.recordId === recordId && item.status !== 'synced')) return true
     if (sending.has(recordId) || removing.has(recordId)) return true
     try {
@@ -449,6 +452,8 @@ export const useTransactions = () => {
     localStorage.removeItem(ORPHANS_KEY)
     // The calendar's offline copy goes with the rest of the owner's data
     forgetCopy(localStorage)
+    // and the card payments this device charged
+    forgetCharged(localStorage)
     // So do the open gatcha prizes; prize movements still waiting stay queued like the sales
     forgetGatchaPrizes({ keepOutbox: keepQueue })
     if (keepQueue) {

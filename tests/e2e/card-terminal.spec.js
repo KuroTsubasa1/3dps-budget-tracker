@@ -30,6 +30,12 @@ test.describe('Settings → Card terminal', () => {
     await expect(section(page).getByTestId('card-reader-status')).toHaveText('Online')
 
     await section(page).getByRole('button', { name: 'Unpair' }).click()
+    await expect(section(page).getByText('Unpair the terminal?')).toBeVisible()
+    expect(api.card.unpairs).toBe(0)
+    await section(page).getByRole('button', { name: 'Cancel' }).click()
+    await expect(section(page).getByText('Unpair the terminal?')).toHaveCount(0)
+    await section(page).getByRole('button', { name: 'Unpair' }).click()
+    await section(page).getByRole('button', { name: 'Unpair', exact: true }).last().click()
     await expect(page.getByText('Terminal unpaired')).toBeVisible()
     expect(api.card.unpairs).toBe(1)
     await expect(section(page).getByLabel('Pairing code')).toBeVisible()
@@ -59,9 +65,39 @@ test.describe('Settings → Card terminal', () => {
     await gotoReady(page, '/settings#card')
     await expect(section(page).getByTestId('card-reader-status')).toHaveText('Offline')
     await context.setOffline(true)
-    await page.evaluate(() => window.dispatchEvent(new Event('offline')))
     await expect(section(page)).toContainText('Needs a connection')
     await context.setOffline(false)
     await expect(section(page).getByTestId('card-reader-status')).toHaveText('Offline')
+  })
+
+  test('offline there is no pairing form and no Unpair', async ({ page, api, context }) => {
+    api.enable()
+    api.pairTerminal()
+    await gotoReady(page, '/settings#card')
+    await expect(section(page).getByTestId('card-reader-name')).toBeVisible()
+    await context.setOffline(true)
+    await expect(section(page)).toContainText('Needs a connection')
+    await expect(section(page).getByRole('button', { name: 'Unpair' })).toHaveCount(0)
+    await expect(section(page).getByLabel('Pairing code')).toHaveCount(0)
+  })
+
+  test('a logged-out token says to log in again, a failing server shows its message, then Try again works', async ({ page, api }) => {
+    api.enable()
+    api.card.configured = true
+    api.card.message = 'SumUp is down'
+    api.card.terminalStatus = 502
+    await gotoReady(page, '/settings#card')
+    const card = section(page)
+    await expect(card.getByRole('alert')).toHaveText('SumUp is down')
+    await expect(card.getByText('Loading the terminal...')).toHaveCount(0)
+    api.card.terminalStatus = 200
+    await card.getByRole('button', { name: 'Try again' }).click()
+    await expect(card.getByLabel('Pairing code')).toBeVisible()
+    await expect(card.getByRole('alert')).toHaveCount(0)
+
+    api.card.pairStatus = 401
+    await card.getByLabel('Pairing code').fill('AB12CD34')
+    await card.getByRole('button', { name: 'Pair terminal' }).click()
+    await expect(card.getByRole('alert')).toHaveText('Log in again to manage the terminal')
   })
 })

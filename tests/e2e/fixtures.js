@@ -134,6 +134,7 @@ export const test = base.extend({
         configured: false,
         paired: false,
         reader: { id: 'rdr_3MSAFM23CK82VSTT4BN6RWSQ65', name: 'Akinai', status: 'online' },
+        terminalStatus: 200,
         pairStatus: 200,
         chargeStatus: 200,
         cancelStatus: 200,
@@ -187,6 +188,7 @@ export const test = base.extend({
       if (!state.configured) return json(503, { statusCode: 503, message: "Card payments aren't configured on the server" })
       if (request.headers().authorization !== FAKE_TOKEN) return json(401, { statusCode: 401, message: 'Log in again' })
       const body = request.postDataJSON() ?? {}
+      if (path === '/api/card/terminal' && state.terminalStatus !== 200) return failed(state.terminalStatus)
       if (path === '/api/card/terminal') return json(200, { configured: true, paired: state.paired, reader: state.paired ? state.reader : null })
       if (path === '/api/card/pair') {
         state.pairs.push(body)
@@ -202,6 +204,11 @@ export const test = base.extend({
       if (path === '/api/card/charge') {
         state.charges.push(body)
         if (state.chargeStatus !== 200) return failed(state.chargeStatus)
+        // The server's own refusals
+        if (!state.paired) return json(409, { statusCode: 409, message: 'No terminal is paired' })
+        if (body.cart?.amount !== body.amount) return json(400, { statusCode: 400, message: "The cart total doesn't match the amount" })
+        const waiting = fake.db.card_payments.some(item => item.status === 'pending' && Date.now() - new Date(item.created.replace(' ', 'T') + (item.created.endsWith('Z') ? '' : 'Z')).getTime() < 60_000)
+        if (waiting) return json(409, { statusCode: 409, message: 'A card payment is already waiting on the terminal' })
         const id = `pay${String(state.charges.length).padStart(12, '0')}`
         fake.db.card_payments.push({
           id,

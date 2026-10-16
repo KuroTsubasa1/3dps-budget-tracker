@@ -4,7 +4,8 @@
       <p v-if="error" role="alert" class="rounded-lg bg-expense/10 px-3 py-2 text-sm text-expense">{{ error }}</p>
 
       <p v-if="offline" class="rounded-lg bg-muted px-3 py-2 text-sm text-ink-muted">Needs a connection</p>
-      <p v-else-if="!state" class="text-sm text-ink-muted">Loading the terminal...</p>
+      <p v-else-if="!state && !error" class="text-sm text-ink-muted">Loading the terminal...</p>
+      <BaseButton v-else-if="!state" variant="secondary" block @click="load">Try again</BaseButton>
       <p v-else-if="!state.configured" class="text-sm text-ink-muted">Card payments aren't configured on the server</p>
 
       <template v-else-if="state.paired && state.reader">
@@ -13,7 +14,14 @@
             <p class="truncate text-sm font-medium text-ink" data-testid="card-reader-name">{{ state.reader.name }}</p>
             <p class="text-sm" :class="STATUS_CLASS[state.reader.status] ?? 'text-ink-muted'" data-testid="card-reader-status">{{ STATUS_LABEL[state.reader.status] ?? 'Status unknown' }}</p>
           </div>
-          <BaseButton variant="danger-ghost" class="shrink-0" :loading="busy" @click="run(unpair, 'Terminal unpaired')">Unpair</BaseButton>
+          <BaseButton v-if="!confirmingUnpair" variant="danger-ghost" class="shrink-0" @click="confirmingUnpair = true">Unpair</BaseButton>
+        </div>
+        <div v-if="confirmingUnpair" class="space-y-3">
+          <p class="text-sm text-ink-muted">Unpair the terminal? Card payments stop until it is paired again.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <BaseButton variant="secondary" :disabled="busy" @click="confirmingUnpair = false">Cancel</BaseButton>
+            <BaseButton variant="danger" :loading="busy" @click="unpairNow">Unpair</BaseButton>
+          </div>
         </div>
       </template>
 
@@ -53,6 +61,7 @@ const offline = ref(false)
 const busy = ref(false)
 const error = ref('')
 const code = ref('')
+const confirmingUnpair = ref(false)
 
 const messageOf = err => (err?.statusCode === 401 ? 'Log in again to manage the terminal' : err?.data?.message || UNREACHABLE)
 
@@ -79,6 +88,11 @@ const run = async (action, done) => {
   } finally {
     busy.value = false
   }
+}
+
+const unpairNow = async () => {
+  await run(unpair, 'Terminal unpaired')
+  confirmingUnpair.value = false
 }
 
 // The server checks the code too; this only catches an empty field without a round trip
