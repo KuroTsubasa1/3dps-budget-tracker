@@ -1192,7 +1192,7 @@
   {
     "id": "aiolw6eq8suun43",
     "created": "2026-10-16 19:03:35.244Z",
-    "updated": "2026-10-16 19:03:35.244Z",
+    "updated": "2026-10-16 19:04:08.149Z",
     "name": "card_payments",
     "type": "base",
     "system": false,
@@ -1330,11 +1330,11 @@
       }
     ],
     "indexes": [],
-    "listRule": null,
-    "viewRule": null,
-    "createRule": null,
-    "updateRule": null,
-    "deleteRule": null,
+    "listRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "viewRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
+    "updateRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\" && (@request.data.status:isset = false || status = \"pending\")) || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\" && status = \"pending\" && @request.data.amount:isset = false && @request.data.description:isset = false && @request.data.source:isset = false && @request.data.cart:isset = false && @request.data.booked_transaction:isset = false && @request.data.callback_token:isset = false)",
+    "deleteRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "options": {}
   }
 ]
