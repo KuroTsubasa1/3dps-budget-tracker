@@ -159,7 +159,7 @@ export function createFakePocketBase () {
     const body = withoutMissing(collectionName, parsed)
     const expand = url.searchParams.get('expand')
     const reply = (status, json) => route.fulfill({ status, json })
-    requests.push({ method, path: url.pathname, body: parsed, authorization })
+    requests.push({ method, path: url.pathname, body: parsed, authorization, filter: url.searchParams.get('filter') ?? '' })
 
     if (url.pathname === '/api/collections/users/auth-with-password') {
       return body.identity === OWNER.email && body.password === OWNER_PASSWORD

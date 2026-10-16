@@ -99,6 +99,39 @@ test.describe('Booking approved card payments', () => {
     expect(api.db.card_payments[0].booked_transaction).toBe(PAYMENT_ID)
   })
 
+  test('bookPayment books nothing for a payment that is not approved', async ({ page, api }) => {
+    api.enable()
+    api.pairTerminal()
+    await gotoReady(page, '/settings#card')
+    const results = await page.evaluate(async (payments) => {
+      const module = await import(location.origin + '/_nuxt/composables/useCardPayments.js')
+      const cards = module.useCardPayments()
+      const out = []
+      for (const payment of payments) out.push(await cards.bookPayment(payment))
+      return out
+    }, ['declined', 'cancelled', 'failed', 'pending'].map(status => approved({ status })))
+    expect(results).toEqual([false, false, false, false])
+    expect(posts(api)).toHaveLength(0)
+    // Not even looked up
+    expect(api.requests.filter(request => request.path.endsWith(`/budget_tracker_transactions/records/${PAYMENT_ID}`))).toEqual([])
+  })
+
+  test('two bookings of one payment at once share one check and one post', async ({ page, api }) => {
+    api.enable()
+    api.pairTerminal()
+    await gotoReady(page, '/settings#card')
+    api.db.card_payments.push(approved())
+    const lookups = () => api.requests.filter(request => request.method === 'GET' && request.path.endsWith(`/budget_tracker_transactions/records/${PAYMENT_ID}`)).length
+    const results = await page.evaluate(async (payment) => {
+      const module = await import(location.origin + '/_nuxt/composables/useCardPayments.js')
+      const cards = module.useCardPayments()
+      return Promise.all([cards.bookPayment(payment), cards.bookPayment(payment)])
+    }, approved())
+    expect(results).toEqual([true, true])
+    expect(lookups()).toBe(1)
+    expect(posts(api)).toHaveLength(1)
+  })
+
   test('two starts at once refresh each pending payment once', async ({ page, api }) => {
     api.enable()
     api.pairTerminal()

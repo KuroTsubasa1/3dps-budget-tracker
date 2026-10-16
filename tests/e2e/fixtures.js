@@ -150,6 +150,10 @@ export const test = base.extend({
         refreshes: 0,
         // A refresh answers only after this many ms; refreshesAtOnce is the most that were out together
         refreshDelay: 0,
+        // The charge's answer is lost: 'after' the record was created (the Solo has the amount), or 'before'
+        chargeLost: '',
+        // A cancel answers only after this many ms
+        cancelDelay: 0,
         refreshesOut: 0,
         refreshesAtOnce: 0,
         // What SumUp would answer when the server refreshes a payment: (payment) => changes it, or null
@@ -188,7 +192,8 @@ export const test = base.extend({
       const request = route.request()
       const path = new URL(request.url()).pathname
       const state = api.card
-      const json = (status, body) => route.fulfill({ status, json: body })
+      // A request the page gave up on meanwhile (its timeout) cannot be answered any more
+      const json = (status, body) => route.fulfill({ status, json: body }).catch(() => {})
       const failed = status => json(status, { statusCode: status, message: state.message })
       if (path === '/api/card/terminal' && !state.configured) return json(200, { configured: false, paired: false, reader: null })
       if (!state.configured) return json(503, { statusCode: 503, message: "Card payments aren't configured on the server" })
@@ -209,6 +214,7 @@ export const test = base.extend({
       }
       if (path === '/api/card/charge') {
         state.charges.push(body)
+        if (state.chargeLost === 'before') return route.abort()
         if (state.chargeStatus !== 200) return failed(state.chargeStatus)
         // The server's own refusals
         if (!state.paired) return json(409, { statusCode: 409, message: 'No terminal is paired' })
@@ -230,6 +236,7 @@ export const test = base.extend({
           callback_token: '0'.repeat(64),
           created: new Date().toISOString().replace('T', ' ')
         })
+        if (state.chargeLost === 'after') return route.abort()
         return json(200, { id })
       }
       if (path === '/api/card/refresh') {
@@ -248,6 +255,7 @@ export const test = base.extend({
         return json(200, { payment: visible })
       }
       state.cancels.push(body.id)
+      if (state.cancelDelay) await new Promise(resolve => setTimeout(resolve, state.cancelDelay))
       if (state.cancelStatus !== 200) return failed(state.cancelStatus)
       const payment = fake.db.card_payments.find(item => item.id === body.id)
       if (payment?.status === 'pending') payment.status = state.cancelResult

@@ -465,12 +465,19 @@ const payByCard = () => {
 }
 
 // Approved: booked by the sheet from the stored booking; here the page follows (declined: the cart stays)
-const onCardPaid = payment => finishCheckout(payment.cart, { pickPrizesNow: false })
+let cardBooking = Promise.resolve(false)
+const onCardPaid = (payment, booking) => {
+  cardBooking = booking ?? Promise.resolve(false)
+  finishCheckout(payment.cart, { pickPrizesNow: false })
+}
 
-watch(isCardSheetOpen, (open) => {
+// The prizes are picked once the card sheet closed and its booking has added them (a booking that has to
+// wait for the next start adds none yet: the banner asks then)
+watch(isCardSheetOpen, async (open) => {
   if (open || !prizesAfterCard.value) return
   prizesAfterCard.value = false
-  nextTick(() => { isPrizeSheetOpen.value = true })
+  await cardBooking
+  if (openPrizes.value.count > 0) nextTick(() => { isPrizeSheetOpen.value = true })
 })
 
 const setOnline = () => { online.value = navigator.onLine }

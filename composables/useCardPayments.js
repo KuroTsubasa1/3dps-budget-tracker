@@ -70,18 +70,37 @@ export const useCardPayments = () => {
 
   // request: { source: 'cart' | 'home', amount, description, cart } → { id }
   // The server gives SumUp 15 s; a request that hangs past 45 s fails, so the sheet never waits for ever
+  // This device started the payment: it books the gatcha prizes too, whenever it books the sale
+  const charged = (id) => {
+    try {
+      rememberCharged(localStorage, id)
+    } catch {}
+  }
   const charge = async (request) => {
     const result = await $fetch('/api/card/charge', { method: 'POST', headers: auth(), body: request, timeout: 45_000 })
-    // This device started the payment: it books the gatcha prizes too, whenever it books the sale
-    if (result?.id) {
-      try {
-        rememberCharged(localStorage, result.id)
-      } catch {}
-    }
+    if (result?.id) charged(result.id)
     return result
   }
-  // → { status } once SumUp has taken the stop
-  const cancel = id => $fetch('/api/card/cancel', { method: 'POST', headers: auth(), body: { id } })
+
+  // After a charge whose answer was lost (or "already waiting"): the newest pending payment of this source
+  // and amount created since `since` (ms), which the Solo may be showing now; null when there is none.
+  // Throws when it cannot look.
+  const findStarted = async ({ source, amount }, since) => {
+    const { items } = await pb.collection(CARD_PAYMENTS).getList(1, 1, {
+      filter: pb.filter('status = "pending" && source = {:source} && amount = {:amount} && created >= {:since}', {
+        source,
+        amount,
+        since: new Date(since).toISOString().replace('T', ' ')
+      }),
+      sort: '-created'
+    })
+    const payment = items[0] ?? null
+    if (payment) charged(payment.id)
+    return payment
+  }
+
+  // → { status } once SumUp has taken the stop. Like the refresh, it gives up after 20 s.
+  const cancel = id => $fetch('/api/card/cancel', { method: 'POST', headers: auth(), body: { id }, timeout: 20_000 })
 
   // → { payment }: the server asks SumUp and records a result with the owner's token
   const refresh = id => $fetch('/api/card/refresh', { method: 'POST', headers: auth(), body: { id }, timeout: 20_000 })
@@ -209,5 +228,5 @@ export const useCardPayments = () => {
     }
   }
 
-  return { terminalState, terminal, loadTerminal, pair, unpair, charge, cancel, refresh, watch, bookPayment, bookApproved, startCardBooking }
+  return { terminalState, terminal, loadTerminal, pair, unpair, charge, findStarted, cancel, refresh, watch, bookPayment, bookApproved, startCardBooking }
 }

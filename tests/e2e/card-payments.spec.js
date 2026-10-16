@@ -128,6 +128,8 @@ test.describe('Pay by card in the cart', () => {
     api.card.message = "The terminal didn't answer. Check that it's on and online."
     await payByCard(page).click()
     await expect(state(page)).toHaveText("The terminal didn't answer. Check that it's on and online.")
+    // The server marked it failed before answering: certain
+    await expect(sheet(page)).toContainText('Nothing was booked')
     await sheet(page).getByRole('button', { name: 'Close' }).last().click()
 
     api.card.chargeStatus = 200
@@ -411,4 +413,166 @@ test.describe('the terminal state', () => {
     await expect(payByCard(other)).toBeEnabled()
     await other.close()
   })
+})
+
+const UNCERTAIN = 'The terminal may still show the amount. Check the Solo before taking cash.'
+const wayOut = page => sheet(page).getByRole('button', { name: 'Close, book it when it lands' })
+const cartIsEmpty = async (page) => {
+  await expect(page.getByRole('button', { name: /View cart/ })).toHaveCount(0)
+  if (!isPhone(page)) await expect(page.getByText('0 items')).toBeVisible()
+}
+const lookedForApproved = api => api.requests.filter(request => request.method === 'GET' && request.path.endsWith('/card_payments/records') && /approved/.test(request.filter)).length
+
+test.describe('when the charge\'s answer is uncertain', () => {
+  test('a lost answer after the Solo got the amount: the sheet finds the payment and books it once', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.card.chargeLost = 'after'
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card · 29,00/)
+    expect(api.card.charges).toHaveLength(1)
+    api.settleCard('approved', 'TXLOST')
+    await expect(state(page)).toHaveText('Paid ✓')
+    await expect.poll(() => api.posted.map(sale => [sale.id, sale.sumup_transaction])).toEqual([['pay000000000001', 'TXLOST']])
+    await sheet(page).getByRole('button', { name: 'Done' }).click()
+    await cartIsEmpty(page)
+    expect(api.posted).toHaveLength(1)
+  })
+
+  test('a lost answer and no payment found: the Solo may still show it, never "Nothing was booked"', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.card.chargeLost = 'before'
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(UNCERTAIN)
+    await expect(sheet(page)).not.toContainText('Nothing was booked')
+    // Closing looks for approved payments to book
+    const before = lookedForApproved(api)
+    await sheet(page).getByRole('button', { name: 'Close' }).last().click()
+    await expect(sheet(page)).toHaveCount(0)
+    await expect.poll(() => lookedForApproved(api)).toBeGreaterThan(before)
+    expect(api.posted).toHaveLength(0)
+  })
+
+  test('a 5xx without the server\'s message is uncertain too', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.card.chargeStatus = 500
+    api.card.message = ''
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(UNCERTAIN)
+    await expect(sheet(page)).not.toContainText('Nothing was booked')
+  })
+
+  test('"already waiting on the terminal": the sheet takes over that payment', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.db.card_payments.push({
+      id: 'pay000000000050',
+      collectionName: 'card_payments',
+      amount: 29,
+      description: 'Akinai sale',
+      source: 'cart',
+      cart: { description: 'Akinai sale', amount: 29, notes: '', date: '2026-10-16', items: [], sold_at: '2026-10-16T10:00:00.000Z', stockMovements: [], prizes: { count: 0, categories: [] } },
+      status: 'pending',
+      sumup_checkout: '',
+      sumup_transaction: '',
+      booked_transaction: '',
+      callback_token: '0'.repeat(64),
+      created: new Date().toISOString().replace('T', ' ')
+    })
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card · 29,00/)
+    api.settleCard('approved', 'TXTAKEN')
+    await expect(state(page)).toHaveText('Paid ✓')
+    await expect.poll(() => api.posted.map(sale => sale.id)).toEqual(['pay000000000050'])
+  })
+})
+
+test.describe('a way out while the terminal has the payment', () => {
+  test('still waiting: Close, book it when it lands closes the sheet, and the next start books it once', async ({ page, api }) => {
+    await page.clock.install()
+    await cartWithTwoArticles(page, api)
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    await expect(wayOut(page)).toHaveCount(0)
+    await page.clock.runFor(121_000)
+    await expect(state(page)).toHaveText('Still waiting for the terminal')
+    const before = lookedForApproved(api)
+    await wayOut(page).click()
+    await expect(sheet(page)).toHaveCount(0)
+    await expect.poll(() => lookedForApproved(api)).toBeGreaterThan(before)
+    // The watch stopped with the sheet
+    const refreshes = api.card.refreshes
+    await page.clock.runFor(10_000)
+    expect(api.card.refreshes).toBe(refreshes)
+
+    api.settleCard('approved', 'TXLANDED')
+    await gotoReady(page, '/')
+    await expect(page.getByText(/Card payment of 29,00.* booked/)).toBeVisible()
+    await expect.poll(() => api.posted.map(sale => sale.id)).toEqual(['pay000000000001'])
+  })
+
+  test('a failed cancel offers the way out, and its alert goes once the payment settles', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.card.cancelStatus = 502
+    api.card.message = "The terminal didn't answer. Check that it's on and online."
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    await sheet(page).getByRole('button', { name: 'Cancel on terminal' }).click()
+    await expect(sheet(page).getByRole('alert')).toHaveText("The terminal didn't answer. Check that it's on and online.")
+    await expect(wayOut(page)).toBeVisible()
+    api.settleCard('approved', 'TXAFTER')
+    await expect(state(page)).toHaveText('Paid ✓')
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+    await expect(wayOut(page)).toHaveCount(0)
+  })
+
+  test('a cancel that leaves the payment pending asks again 120 s later', async ({ page, api }) => {
+    await page.clock.install()
+    await cartWithTwoArticles(page, api)
+    api.card.cancelResult = 'pending'
+    api.card.cancelDelay = 1500
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    await page.clock.runFor(110_000)
+    await sheet(page).getByRole('button', { name: 'Cancel on terminal' }).click()
+    // The 120 s mark passes while the cancel is out (well within its own 20 s), and it answers pending
+    await page.clock.runFor(11_000)
+    await expect.poll(() => api.card.cancels.length).toBe(1)
+    await page.waitForTimeout(2500)
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    await expect(sheet(page).getByRole('alert')).toHaveCount(0)
+    await page.clock.runFor(121_000)
+    await expect(state(page)).toHaveText('Still waiting for the terminal')
+  })
+
+  test('a cancel that hangs gives up after 20 s with the terminal message', async ({ page, api }) => {
+    await page.clock.install()
+    await cartWithTwoArticles(page, api)
+    api.card.cancelDelay = 4000
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    await sheet(page).getByRole('button', { name: 'Cancel on terminal' }).click()
+    await expect.poll(() => api.card.cancels.length).toBe(1)
+    await page.clock.runFor(21_000)
+    await expect(sheet(page).getByRole('alert')).toHaveText("The terminal didn't answer. Check that it's on and online.")
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    // Let the fake's late answer go before the page closes
+    await page.waitForTimeout(4500)
+  })
+})
+
+test('a gatcha whose card booking could not be made yet opens no empty prize picker', async ({ page, api }) => {
+  api.seed({ categories: GATCHA_CATEGORIES, articles: [GATCHA, { id: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', stock: 2 }] })
+  api.pairTerminal()
+  await gotoReady(page, '/catalog')
+  await card(page, 'GatchaPon').click()
+  await openCart(page)
+  await payByCard(page).click()
+  await expect(state(page)).toHaveText(/Waiting for card/)
+  // The booking cannot tell whether the sale exists, so it waits for the next start
+  api.failReads('budget_tracker_transactions', 500)
+  api.settleCard('approved', 'TXLATER')
+  await expect(state(page)).toHaveText('Paid ✓')
+  await sheet(page).getByRole('button', { name: 'Done' }).click()
+  await page.waitForTimeout(1000)
+  await expect(prizeSheet(page)).toHaveCount(0)
+  expect(api.posted).toHaveLength(0)
 })
