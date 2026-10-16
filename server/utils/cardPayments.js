@@ -3,7 +3,7 @@
 // or the notifier's (for the return URL and the poll). The unit tests run against fakes and never reach SumUp.
 import { createHash, randomBytes } from 'node:crypto'
 import { sameText } from './access.js'
-import { isSandboxMerchant, isUnreachable } from './sumup.js'
+import { SumUpError, isSandboxMerchant, isUnreachable } from './sumup.js'
 
 export const CARD_PAYMENTS = 'card_payments'
 // The only fields the notifier may write (the collection's update rule refuses the rest; pb-plan.mjs)
@@ -21,6 +21,8 @@ export const POLL_RUN_CAP_MS = 12_000
 export const POLL_MAX_PER_RUN = 10
 // Cancel on terminal: SumUp not knowing the payment confirms the stop only this long after the start
 export const CANCEL_CONFIRM_MS = 60_000
+// A second charge is refused while another payment started this recently is still pending (a double tap)
+export const DOUBLE_CHARGE_MS = 60_000
 const MAX_CART_BYTES = 200_000
 const MAX_AMOUNT_CENTS = 10_000_00
 const RECORD_ID = /^[a-z0-9]{15}$/
@@ -35,6 +37,9 @@ export const SUMUP_UNREACHABLE = "SumUp didn't answer. Try again."
 export const NOT_PAIRED = 'Pair the terminal in Settings first'
 export const PAIRING_CODE_INVALID = 'Enter the code the Solo shows'
 export const PAIRING_CODE_REFUSED = "That code didn't work. Start pairing on the Solo again and enter the new code."
+export const CART_MISMATCH = "The cart total doesn't match the amount"
+export const CHARGE_WAITING = 'A card payment is already waiting on the terminal'
+export const PAYMENT_CHANGED = 'The payment changed meanwhile. Try again.'
 export const ALREADY_PAIRED = 'A terminal is already paired. Unpair it first.'
 
 // h3's createError shape, so the routes can throw these as they are
@@ -58,6 +63,8 @@ export function chargeInput (body) {
   if (cents > MAX_AMOUNT_CENTS) throw refuse(400, AMOUNT_TOO_HIGH)
   if (!isPlainObject(cart)) throw refuse(400, 'Missing the sale to book')
   if (Buffer.byteLength(JSON.stringify(cart)) > MAX_CART_BYTES) throw refuse(400, 'The cart is too large for one payment')
+  // The booking's own total is what is charged: a cart that says otherwise is a mix-up, not a payment
+  if (typeof cart.amount !== 'number' || toCents(cart.amount) !== cents) throw refuse(400, CART_MISMATCH)
   return { source, amount: cents / 100, cents, description: SALE_DESCRIPTION, cart }
 }
 
@@ -102,14 +109,42 @@ export function createSandboxCheck (sumup) {
   }
 }
 
-// The return URL SumUp calls when the payment ends: https on the host the app was opened on. A host SumUp
-// cannot reach (localhost, an IP address, a name without a dot) gets none, and the backup poll finds the result.
+// The host of the app's public https address, which SumUp's return URL points at: CARD_PUBLIC_URL when set,
+// else the app's own APP_URL, the latter in production only (nuxt dev sends none: the 2 s refresh covers it).
+// Never the request's own host. Null unless it is a plain https origin on a real public host.
+export function publicHost ({ env = {}, appUrl, production = false }) {
+  const configured = typeof env.CARD_PUBLIC_URL === 'string' ? env.CARD_PUBLIC_URL.trim() : ''
+  const address = configured || (production ? appUrl : '')
+  let url
+  try {
+    url = new URL(address)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null
+  return callbackUrl(url.host, 'x', 'x') ? url.host : null
+}
+
+// The return URL SumUp calls when the payment ends: https on the given host. A host SumUp cannot reach
+// (localhost, an IP address, a name without a dot) gets none, and the backup poll finds the result.
 export function callbackUrl (host, id, token) {
   const name = String(host ?? '').toLowerCase()
   if (!/^[a-z0-9.-]+(:\d{1,5})?$/.test(name)) return null
   const bare = name.replace(/:\d+$/, '')
   if (!bare.includes('.') || bare === 'localhost' || bare.endsWith('.localhost') || /^[\d.]+$/.test(bare)) return null
   return `https://${name}/api/card/callback/${id}/${token}`
+}
+
+// What a route lets out for an error, as h3's createError input. The card rules' own errors (they carry a
+// statusCode and a safe message) pass; a SumUpError is 502; PocketBase's 401 is a login, its 400/403/404 on the
+// payment a race (it changed meanwhile); anything else a fixed 502. Never upstream text, URLs or tokens.
+export function cardErrorFor (error) {
+  const out = (statusCode, statusMessage) => ({ statusCode, statusMessage, message: statusMessage })
+  if (error?.statusCode && typeof error.statusMessage === 'string') return out(error.statusCode, error.statusMessage)
+  if (error instanceof SumUpError || typeof error?.kind === 'string') return out(502, SUMUP_UNREACHABLE)
+  if (error?.status === 401) return out(401, 'Log in again')
+  if ([400, 403, 404].includes(error?.status)) return out(409, PAYMENT_CHANGED)
+  return out(502, SUMUP_UNREACHABLE)
 }
 
 // The created stamp of a PocketBase record ('YYYY-MM-DD HH:MM:SS.sssZ') in ms
@@ -173,6 +208,14 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
     throw refuse(502, SUMUP_UNREACHABLE)
   }
   if (!reader) throw refuse(409, NOT_PAIRED)
+  // A double tap: another payment started a minute ago or less is still waiting on the terminal
+  let waiting
+  try {
+    waiting = await store.listRecentPending(new Date(now - DOUBLE_CHARGE_MS).toISOString().replace('T', ' '))
+  } catch {
+    throw refuse(502, 'Could not save the payment. Try again.')
+  }
+  if (waiting.length) throw refuse(409, CHARGE_WAITING)
   const token = newToken()
   let record
   try {
@@ -424,6 +467,7 @@ export function createOwnerStore ({ pocketbaseUrl, authorization, fetch = global
   return {
     createCardPayment: data => request('POST', records, data),
     getCardPayment: id => request('GET', `${records}/${encodeURIComponent(id)}`),
+    listRecentPending: async since => (await request('GET', `${records}?${new URLSearchParams({ filter: `status = "pending" && created >= "${since}"`, perPage: '1' })}`)).items ?? [],
     updateCardPayment: (id, patch) => request('PATCH', `${records}/${encodeURIComponent(id)}`, only(patch))
   }
 }

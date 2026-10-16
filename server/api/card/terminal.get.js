@@ -2,8 +2,8 @@
 // answers without asking anyone (like /api/push/status); otherwise only the owner may ask.
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
-import { useCard, cardError } from '../../utils/card.js'
-import { terminalStatus } from '../../utils/cardPayments.js'
+import { useCard } from '../../utils/card.js'
+import { terminalStatus, cardErrorFor } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
@@ -12,6 +12,6 @@ export default defineEventHandler(async (event) => {
   try {
     return { configured: true, ...(await terminalStatus(useCard(settings))) }
   } catch (error) {
-    throw cardError(error)
+    throw createError(cardErrorFor(error))
   }
 })

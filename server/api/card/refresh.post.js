@@ -3,8 +3,8 @@
 // so results arrive without the return URL and the poll. Answers { payment } without its callback token.
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
-import { useCard, cardError } from '../../utils/card.js'
-import { refreshPayment, createOwnerStore, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { useCard } from '../../utils/card.js'
+import { refreshPayment, createOwnerStore, NOT_CONFIGURED, cardErrorFor } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
@@ -15,6 +15,6 @@ export default defineEventHandler(async (event) => {
   try {
     return await refreshPayment({ store, sumup: useCard(settings).sumup, id })
   } catch (error) {
-    throw cardError(error)
+    throw createError(cardErrorFor(error))
   }
 })

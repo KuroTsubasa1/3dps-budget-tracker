@@ -20,7 +20,10 @@ import {
   createOwnerStore,
   refreshPayment,
   markSandbox,
-  createSandboxCheck
+  createSandboxCheck,
+  cardErrorFor,
+  publicHost,
+  DOUBLE_CHARGE_MS
 } from '../../server/utils/cardPayments.js'
 import { SumUpError } from '../../server/utils/sumup.js'
 import { CARD_NOTIFIER_FIELDS as RULE_FIELDS } from '../../scripts/lib/pb-plan.mjs'
@@ -68,6 +71,7 @@ function fakeStore (payments = []) {
       if (!db.has(id)) throw Object.assign(new Error('Not found'), { status: 404 })
       return structuredClone(db.get(id))
     },
+    async listRecentPending (since) { return [...db.values()].filter(payment => payment.status === 'pending' && payment.created >= since) },
     async listPendingCardPayments () { return [...db.values()].filter(payment => payment.status === 'pending') },
     async updateCardPayment (id, patch) {
       assert.deepEqual(Object.keys(patch).filter(key => !CARD_NOTIFIER_FIELDS.includes(key)), [], 'the notifier writes only its fields')
@@ -83,18 +87,24 @@ test('the server writes the same three fields the notifier rule allows', () => {
 })
 
 test('a charge needs a known source, an amount above 0 and the booking, and always says Akinai sale', () => {
-  assert.deepEqual(chargeInput({ source: 'cart', amount: 19.9, description: 'anything', cart: CART }), { source: 'cart', amount: 19.9, cents: 1990, description: 'Akinai sale', cart: CART })
+  const cart = { ...CART, amount: 19.9 }
+  assert.deepEqual(chargeInput({ source: 'cart', amount: 19.9, description: 'anything', cart }), { source: 'cart', amount: 19.9, cents: 1990, description: 'Akinai sale', cart })
   // Float noise is rounded to the cent
-  assert.equal(chargeInput({ source: 'home', amount: 0.1 + 0.2, cart: {} }).cents, 30)
+  assert.equal(chargeInput({ source: 'home', amount: 0.1 + 0.2, cart: { amount: 0.3 } }).cents, 30)
   const refused = (body, message) => assert.throws(() => chargeInput(body), error => error.statusCode === 400 && error.statusMessage === message)
-  for (const amount of [0, -5, 0.004, '12', NaN, Infinity, null]) refused({ source: 'cart', amount, cart: CART }, 'Enter an amount above 0')
+  for (const amount of [0, -5, 0.004, '12', NaN, Infinity, null]) refused({ source: 'cart', amount, cart: { amount } }, 'Enter an amount above 0')
   // 10 000 € is the most one payment may be
-  for (const amount of [10_000.01, 1_000_000.01]) refused({ source: 'cart', amount, cart: CART }, 'The amount is above 10 000 €')
-  assert.equal(chargeInput({ source: 'cart', amount: 10_000, cart: CART }).cents, 1_000_000)
+  for (const amount of [10_000.01, 1_000_000.01]) refused({ source: 'cart', amount, cart: { amount } }, 'The amount is above 10 000 €')
+  assert.equal(chargeInput({ source: 'cart', amount: 10_000, cart: { amount: 10_000 } }).cents, 1_000_000)
   refused({ source: 'till', amount: 5, cart: CART }, 'Unknown payment source')
+  // The cart's own total must be the amount charged
+  refused({ source: 'cart', amount: 5, cart: CART }, "The cart total doesn't match the amount")
+  refused({ source: 'cart', amount: 5, cart: { items: [] } }, "The cart total doesn't match the amount")
+  refused({ source: 'cart', amount: 5, cart: { amount: '5' } }, "The cart total doesn't match the amount")
+  refused({ source: 'cart', amount: 5.01, cart: { amount: 5 } }, "The cart total doesn't match the amount")
   refused({ source: 'cart', amount: 5 }, 'Missing the sale to book')
   refused({ source: 'cart', amount: 5, cart: [CART] }, 'Missing the sale to book')
-  refused({ source: 'cart', amount: 5, cart: { note: 'x'.repeat(200_001) } }, 'The cart is too large for one payment')
+  refused({ source: 'cart', amount: 5, cart: { amount: 5, note: 'x'.repeat(200_001) } }, 'The cart is too large for one payment')
   refused(null, 'Unknown payment source')
 })
 
@@ -153,14 +163,14 @@ test('unpairing deletes the paired reader, and a reader already gone is fine', a
   await unpairTerminal({ sumup: fakeSumUp({ fail: { [`deleteReader ${READER.id}`]: new SumUpError('not_found', 404) } }) })
 })
 
-const INPUT = chargeInput({ source: 'cart', amount: 19.9, cart: CART })
+const INPUT = chargeInput({ source: 'cart', amount: 19.9, cart: { ...CART, amount: 19.9 } })
 
 test('a charge creates the pending record as the owner, then sends the checkout with the return URL', async () => {
   const sumup = fakeSumUp()
   const store = fakeStore([payment('pay000000000001')])
   const result = await startCharge({ input: INPUT, sumup, store, host: 'akinai.lasseharm.space', newToken: () => 'token-1', log: silent })
   assert.deepEqual(result, { id: 'pay000000000001' })
-  assert.deepEqual(store.created, [{ amount: 19.9, description: 'Akinai sale', source: 'cart', cart: CART, status: 'pending', callback_token: hashToken('token-1') }])
+  assert.deepEqual(store.created, [{ amount: 19.9, description: 'Akinai sale', source: 'cart', cart: INPUT.cart, status: 'pending', callback_token: hashToken('token-1') }])
   assert.deepEqual(sumup.calls, ['listReaders', `checkout ${READER.id}`])
   assert.deepEqual(store.updates, [['pay000000000001', { sumup_checkout: 'ctx-1' }]])
 })
@@ -201,17 +211,19 @@ test('right after the start SumUp not knowing the payment is weak evidence: it s
   const id = 'pay000000000001'
   const store = fakeStore([payment(id)])
   const fail = { [CHECKOUT]: new SumUpError('timeout') }
-  assert.deepEqual(await charge(store, fakeSumUp({ fail }), START + 5000), { id })
+  // The record stands for the payment being started here, so the double tap rule must not see it
+  const first = Object.assign(Object.create(store), { listRecentPending: async () => [] })
+  assert.deepEqual(await charge(first, fakeSumUp({ fail }), START + 5000), { id })
   assert.equal(store.db.get(id).status, 'pending')
   assert.deepEqual(store.updates, [])
-  // Exactly 60 s is still not past the minute
-  assert.deepEqual(await charge(store, fakeSumUp({ fail }), START + 60_000), { id })
+  // Exactly 60 s is still not past the minute (the same payment, charged again)
+  assert.deepEqual(await charge(first, fakeSumUp({ fail }), START + 60_000), { id })
   assert.equal(store.db.get(id).status, 'pending')
   // A later check that SumUp does not know it keeps it pending until the 10-minute rule
   assert.equal(await checkPayment({ store, sumup: fakeSumUp(), id, now: START + 90_000, log: silent }), 'pending')
   assert.equal(await checkPayment({ store, sumup: fakeSumUp(), id, now: START + GIVE_UP_MS, log: silent }), 'failed')
   const late = fakeStore([payment(id)])
-  await charge(late, fakeSumUp({ fail }), START + 5000)
+  await charge(Object.assign(Object.create(late), { listRecentPending: async () => [] }), fakeSumUp({ fail }), START + 5000)
   const paid = fakeSumUp({ transactions: { [id]: { id: 'u', transaction_code: 'TX1', status: 'SUCCESSFUL' } } })
   assert.equal(await checkPayment({ store: late, sumup: paid, id, now: START + 20_000, log: silent }), 'approved')
 })
@@ -561,4 +573,60 @@ test('whether the merchant is a sandbox is asked once; a failed question is aske
   assert.equal(await check(), true)
   assert.equal(asked, 2)
   assert.equal(await createSandboxCheck({ getMerchant: async () => ({ sandbox: false }) })(), false)
+})
+
+test('a second charge within a minute of a pending one is refused before anything is created or sent', async () => {
+  const sumup = fakeSumUp()
+  const store = fakeStore([payment('pay000000000002', { created: '2026-10-16 10:00:30.000Z' })])
+  await assert.rejects(startCharge({ input: INPUT, sumup, store, host: null, now: START + 59_000, log: silent }),
+    error => error.statusCode === 409 && error.statusMessage === 'A card payment is already waiting on the terminal')
+  assert.deepEqual([store.created.length, sumup.calls], [0, ['listReaders']])
+  // Older than a minute (or no longer pending): another may start
+  assert.equal(DOUBLE_CHARGE_MS, 60_000)
+  await startCharge({ input: INPUT, sumup: fakeSumUp(), store, host: null, now: START + 30_000 + DOUBLE_CHARGE_MS + 1, log: silent })
+  const settled = fakeStore([payment('pay000000000002', { status: 'approved', created: '2026-10-16 10:00:30.000Z' })])
+  await startCharge({ input: INPUT, sumup: fakeSumUp(), store: settled, host: null, now: START + 31_000, log: silent })
+  // A store that cannot say is a refusal too, never a second charge
+  const broken = { ...fakeStore(), listRecentPending: async () => { throw new Error('boom https://pb.example/x') } }
+  await assert.rejects(startCharge({ input: INPUT, sumup: fakeSumUp(), store: broken, host: null, log: silent }), error => error.statusCode === 502)
+})
+
+test('the owner store lists the recent pending payments with the owner token', async () => {
+  const requests = []
+  const fetch = async (url, options) => { requests.push({ url, authorization: options.headers.Authorization }); return { ok: true, json: async () => ({ items: [{ id: 'pay000000000001' }] }) } }
+  const store = createOwnerStore({ pocketbaseUrl: 'https://pb.example', authorization: 'a.b.c', fetch })
+  assert.deepEqual(await store.listRecentPending('2026-10-16 10:00:00.000Z'), [{ id: 'pay000000000001' }])
+  const url = new URL(requests[0].url)
+  assert.equal(requests[0].authorization, 'a.b.c')
+  assert.equal(url.searchParams.get('filter'), 'status = "pending" && created >= "2026-10-16 10:00:00.000Z"')
+})
+
+test('the return URL host is the app\'s public one: APP_URL in production, CARD_PUBLIC_URL when set, none in dev', () => {
+  const APP = 'https://akinai.lasseharm.space'
+  assert.equal(publicHost({ env: {}, appUrl: APP, production: true }), 'akinai.lasseharm.space')
+  assert.equal(publicHost({ env: { CARD_PUBLIC_URL: 'https://pay.example.org/' }, appUrl: APP, production: true }), 'pay.example.org')
+  assert.equal(publicHost({ env: { CARD_PUBLIC_URL: 'https://tunnel.example.org' }, appUrl: APP, production: false }), 'tunnel.example.org')
+  // nuxt dev on localhost: nothing is sent, the 2 s refresh covers it
+  assert.equal(publicHost({ env: {}, appUrl: APP, production: false }), null)
+  for (const bad of ['http://pay.example.org', 'https://localhost:3000', 'https://127.0.0.1', 'https://u:p@pay.example.org', 'https://pay.example.org/x', 'pay.example.org', 'https://myphone', 'ftp://x.example']) {
+    assert.equal(publicHost({ env: { CARD_PUBLIC_URL: bad }, appUrl: APP, production: true }), null, bad)
+  }
+})
+
+test('route errors: rule errors pass, SumUp errors are 502, PocketBase 401 is 401, a race is 409, anything else is 502 without upstream text', () => {
+  const secret = 'https://pb.example/api/token=abc123 Bearer sk_live_x'
+  const rule = Object.assign(new Error('x'), { statusCode: 409, statusMessage: 'Pair the terminal in Settings first' })
+  assert.deepEqual(cardErrorFor(rule), { statusCode: 409, statusMessage: 'Pair the terminal in Settings first', message: 'Pair the terminal in Settings first' })
+  const unreachable = { statusCode: 502, statusMessage: "SumUp didn't answer. Try again.", message: "SumUp didn't answer. Try again." }
+  for (const kind of ['not_found', 'invalid', 'conflict', 'unauthorized', 'failed', 'timeout']) {
+    for (const status of [400, 403, 404, 409]) assert.deepEqual(cardErrorFor(new SumUpError(kind, status)), unreachable, `${kind} ${status}`)
+  }
+  assert.deepEqual(cardErrorFor(Object.assign(new Error(secret), { status: 401 })), { statusCode: 401, statusMessage: 'Log in again', message: 'Log in again' })
+  const raced = { statusCode: 409, statusMessage: 'The payment changed meanwhile. Try again.', message: 'The payment changed meanwhile. Try again.' }
+  for (const status of [400, 403, 404]) assert.deepEqual(cardErrorFor(Object.assign(new Error(secret), { status })), raced)
+  for (const error of [new Error(secret), Object.assign(new Error(secret), { status: 500 }), null, undefined, 'x']) {
+    const mapped = cardErrorFor(error)
+    assert.deepEqual(mapped, unreachable)
+    assert.ok(!JSON.stringify(mapped).includes('pb.example') && !JSON.stringify(mapped).includes('abc123'))
+  }
 })

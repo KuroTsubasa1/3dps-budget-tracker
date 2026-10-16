@@ -1,8 +1,8 @@
 // POST /api/card/pair { code }: pairs the Solo that shows `code` under Connections → API → Connect
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
-import { useCard, cardError } from '../../utils/card.js'
-import { pairTerminal, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { useCard } from '../../utils/card.js'
+import { pairTerminal, NOT_CONFIGURED, cardErrorFor } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
@@ -12,6 +12,6 @@ export default defineEventHandler(async (event) => {
   try {
     return await pairTerminal({ sumup: useCard(settings).sumup, code })
   } catch (error) {
-    throw cardError(error)
+    throw createError(cardErrorFor(error))
   }
 })

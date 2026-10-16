@@ -2,8 +2,8 @@
 // payment SumUp has not settled stays { status: 'pending' } for the refresh and the poll.
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
-import { useCard, cardError } from '../../utils/card.js'
-import { cancelCharge, createOwnerStore, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { useCard } from '../../utils/card.js'
+import { cancelCharge, createOwnerStore, NOT_CONFIGURED, cardErrorFor } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
@@ -14,6 +14,6 @@ export default defineEventHandler(async (event) => {
   try {
     return await cancelCharge({ store, sumup: useCard(settings).sumup, id })
   } catch (error) {
-    throw cardError(error)
+    throw createError(cardErrorFor(error))
   }
 })

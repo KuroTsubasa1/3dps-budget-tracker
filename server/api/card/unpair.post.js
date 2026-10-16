@@ -1,8 +1,8 @@
 // POST /api/card/unpair: removes the paired Solo at SumUp
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
-import { useCard, cardError } from '../../utils/card.js'
-import { unpairTerminal, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { useCard } from '../../utils/card.js'
+import { unpairTerminal, NOT_CONFIGURED, cardErrorFor } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
@@ -11,6 +11,6 @@ export default defineEventHandler(async (event) => {
   try {
     return await unpairTerminal({ sumup: useCard(settings).sumup })
   } catch (error) {
-    throw cardError(error)
+    throw createError(cardErrorFor(error))
   }
 })
