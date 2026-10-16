@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   ARTICLES,
   TRANSACTIONS,
+  CARD_PAYMENTS,
   CATEGORY_SEED,
   DEAL_SEED,
   ownerRule,
@@ -34,11 +35,12 @@ test('plans the new collections, article fields and optional price', () => {
     'createCollection:print_jobs',
     'createCollection:conventions',
     'createCollection:push_subscriptions',
+    `createCollection:${CARD_PAYMENTS}`,
     `addFields:${ARTICLES}`,
     `updateField:${ARTICLES}.price`,
     `addFields:${TRANSACTIONS}`
   ])
-  assert.deepEqual(ops[7].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock', 'prize_categories'])
+  assert.deepEqual(ops[8].fields.map(field => field.name), ['category', 'stock', 'low_stock_threshold', 'target_stock', 'prize_categories'])
 })
 
 test('stock movements point at the articles collection', () => {
@@ -87,7 +89,8 @@ test('rules pin the owner record id, close sign-up first, and apply only once', 
     'setRules:commissions',
     'setRules:print_jobs',
     'setRules:conventions',
-    'setRules:push_subscriptions'
+    'setRules:push_subscriptions',
+    `setRules:${CARD_PAYMENTS}`
   ])
   assert.deepEqual(planRules(simulate(afterSchema, ops), OWNER_ID), [])
 })
@@ -350,13 +353,15 @@ test('converting again after applying changes nothing', () => {
 
 const DATE_FIELD = { name: 'date', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '^\\d{4}-\\d{2}-\\d{2}$' } }
 const SOLD_AT_FIELD = { name: 'sold_at', type: 'date', required: false, presentable: false, options: { min: '', max: '' } }
+const PAYMENT_METHOD_FIELD = { name: 'payment_method', type: 'select', required: false, presentable: false, options: { maxSelect: 1, values: ['card', 'cash'] } }
+const SUMUP_TRANSACTION_FIELD = { name: 'sumup_transaction', type: 'text', required: false, presentable: false, options: { min: null, max: null, pattern: '' } }
 const live = () => JSON.parse(readFileSync(new URL('../../pocketbase/schema.json', import.meta.url)))
 
-test('transactions gain an optional sale date, sale lines and sale time', () => {
+test('transactions gain an optional sale date, sale lines, sale time, payment method and SumUp transaction', () => {
   const op = planSchema(current()).find(item => item.op === 'addFields' && item.collection === TRANSACTIONS)
-  assert.deepEqual(op.fields, [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD])
+  assert.deepEqual(op.fields, [DATE_FIELD, ITEMS_FIELD, SOLD_AT_FIELD, PAYMENT_METHOD_FIELD, SUMUP_TRANSACTION_FIELD])
   assert.ok(new RegExp(DATE_FIELD.options.pattern).test('2026-10-14'))
-  assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date, items, sold_at`)
+  assert.equal(describeOp(op), `add to "${TRANSACTIONS}": date, items, sold_at, payment_method, sumup_transaction`)
 })
 
 // The snapshot follows production, so it is checked as it is and as it was before these changes.
@@ -389,10 +394,10 @@ const withoutPayment = collections => collections.map(collection => collection.n
 const upToDate = () => simulate(live(), planSchema(live()))
 const CALENDAR_KEYS = CALENDAR.map(name => `createCollection:${name}`)
 
-test('the live schema needs nothing beyond the commission payment fields', () => {
-  const hasPayment = live().find(collection => collection.name === 'commissions').schema.some(field => field.name === 'paid_at')
+test('the live schema needs nothing beyond the card payments', () => {
+  const hasCard = live().some(collection => collection.name === CARD_PAYMENTS)
   const ops = planSchema(live())
-  assert.deepEqual(ops, hasPayment ? [] : [PAYMENT_OP])
+  assert.deepEqual(opKeys(ops), hasCard ? [] : [`createCollection:${CARD_PAYMENTS}`, `addFields:${TRANSACTIONS}`])
   assert.deepEqual(planSchema(simulate(live(), ops)), [])
 })
 
@@ -523,9 +528,10 @@ test('the notifier may read and update conventions and read and delete subscript
   const ops = planRules(afterSchema, OWNER_ID, NOTIFIER_ID)
   assert.deepEqual(ops.find(op => op.collection === 'conventions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: NOTIFIER_UPDATE, deleteRule: OWNER_EXPR })
   assert.deepEqual(ops.find(op => op.collection === 'push_subscriptions').rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: null, deleteRule: OWNER_OR_NOTIFIER })
-  // Every other collection keeps the owner rules
-  const others = ops.filter(op => !CALENDAR.includes(op.collection))
-  assert.deepEqual(others, planRules(afterSchema, OWNER_ID).filter(op => !CALENDAR.includes(op.collection)))
+  // Every other collection keeps the owner rules (card payments: see below)
+  const withNotifier = [...CALENDAR, CARD_PAYMENTS]
+  const others = ops.filter(op => !withNotifier.includes(op.collection))
+  assert.deepEqual(others, planRules(afterSchema, OWNER_ID).filter(op => !withNotifier.includes(op.collection)))
   assert.ok(others.every(op => !JSON.stringify(op.rules).includes(NOTIFIER_ID)))
   // Applied once, the same rules plan nothing (dropping the notifier is refused, see below)
   const applied = simulate(afterSchema, ops)
@@ -571,4 +577,66 @@ test('the notifier may write only the reminders of a convention, and a new field
     : collection)
   const grownRule = planRules(grown, OWNER_ID, NOTIFIER_ID).find(op => op.collection === 'conventions').rules.updateRule
   assert.ok(grownRule.includes('@request.data.website:isset = false'))
+})
+
+// Card payments on the SumUp Solo (spec 2026-10-16)
+const CARD_FIELDS = ['amount', 'description', 'source', 'cart', 'status', 'sumup_checkout', 'sumup_transaction', 'booked_transaction', 'callback_token']
+const withoutCard = collections => withoutFields(collections.filter(collection => collection.name !== CARD_PAYMENTS), ['payment_method', 'sumup_transaction'])
+// The notifier records SumUp's answer only: status, sumup_checkout and sumup_transaction
+const CARD_NOTIFIER_UPDATE = `(${OWNER_EXPR}) || (${NOTIFIER_EXPR} && ${['amount', 'description', 'source', 'cart', 'booked_transaction', 'callback_token'].map(name => `@request.data.${name}:isset = false`).join(' && ')})`
+
+test('card payments are created locked, with a required status and a 200 kB cart', () => {
+  const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === CARD_PAYMENTS)
+  const field = name => op.body.schema.find(f => f.name === name)
+  assert.deepEqual(op.body.schema.map(f => [f.name, f.type, f.required]), [
+    ['amount', 'number', true],
+    ['description', 'text', false],
+    ['source', 'select', false],
+    ['cart', 'json', false],
+    ['status', 'select', true],
+    ['sumup_checkout', 'text', false],
+    ['sumup_transaction', 'text', false],
+    ['booked_transaction', 'text', false],
+    ['callback_token', 'text', false]
+  ])
+  assert.deepEqual(field('amount').options, { min: 0.01, max: null, noDecimal: false })
+  assert.deepEqual(field('source').options, { maxSelect: 1, values: ['cart', 'home'] })
+  assert.deepEqual(field('status').options, { maxSelect: 1, values: ['pending', 'approved', 'declined', 'cancelled', 'failed'] })
+  assert.deepEqual(field('cart').options, { maxSize: 200000 })
+  assert.deepEqual(rulesOf(op.body), LOCKED_RULES)
+})
+
+test('without the card payment changes the live schema needs the collection and the two sale fields, and only once', () => {
+  const before = withoutCard(upToDate())
+  const ops = planSchema(before)
+  assert.deepEqual(opKeys(ops), [`createCollection:${CARD_PAYMENTS}`, `addFields:${TRANSACTIONS}`])
+  assert.deepEqual(ops[1].fields, [PAYMENT_METHOD_FIELD, SUMUP_TRANSACTION_FIELD])
+  assert.equal(describeOp(ops[0]), `create collection "${CARD_PAYMENTS}" (${CARD_FIELDS.join(', ')})`)
+  assert.equal(describeOp(ops[1]), `add to "${TRANSACTIONS}": payment_method, sumup_transaction`)
+  assert.deepEqual(planSchema(simulate(before, ops)), [])
+})
+
+test('the notifier may read card payments and set only their status and SumUp ids; the owner does the rest', () => {
+  const ruled = simulate(withoutCard(upToDate()), planRules(withoutCard(upToDate()), OWNER_ID, NOTIFIER_ID))
+  const withCard = simulate(ruled, planSchema(ruled))
+  const ops = planRules(withCard, OWNER_ID, NOTIFIER_ID)
+  // Only the new collection's rules change
+  assert.deepEqual(opKeys(ops), [`setRules:${CARD_PAYMENTS}`])
+  assert.deepEqual(ops[0].rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: CARD_NOTIFIER_UPDATE, deleteRule: OWNER_EXPR })
+  for (const name of ['status', 'sumup_checkout', 'sumup_transaction']) assert.ok(!ops[0].rules.updateRule.includes(`@request.data.${name}:`), name)
+  assert.deepEqual(planRules(simulate(withCard, ops), OWNER_ID, NOTIFIER_ID), [])
+  // A field added to the live collection later is refused to the notifier too
+  const grown = withCard.map(collection => collection.name === CARD_PAYMENTS
+    ? { ...collection, schema: [...collection.schema, { name: 'tip', type: 'number' }] }
+    : collection)
+  assert.ok(planRules(grown, OWNER_ID, NOTIFIER_ID).find(op => op.collection === CARD_PAYMENTS).rules.updateRule.includes('@request.data.tip:isset = false'))
+})
+
+test('without a notifier card payments belong to the owner alone, and a later run without --notifier keeps it', () => {
+  const afterSchema = simulate(current(), planSchema(current()))
+  const ownerOnly = planRules(afterSchema, OWNER_ID).find(op => op.collection === CARD_PAYMENTS)
+  assert.deepEqual(ownerOnly.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+  // Only card payments still naming the notifier: dropping it silently is refused
+  const cardOnly = simulate(afterSchema, [{ op: 'setRules', collection: CARD_PAYMENTS, rules: { listRule: OWNER_OR_NOTIFIER } }])
+  assert.throws(() => planRules(cardOnly, OWNER_ID), new RegExp(`still allow the notifier ${NOTIFIER_ID}`))
 })

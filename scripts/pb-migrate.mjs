@@ -1,15 +1,16 @@
 // PocketBase 0.22 migration for categories, deals, stock, commissions (with items), print jobs, sale lines,
-// the convention calendar, gatcha prize categories and owner-only rules.
+// the convention calendar, gatcha prize categories, card payments and owner-only rules.
 //   npm run pb:migrate                 dry run: prints the plan, writes scripts/category-mapping.json
 //   npm run pb:migrate -- --apply      schema + seed (categories, deals) + category mapping + commission items (old rules stay)
 //   npm run pb:migrate -- --apply-rules [--owner <email>] [--notifier <email>]
 //                                      owner-only rules (run after the new app is deployed); --notifier also lets the
-//                                      reminder account read conventions and push subscriptions (needs --owner)
+//                                      reminder account read conventions, push subscriptions and card payments (needs --owner)
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import {
   ARTICLES,
   TRANSACTIONS,
+  CARD_PAYMENTS,
   CATEGORY_SEED,
   planSchema,
   planDealSeed,
@@ -103,7 +104,7 @@ async function loadMapping (articles) {
 }
 
 async function writeSnapshot () {
-  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions', ARTICLES, TRANSACTIONS])
+  const ours = new Set(['categories', 'deals', 'stock_movements', 'commissions', 'print_jobs', 'conventions', 'push_subscriptions', CARD_PAYMENTS, ARTICLES, TRANSACTIONS])
   const snapshot = (await listCollections()).filter(collection => ours.has(collection.name))
   await mkdir('pocketbase', { recursive: true })
   await writeFile(SNAPSHOT_FILE, `${JSON.stringify(snapshot, null, 2)}\n`)
@@ -199,8 +200,8 @@ async function migrateRules () {
   const { owner, notifier } = resolveAccounts(users, { owner: argValue('--owner'), notifier: notifierArg })
   console.log(`Owner: ${owner.email} (${owner.id})`)
   console.log(notifier
-    ? `Notifier: ${notifier.email} (${notifier.id}), may read conventions and push subscriptions`
-    : 'No --notifier: conventions and push subscriptions stay owner-only (the reminder job cannot read them)')
+    ? `Notifier: ${notifier.email} (${notifier.id}), may read conventions, push subscriptions and card payments`
+    : 'No --notifier: conventions, push subscriptions and card payments stay owner-only (reminders and card payments cannot work)')
   // users comes first, so sign-up is closed before the other collections are pinned
   const ops = planRules(await listCollections(), owner.id, notifier?.id)
   if (!ops.length) return console.log('Rules: up to date')
@@ -210,7 +211,7 @@ async function migrateRules () {
   }
   await writeSnapshot()
   console.log(notifier
-    ? `Rules applied. Only the owner can write now; the notifier ${notifier.email} can read conventions, mark reminders sent and remove dead push subscriptions.`
+    ? `Rules applied. Only the owner can write now; the notifier ${notifier.email} can read conventions, mark reminders sent, remove dead push subscriptions and record card payment results.`
     : 'Rules applied. Only the logged-in owner can write now.')
 }
 

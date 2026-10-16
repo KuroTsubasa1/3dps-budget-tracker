@@ -1,6 +1,9 @@
 // Pure planning for the PocketBase 0.22 schema migration (no network); see scripts/pb-migrate.mjs
 export const ARTICLES = 'budget_tracket_catalog'
 export const TRANSACTIONS = 'budget_tracker_transactions'
+export const CARD_PAYMENTS = 'card_payments'
+// The only card payment fields the server's notifier account may write
+export const CARD_NOTIFIER_FIELDS = ['status', 'sumup_checkout', 'sumup_transaction']
 // Pins writes to one record in "users" (collection and id). The id is validated because it is spliced into the rule text.
 // Combine it with other clauses only inside parentheses: `x || (<rule>)`.
 export const ownerRule = (ownerId) => {
@@ -70,12 +73,17 @@ const findField = (collection, name) => collection?.schema.find(field => field.n
 // push subscriptions; without one those two collections are the owner's alone.
 // The notifier only marks reminders sent, so its convention updates may set no field but `reminders`;
 // the field list comes from the live collection, so a field added later is refused to it as well.
-const rulesFor = (ownerId, notifierId = null, conventionFields = []) => {
+// Card payments work the same way: the notifier records SumUp's answer (status and SumUp's ids) and nothing else.
+const rulesFor = (ownerId, notifierId = null, conventionFields = [], cardFields = []) => {
   const O = ownerRule(ownerId)
   if (notifierId && notifierId === ownerId) throw new Error('The notifier must be a different account from the owner')
   const ON = notifierId ? `(${O}) || (${ownerRule(notifierId)})` : O
-  const untouched = conventionFields.filter(name => name !== 'reminders').map(name => `@request.data.${name}:isset = false`)
-  const notifierUpdate = notifierId ? `(${O}) || (${[ownerRule(notifierId), ...untouched].join(' && ')})` : O
+  // The owner may write anything; the notifier only an update that leaves every other field unset
+  const limitedUpdate = (fields, allowed) => {
+    if (!notifierId) return O
+    const untouched = fields.filter(name => !allowed.includes(name)).map(name => `@request.data.${name}:isset = false`)
+    return `(${O}) || (${[ownerRule(notifierId), ...untouched].join(' && ')})`
+  }
   return {
     users: { createRule: null },
     categories: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
@@ -85,8 +93,9 @@ const rulesFor = (ownerId, notifierId = null, conventionFields = []) => {
     [TRANSACTIONS]: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     commissions: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
-    conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: notifierUpdate, deleteRule: O },
-    push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON }
+    conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(conventionFields, ['reminders']), deleteRule: O },
+    push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON },
+    [CARD_PAYMENTS]: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(cardFields, CARD_NOTIFIER_FIELDS), deleteRule: O }
   }
 }
 
@@ -263,6 +272,33 @@ export function planSchema (collections) {
     })
   }
 
+  // Card payments on the SumUp Solo: one record per payment, written by the server's card routes
+  if (!byName(collections, CARD_PAYMENTS)) {
+    ops.push({
+      op: 'createCollection',
+      name: CARD_PAYMENTS,
+      body: {
+        name: CARD_PAYMENTS,
+        type: 'base',
+        schema: [
+          number('amount', { required: true, min: 0.01 }),
+          text('description'),
+          select('source', ['cart', 'home']),
+          // What booking the sale needs: the cart's lines, deals, stock movements and gatcha prizes, or the Home form's fields
+          json('cart', { maxSize: 200000 }),
+          select('status', ['pending', 'approved', 'declined', 'cancelled', 'failed'], true),
+          text('sumup_checkout'),
+          text('sumup_transaction'),
+          text('booked_transaction'),
+          // SHA-256 of the return URL's per-payment secret, never the secret itself
+          text('callback_token')
+        ],
+        indexes: [],
+        ...LOCKED
+      }
+    })
+  }
+
   const missing = []
   if (!findField(articles, 'category')) missing.push(relation('category', '@categories'))
   if (!findField(articles, 'stock')) missing.push(number('stock', { min: 0, noDecimal: true }))
@@ -285,6 +321,9 @@ export function planSchema (collections) {
     // Reports: the sale's lines and its time. Optional, because older records have neither
     if (!findField(transactions, 'items')) added.push(json('items'))
     if (!findField(transactions, 'sold_at')) added.push(date('sold_at'))
+    // Card or cash; empty for commission income, expenses and older entries. A card sale also names SumUp's transaction
+    if (!findField(transactions, 'payment_method')) added.push(select('payment_method', ['card', 'cash']))
+    if (!findField(transactions, 'sumup_transaction')) added.push(text('sumup_transaction'))
     if (added.length) ops.push({ op: 'addFields', collection: TRANSACTIONS, fields: added })
   }
   return ops
@@ -320,7 +359,7 @@ export function planCommissionItems (commissions, articles) {
 export function planRules (collections, ownerId, notifierId = null) {
   // Without --notifier an earlier notifier would be dropped silently, so name it instead
   if (!notifierId) {
-    for (const name of ['conventions', 'push_subscriptions']) {
+    for (const name of ['conventions', 'push_subscriptions', CARD_PAYMENTS]) {
       const collection = byName(collections, name)
       const rules = collection ? [collection.listRule, collection.viewRule, collection.updateRule, collection.deleteRule] : []
       for (const rule of rules) {
@@ -330,8 +369,8 @@ export function planRules (collections, ownerId, notifierId = null) {
       }
     }
   }
-  const conventionFields = (byName(collections, 'conventions')?.schema ?? []).map(field => field.name)
-  return Object.entries(rulesFor(ownerId, notifierId, conventionFields))
+  const fieldsOf = name => (byName(collections, name)?.schema ?? []).map(field => field.name)
+  return Object.entries(rulesFor(ownerId, notifierId, fieldsOf('conventions'), fieldsOf(CARD_PAYMENTS)))
     .filter(([name]) => byName(collections, name))
     .filter(([name, rules]) => Object.entries(rules).some(([key, value]) => byName(collections, name)[key] !== value))
     .map(([name, rules]) => ({ op: 'setRules', collection: name, rules }))
