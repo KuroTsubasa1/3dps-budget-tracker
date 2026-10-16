@@ -11,10 +11,12 @@
   - `scripts/lib/pb-plan.mjs`: the `card_payments` collection, the two sale fields and the notifier's field-limited update rule;
   - `server/utils/sumup.js` (new): **the only module that talks to SumUp**, plain `fetch`, errors reduced to a kind and a status;
   - `server/utils/cardSettings.js` (new) and `server/utils/cardPayments.js` (new): the settings, the charge, the callback check, *Cancel on terminal*, the status mapping and the single-flight backup poll, with SumUp and PocketBase passed in.
-- **Server** (Nitro, the existing pm2 process): `/api/card/{terminal,pair,unpair,charge,cancel}` (owner only, `requireCaller(…, { ownerOnly: true })`), `/api/card/callback/:id/:token` (per-payment token, constant time, body ignored) and `server/plugins/cardPayments.js`, which runs the 15 s backup poll. A charge creates the record with the owner's own token; the notifier records SumUp's result.
+- **Server** (Nitro, the existing pm2 process): `/api/card/{terminal,pair,unpair,charge,cancel,refresh}` (owner only, `requireCaller(…, { ownerOnly: true })`), `/api/card/callback/:id/:token` (per-payment token, constant time, body ignored) and `server/plugins/cardPayments.js`, which runs the 15 s backup poll.
+  - **Two levels of configuration:** card payments work with the four `SUMUP_*` keys, `POCKETBASE_URL` and `OWNER_ID`: the owner's routes create and update the payment with the **owner's own token**, and the open sheet's `refresh` (every 2 s) asks SumUp for the result. With the notifier login as well (the server), the return URL and the backup poll settle payments nobody is watching.
+  - A payment taken with a SumUp **sandbox** merchant (`sandbox: true`, asked once per process) is marked `[Sandbox] ` in SumUp and on the booked sale.
 - **App:**
   - `composables/useCheckout.js` (new): `bookSale(booking, payment)` books the transaction and the gatcha prizes;
-  - `composables/useCardPayments.js` (new): the card routes, `watch(id)` (reads the record every 2 s), `bookPayment`/`bookApproved` (exactly once, by the payment's record id);
+  - `composables/useCardPayments.js` (new): the card routes, `watch(id)` (refreshes the payment through the server every 2 s, reading the record when that fails), `bookPayment`/`bookApproved` (exactly once, by the payment's record id; pending payments are refreshed first);
   - `components/CardPaymentSheet.vue` (new), `components/CardTerminalSettings.vue` (new), the buttons in `components/CartPanel.vue` and `components/TransactionForm.vue`, and `components/reports/PaymentSplit.vue` (new).
 - **Owner tooling:** `scripts/sumup-sandbox-check.mjs` (`npm run sumup:sandbox-check`), run only by hand against a SumUp **sandbox** account.
 - **Tests:** unit tests inject a fake SumUp client and a fake store; e2e fakes `/api/card/*` in the browser (like `api.notifier` fakes the push routes) and runs against the in-memory fake PocketBase. Nothing automated ever reaches SumUp.
@@ -50,28 +52,30 @@
 2. ***Cancel on terminal* races a card that just went through.** Marking it cancelled would lose a paid sale. Expected: it ends `approved` and is booked; when there was nothing left to stop and SumUp has no result yet, the status stays pending for the poll. *Pinned in Task 4: "Cancel on terminal stops the checkout and records cancelled, or approved when the card went through".*
 3. **A forged or replayed callback** (wrong token, unknown id, a body claiming success). Expected: 404 for a wrong token or id, and the body is never read: the status always comes from SumUp's transactions API. *Pinned in Task 4: "the callback needs the payment's own token; anything else is no match", "the callback token is stored as its hash and compared in constant time"; Task 5, Step 9: the scratch-server smoke test.*
 4. **Amounts that are not clean euros** (`0.1 + 0.2`, `19.9`, `0`, `'12'`, `NaN`). Expected: the terminal gets whole cents (`30`, `1990`); zero, negative, non-numbers and absurd amounts are refused before anything reaches SumUp. *Pinned in Task 4: "a charge needs a known source, an amount above 0 and the booking, and always says Akinai sale".*
-5. **A payment that never settles** (SumUp never heard of it, SumUp unreachable, or the server restarted). Expected: the sheet asks after 120 s; the server keeps checking every 15 s, picks up pending payments after a restart, and marks one failed after 10 minutes unless SumUp says it is still pending. *Pinned in Task 4: "after 10 minutes a payment SumUp does not know is failed, unless SumUp says it is still pending", "the poll is single-flight, checks at most 10 a run, and forgets settled payments"; Task 7: "after 120 s without a result it asks; Keep waiting waits on and the payment still lands".*
+5. **A payment that never settles** (SumUp never heard of it, SumUp unreachable, the server restarted, or no notifier login on the laptop, so no return URL and no poll). Expected: the sheet asks after 120 s; its refresh keeps asking every 2 s and a failed refresh changes nothing; the next start refreshes pending payments; the server (with the notifier) keeps checking every 15 s and picks up pending payments after a restart; a payment is marked failed after 10 minutes unless SumUp says it is still pending. *Pinned in Task 4: "after 10 minutes a payment SumUp does not know is failed, unless SumUp says it is still pending", "refresh: … SumUp not answering is a safe 502 and changes nothing", "the poll is single-flight, checks at most 10 a run, and forgets settled payments"; Task 7: "after 120 s without a result it asks; Keep waiting waits on and the payment still lands", "one left pending (no return URL, no poll) is refreshed on the next start and booked once".*
 
 ## Decisions the spec leaves open
 
-1. **Who creates the record.** The spec's charge route creates the record "through the notifier", but its rules make create owner-only. The route creates it **with the caller's (owner's) own token** (`createPaymentAs`, a plain POST to PocketBase); the notifier only reads and records SumUp's answer. The create rule stays owner-only. **Flag:** this is how both spec lines hold at once.
+1. **Who writes the record.** The spec's charge route creates the record "through the notifier", but its rules make create owner-only. The owner's routes (charge, cancel, refresh) create and update it **with the caller's (owner's) own token** (`createOwnerStore`, PocketBase's REST API); updates still send only `status`, `sumup_checkout`, `sumup_transaction`. The notifier only reads and records SumUp's answer for the return URL and the poll. **Flag:** this is how both spec lines hold at once, and it is what lets the laptop work without the notifier.
 2. **The client reference.** SumUp generates the reader checkout's `client_transaction_id` itself, so our record id travels as the affiliate's `foreign_transaction_id` (required by SumUp's schema). SumUp's `client_transaction_id` is stored in `sumup_checkout`. Results are looked up by `client_transaction_id` when known, else by `foreign_transaction_id` = our record id (both are documented query parameters of the transactions API).
 3. **Status mapping** (SumUp transaction `status` → ours): `SUCCESSFUL` and `REFUNDED` → `approved`, `FAILED` → `declined`, `CANCELLED` → `cancelled`, `PENDING`, missing or unknown → still `pending`. `failed` is ours: SumUp refused or did not answer the charge, or 10 minutes passed without SumUp knowing the payment. **Flag:** SumUp's transactions API does not tell a declined card from other failures, and SumUp sends a terminated checkout as `failed`; a cancel **on the Solo itself** may therefore show `Card declined`. The sandbox checklist asks the owner to note which.
 4. **`sumup_transaction`** stores SumUp's `transaction_code` (the code the SumUp app and the receipt show), else SumUp's `id`.
 5. **What SumUp sees:** every checkout's description is `Akinai sale`, also from Home. Typed descriptions (which may name a customer) stay in Akinai.
 6. **The return URL** is `https://<host>/api/card/callback/<record id>/<token>`, where `<host>` is the request's host (nginx passes `Host $host`). A host SumUp cannot reach (localhost, an IP address, a name without a dot) gets no return URL; the backup poll finds the result. The record stores the token's **SHA-256**, not the token, so reading the record never gives the URL away; the comparison hashes both sides and uses `timingSafeEqual` (`sameText`).
 7. **Owner check.** The card routes use `requireCaller(event, settings, { ownerOnly: true })` (new option: the notifier is refused too). Like `/api/push/status`, `GET /api/card/terminal` answers `{ configured: false, paired: false, reader: null }` without a token when the server is not configured, so Settings can say so. The callback has no owner check (SumUp calls it).
-8. **"Configured"** needs the four `SUMUP_*` keys **and** `POCKETBASE_URL`, `OWNER_ID`, `NOTIFIER_EMAIL`, `NOTIFIER_PASSWORD` (the server records results with the notifier). `SUMUP_API_URL` must be https; the merchant code must be letters and digits. **Flag:** the spec says `nuxt dev` talks to the sandbox keys in the local `.env`. The code does, but only when the notifier login is in `.env` too, which the README forbids (it is production data). So the owner's in-app sandbox test runs **on the server with sandbox keys in `akinai.env` first** (README step 4), and `npm run sumup:sandbox-check` checks the keys, pairing and a checkout from the laptop with `SUMUP_*` only.
-9. **The backup poll** runs in the built server **and in `nuxt dev`** (unlike reminders): SumUp cannot reach localhost, so in dev the poll is the only way to get a result. It asks nobody while nothing is pending. Every 15 s; at most 10 payments and 12 s per run; a run asked for during a run follows it (the callback uses this); payments left pending by a restart are listed once at start. Ten minutes after a payment's `created`, no answer or "unknown to SumUp" means `failed`; only SumUp saying `PENDING` keeps it open.
-10. ***Cancel on terminal*.** After SumUp accepts the terminate (it has no confirmation), the server looks the transaction up once: `SUCCESSFUL` → `approved` (booked), otherwise `cancelled`. When there was nothing to stop (SumUp answers 400/404/409: the customer already paid or cancelled), it records only a result SumUp already knows and otherwise leaves the payment pending for the poll. An offline reader keeps it pending and answers `The terminal didn't answer. Check that it's on and online.`
-11. **Pairing.** The code is trimmed, spaces and dashes are removed and it is upper-cased; 8 or 9 letters and digits (SumUp's documented length), else `Enter the code the Solo shows` without asking SumUp. A code SumUp rejects (404, 400, 409, 422) → 400 `That code didn't work. Start pairing on the Solo again and enter the new code.` One terminal only: with one paired, pairing answers 409 `A terminal is already paired. Unpair it first.` The reader is named `Akinai`. A status SumUp cannot give shows `Status unknown`.
-12. **Copy the spec does not give:** `Sending to the terminal...`, `Nothing was booked`, `Done`, `Close`, `Card payment` (sheet title), `Card terminal` (Settings section, subtitle `The SumUp Solo that takes card payments`, list entry `SumUp Solo for card payments`), `Pairing code`, the hint `On the Solo, open Connections → API → Connect: it shows the code. The code expires after 5 minutes.`, `Terminal paired`, `Terminal unpaired`, `Loading the terminal...`, `Online`, `Offline`, `Status unknown`, `Pair the terminal in Settings first`, `SumUp didn't answer. Try again.`, `Could not save the payment. Try again.`, `Enter an amount above 0`, `Unknown payment source`, `Missing the sale to book`, `The cart is too large for one payment`, Reports cards `Takings by payment` / `Income by payment` with the note `Older entries and commission income count as Other`.
-13. **The sheet** cannot be dismissed while the terminal has the payment (`BottomSheet` gets a `dismissible` prop: no close button, backdrop and Escape do nothing); with a sheet over another (the card sheet over Home's form) only the top one takes the keyboard. `Paid ✓` stays until **Done**; then Home's form closes, and in the cart a gatcha's prize picker opens. The charge request gives up after 45 s, so the sheet never spins for ever.
-14. **The button offline.** The last known `configured`/`paired` flags are kept in `localStorage` (`akinai-card-terminal`, never the reader id), so *Pay by card* shows disabled with `Needs a connection` offline. The buttons reuse the terminal state for 5 minutes (each check asks SumUp twice); Settings always asks.
-15. **Limits:** at most 10 000 € per card payment; the stored booking at most 200 kB (the json field's `maxSize`).
-16. **Reports:** Market day and Money get a card listing Card, Cash and Other with their share in whole percent. **Flag:** the CSV export is unchanged.
-17. **Test sales.** The sandbox phase on the server books real entries into the production books (PocketBase is the same). **Flag:** the README tells the owner to delete them afterwards.
-18. **No SumUp SDK.** `@sumup/sdk` exists (pre-1.0), but Akinai needs seven calls; plain `fetch` adds no dependency, keeps every request visible in one 100-line module and is trivially faked in unit tests.
+8. **Configuration, decided by the owner: the in-app sandbox test runs on the laptop (`nuxt dev`).** `configured` (card payments work) needs the four `SUMUP_*` keys, `POCKETBASE_URL` and `OWNER_ID`; `SUMUP_API_URL` must be https, the merchant code letters and digits. `background` (return URL and backup poll) additionally needs `NOTIFIER_EMAIL` and `NOTIFIER_PASSWORD`; without them the callback answers 404, the poll does not start and the log says `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`, nothing worse. The laptop's `.env` may hold the sandbox `SUMUP_*` keys, `POCKETBASE_URL` and `OWNER_ID` (no secrets), **never the notifier login**; the README's rule is narrowed to the real secrets (`NOTIFIER_*`, `VAPID_*`, `CALENDAR_SECRET`, live SumUp keys).
+9. **Results without a return URL.** The open sheet calls `POST /api/card/refresh { id }` every 2 s: the server reads the payment with the owner's token, asks SumUp (same lookup and mapping as the poll) and writes a changed result with the owner's token. A refresh SumUp cannot answer is a safe 502 and changes nothing (the sheet then reads the record itself); the 10-minute rule applies as in the poll. **Flag (beyond the owner's brief):** on catalog/Home start and on `online`, the app also refreshes every still-pending payment before booking approved ones, so a payment whose sheet was closed on the laptop is settled and booked on the next start.
+10. **The backup poll** (with the notifier login) runs in the built server and in `nuxt dev` when configured so; it asks nobody while nothing is pending. Every 15 s; at most 10 payments and 12 s per run; a run asked for during a run follows it (the callback uses this); payments left pending by a restart are listed once at start. Ten minutes after a payment's `created`, no answer or "unknown to SumUp" means `failed`; only SumUp saying `PENDING` keeps it open.
+11. **Sandbox marker.** The server asks SumUp once per process whether the merchant is a sandbox (`GET /v1/merchants/{code}` → `sandbox: true`; a failed question counts as "no" and is asked again). A sandbox payment's `card_payments.description` and the booked sale's description get the prefix `[Sandbox] ` (the stored booking is marked at the charge), so the README can tell the owner exactly which test sales to delete.
+12. ***Cancel on terminal*.** After SumUp accepts the terminate (it has no confirmation), the server looks the transaction up once: `SUCCESSFUL` → `approved` (booked), otherwise `cancelled`. When there was nothing to stop (SumUp answers 400/404/409: the customer already paid or cancelled), it records only a result SumUp already knows and otherwise leaves the payment pending for the poll. An offline reader keeps it pending and answers `The terminal didn't answer. Check that it's on and online.`
+13. **Pairing.** The code is trimmed, spaces and dashes are removed and it is upper-cased; 8 or 9 letters and digits (SumUp's documented length), else `Enter the code the Solo shows` without asking SumUp. A code SumUp rejects (404, 400, 409, 422) → 400 `That code didn't work. Start pairing on the Solo again and enter the new code.` One terminal only: with one paired, pairing answers 409 `A terminal is already paired. Unpair it first.` The reader is named `Akinai`. A status SumUp cannot give shows `Status unknown`.
+14. **Copy the spec does not give:** `Sending to the terminal...`, `Nothing was booked`, `Done`, `Close`, `Card payment` (sheet title), `Card terminal` (Settings section, subtitle `The SumUp Solo that takes card payments`, list entry `SumUp Solo for card payments`), `Pairing code`, the hint `On the Solo, open Connections → API → Connect: it shows the code. The code expires after 5 minutes.`, `Terminal paired`, `Terminal unpaired`, `Loading the terminal...`, `Online`, `Offline`, `Status unknown`, `Pair the terminal in Settings first`, `SumUp didn't answer. Try again.`, `Could not save the payment. Try again.`, `Could not read the payment. Try again.`, `Unknown payment`, the `[Sandbox] ` prefix, `Enter an amount above 0`, `Unknown payment source`, `Missing the sale to book`, `The cart is too large for one payment`, Reports cards `Takings by payment` / `Income by payment` with the note `Older entries and commission income count as Other`.
+15. **The sheet** cannot be dismissed while the terminal has the payment (`BottomSheet` gets a `dismissible` prop: no close button, backdrop and Escape do nothing); with a sheet over another (the card sheet over Home's form) only the top one takes the keyboard. `Paid ✓` stays until **Done**; then Home's form closes, and in the cart a gatcha's prize picker opens. The charge request gives up after 45 s, so the sheet never spins for ever.
+16. **The button offline.** The last known `configured`/`paired` flags are kept in `localStorage` (`akinai-card-terminal`, never the reader id), so *Pay by card* shows disabled with `Needs a connection` offline. The buttons reuse the terminal state for 5 minutes (each check asks SumUp twice); Settings always asks.
+17. **Limits:** at most 10 000 € per card payment; the stored booking at most 200 kB (the json field's `maxSize`).
+18. **Reports:** Market day and Money get a card listing Card, Cash and Other with their share in whole percent. **Flag:** the CSV export is unchanged.
+19. **Test sales.** The laptop test books real entries into the production books (PocketBase is the same). **Flag:** they carry `[Sandbox] `, and the README tells the owner to delete them (sales, their stock movements, the card payments) afterwards.
+20. **No SumUp SDK.** `@sumup/sdk` exists (pre-1.0), but Akinai needs seven calls; plain `fetch` adds no dependency, keeps every request visible in one 100-line module and is trivially faked in unit tests.
 
 ## SumUp API shapes
 
@@ -81,7 +85,7 @@ Checked on 2026-10-16 against SumUp's public documentation (developer.sumup.com:
 |---|---|---|
 | Auth | `Authorization: Bearer <SUMUP_API_KEY>`, base `https://api.sumup.com` | docs |
 | Errors | `application/problem+json` `{ type, title, status, detail, instance? }`; reader offline: 422 with type `…/problem/reader-offline`, title `Reader Offline` (documented for terminate) | docs |
-| Merchant | `GET /v1/merchants/{merchant_code}` → `{ …, sandbox: boolean }` (sandbox check only) | docs |
+| Merchant | `GET /v1/merchants/{merchant_code}` → `{ …, sandbox: boolean }` (the `[Sandbox] ` marker and the sandbox check) | docs |
 | List readers | `GET /v0.1/merchants/{code}/readers` → `{ items: [{ id (30 chars, rdr_…), name, status: unknown/processing/paired/expired, device: { identifier, model: solo/virtual-solo }, … }] }` | docs |
 | Pair | `POST /v0.1/merchants/{code}/readers { pairing_code (8–9 chars), name }` → Reader; 404 no pending reader for the code; 409 not pending | docs |
 | Status | `GET …/readers/{id}/status` → `{ data: { status: ONLINE/OFFLINE, state, battery_level, … } }` | docs |
@@ -110,7 +114,7 @@ Checked on 2026-10-16 against SumUp's public documentation (developer.sumup.com:
   - `npx playwright test <files>` runs the `chromium` project (1280px) and `mobile` (Pixel 7). `mobile.spec.js` skips itself on `chromium`.
   - The fake PocketBase (`tests/e2e/fake-pocketbase.js`) holds exactly the posted body fields; records the app creates get `DEFAULTS`. Transactions posted by the app are in `api.posted`.
   - `context.setOffline(true/false)` fires the window `offline`/`online` events.
-  - The card routes are answered by `api.card` (Task 6): `api.pairTerminal()` configures the server with a paired Solo; a charge creates its `card_payments` record (`pay000000000001`, `pay000000000002`, …) in the fake PocketBase; `api.settleCard(status, sumupTransaction)` records SumUp's result on the latest one, as the callback or the poll would.
+  - The card routes are answered by `api.card` (Task 6): `api.pairTerminal()` configures the server with a paired Solo; a charge creates its `card_payments` record (`pay000000000001`, `pay000000000002`, …) in the fake PocketBase; `api.settleCard(status, sumupTransaction)` records SumUp's result on the latest one, as the server would; `refresh` answers the record as stored (`api.card.refreshes` counts the calls, `refreshStatus` fails them, `onRefresh(payment)` plays SumUp's answer).
 - **Modules:** `utils/` and `server/utils/` are plain ES modules with relative `.js` imports, so `node --test` loads them. Vue files import them as `~/utils/...`. Components under `components/` (top level) are auto-imported; `components/reports/*` are imported explicitly.
 - **Snapshot:** `pocketbase/schema.json` is the live snapshot. The migration tests hold before and after the owner's `--apply` refreshes it.
 
@@ -129,7 +133,7 @@ Checked on 2026-10-16 against SumUp's public documentation (developer.sumup.com:
 | `server/utils/cardSettings.js`, `server/utils/sumup.js`, `tests/unit/sumup.test.js` | settings and the SumUp client | 4 |
 | `server/utils/cardPayments.js`, `server/utils/notifier.js`, `tests/unit/card-payments.test.js`, `tests/unit/reminder-job.test.js` | charge, callback, cancel, poll | 4 |
 | `server/utils/requireCaller.js`, `tests/unit/require-caller.test.js` | `ownerOnly` | 5 |
-| `server/utils/card.js`, `server/api/card/*.js`, `server/api/card/callback/[id]/[token].post.js`, `server/plugins/cardPayments.js` | the routes and the poll | 5 |
+| `server/utils/card.js`, `server/api/card/*.js` (incl. `refresh.post.js`), `server/api/card/callback/[id]/[token].post.js`, `server/plugins/cardPayments.js` | the routes, the refresh and the poll | 5 |
 | `scripts/sumup-sandbox-check.mjs`, `package.json` | the owner's sandbox check | 5 |
 | `composables/useCardPayments.js`, `components/CardTerminalSettings.vue`, `pages/settings.vue`, `utils/icons.js` | the card routes in the app, Settings → Card terminal | 6 |
 | `tests/e2e/fake-pocketbase.js`, `tests/e2e/fixtures.js`, `tests/e2e/card-terminal.spec.js`, `tests/e2e/mobile.spec.js` | faked card routes, Settings e2e | 6 |
@@ -1333,9 +1337,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `notifierSettings(env)` (`server/utils/notifierSettings.js`), `sameText(a, b)` (`server/utils/access.js`), the notifier's `call()` wrapper.
 - Produces:
-  - `cardSettings(env) → { pocketbaseUrl, ownerId, email, password, apiKey, merchantCode, affiliateKey, appId, apiUrl, configured, missing }` (`missing` lists names only);
+  - `cardSettings(env) → { pocketbaseUrl, ownerId, email, password, apiKey, merchantCode, affiliateKey, appId, apiUrl, configured, background, missing, backgroundMissing }` (`configured`: SumUp keys, `POCKETBASE_URL`, `OWNER_ID`; `background`: also the notifier login; the lists hold names only);
   - `createSumUpClient({ apiKey, merchantCode, apiUrl, affiliate: { appId, key }, fetch?, timeoutMs? })` with `getMerchant()`, `listReaders()`, `createReader({ pairingCode, name })`, `deleteReader(id)`, `readerStatus(id)`, `checkout(readerId, { cents, description, returnUrl, foreignId }) → { client_transaction_id }`, `terminate(readerId)`, `findTransaction({ clientTransactionId?, foreignTransactionId? }) → transaction | null`; errors are `SumUpError { kind, status }`; `isUnreachable(error)`, `isSandboxMerchant(merchant)`;
-  - from `server/utils/cardPayments.js`: the copy constants (`NOT_CONFIGURED`, `TERMINAL_UNREACHABLE`, `PAYMENT_FAILED`, `SUMUP_UNREACHABLE`, …), `CARD_POLL_MS`, `GIVE_UP_MS`, `READER_NAME`, `PAIRING_CODE`, `chargeInput(body)`, `statusFromTransaction`, `sumupTransactionOf`, `callbackUrl(host, id, token)`, `hashToken`, `tokenMatches`, `normalisePairingCode`, `terminalStatus({ sumup })`, `pairTerminal({ sumup, code })`, `unpairTerminal({ sumup })`, `startCharge({ input, sumup, store, createPayment, host, newToken?, log? }) → { id }`, `checkPayment(…)`, `callbackMatches({ store, id, token })`, `cancelCharge({ store, sumup, id }) → { status }`, `createCardPoller({ store, sumup, … }) → { track, run, loadPending, tracked }`, `createPaymentAs({ pocketbaseUrl, authorization, data, fetch? })`. Errors meant for the routes carry `{ statusCode, statusMessage }`;
+  - from `server/utils/cardPayments.js`: the copy constants (`NOT_CONFIGURED`, `TERMINAL_UNREACHABLE`, `PAYMENT_FAILED`, `SUMUP_UNREACHABLE`, …), `CARD_POLL_MS`, `GIVE_UP_MS`, `READER_NAME`, `PAIRING_CODE`, `chargeInput(body)`, `statusFromTransaction`, `sumupTransactionOf`, `callbackUrl(host, id, token)`, `hashToken`, `tokenMatches`, `normalisePairingCode`, `terminalStatus({ sumup })`, `pairTerminal({ sumup, code })`, `unpairTerminal({ sumup })`, `markSandbox(input)`, `createSandboxCheck(sumup) → () => Promise<boolean>`, `startCharge({ input, sumup, store, host, isSandbox?, newToken?, log? }) → { id }`, `checkPayment(…) → status`, `refreshPayment({ store, sumup, id, now?, log? }) → { payment }` (no `callback_token`; 404 unknown or not visible; safe 502 when SumUp does not answer, record unchanged), `callbackMatches({ store, id, token })`, `cancelCharge({ store, sumup, id }) → { status }`, `createCardPoller({ store, sumup, … }) → { track, run, loadPending, tracked }`, `createOwnerStore({ pocketbaseUrl, authorization, fetch? }) → { createCardPayment, getCardPayment, updateCardPayment }` (the caller's token; updates send only the three SumUp fields). A card payment store is `{ createCardPayment?, getCardPayment, updateCardPayment, listPendingCardPayments? }`: the owner's or the notifier's. Errors meant for the routes carry `{ statusCode, statusMessage }`;
   - the notifier gains `getCardPayment(id)`, `listPendingCardPayments()`, `updateCardPayment(id, patch)` (sends only `status`, `sumup_checkout`, `sumup_transaction`).
 
 - [ ] **Step 1: Write the failing unit tests**
@@ -1469,16 +1473,25 @@ const ENV = {
   SUMUP_AFFILIATE_APP_ID: 'com.example.akinai'
 }
 
-test('card payments are configured with the four SumUp keys and the notifier login; missing lists names only', () => {
+test('card payments are configured with the four SumUp keys, POCKETBASE_URL and OWNER_ID; missing lists names only', () => {
   const settings = cardSettings(ENV)
-  assert.equal(settings.configured, true)
+  assert.deepEqual([settings.configured, settings.background], [true, true])
   assert.equal(settings.apiUrl, 'https://api.sumup.com')
-  assert.deepEqual(settings.missing, [])
+  assert.deepEqual([settings.missing, settings.backgroundMissing], [[], []])
   assert.equal(cardSettings({ ...ENV, SUMUP_API_URL: 'https://api.sumup.test/' }).apiUrl, 'https://api.sumup.test')
 
   const none = cardSettings({})
-  assert.equal(none.configured, false)
-  assert.deepEqual(none.missing, ['SUMUP_API_KEY', 'SUMUP_MERCHANT_CODE', 'SUMUP_AFFILIATE_KEY', 'SUMUP_AFFILIATE_APP_ID', 'POCKETBASE_URL', 'OWNER_ID', 'NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD'])
+  assert.deepEqual([none.configured, none.background], [false, false])
+  assert.deepEqual(none.missing, ['SUMUP_API_KEY', 'SUMUP_MERCHANT_CODE', 'SUMUP_AFFILIATE_KEY', 'SUMUP_AFFILIATE_APP_ID', 'POCKETBASE_URL', 'OWNER_ID'])
+})
+
+test('without the notifier login card payments still work, but the return URL and the poll are off', () => {
+  // The laptop's nuxt dev: sandbox keys, POCKETBASE_URL and OWNER_ID, never the notifier login
+  const laptop = cardSettings({ ...ENV, NOTIFIER_EMAIL: '', NOTIFIER_PASSWORD: undefined })
+  assert.deepEqual([laptop.configured, laptop.background], [true, false])
+  assert.deepEqual(laptop.backgroundMissing, ['NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD'])
+  // Background work needs card payments configured first
+  assert.equal(cardSettings({ ...ENV, SUMUP_API_KEY: '' }).background, false)
 })
 
 test('the API key never goes over plain http, and the merchant code must be letters and digits', () => {
@@ -1511,7 +1524,10 @@ import {
   callbackMatches,
   cancelCharge,
   createCardPoller,
-  createPaymentAs
+  createOwnerStore,
+  refreshPayment,
+  markSandbox,
+  createSandboxCheck
 } from '../../server/utils/cardPayments.js'
 import { SumUpError } from '../../server/utils/sumup.js'
 import { CARD_NOTIFIER_FIELDS as RULE_FIELDS } from '../../scripts/lib/pb-plan.mjs'
@@ -1543,12 +1559,18 @@ function fakeSumUp ({ readers = [READER], transactions = {}, fail = {} } = {}) {
   }
 }
 
-// The notifier's card payment calls on an in-memory collection; updates may only touch the notifier's fields
+// A card payment store (the owner's or the notifier's) on an in-memory collection; updates may only touch
+// the notifier's fields. A create answers the record as pay000000000001 and keeps what was sent in `created`.
 function fakeStore (payments = []) {
   const db = new Map(payments.map(payment => [payment.id, structuredClone(payment)]))
   return {
     db,
     updates: [],
+    created: [],
+    async createCardPayment (data) {
+      this.created.push(data)
+      return { id: 'pay000000000001', created: '2026-10-16 10:00:00.000Z', ...data }
+    },
     async getCardPayment (id) {
       if (!db.has(id)) throw Object.assign(new Error('Not found'), { status: 404 })
       return structuredClone(db.get(id))
@@ -1635,20 +1657,14 @@ test('unpairing deletes the paired reader, and a reader already gone is fine', a
   await unpairTerminal({ sumup: fakeSumUp({ fail: { [`deleteReader ${READER.id}`]: new SumUpError('not_found', 404) } }) })
 })
 
-// What a charge's owner create stores: the record the fake PocketBase gives back
-const owner = () => {
-  const created = []
-  return { created, createPayment: async (data) => { created.push(data); return { id: 'pay000000000001', created: '2026-10-16 10:00:00.000Z', ...data } } }
-}
 const INPUT = chargeInput({ source: 'cart', amount: 19.9, cart: CART })
 
 test('a charge creates the pending record as the owner, then sends the checkout with the return URL', async () => {
   const sumup = fakeSumUp()
   const store = fakeStore([payment('pay000000000001')])
-  const { created, createPayment } = owner()
-  const result = await startCharge({ input: INPUT, sumup, store, createPayment, host: 'akinai.lasseharm.space', newToken: () => 'token-1', log: silent })
+  const result = await startCharge({ input: INPUT, sumup, store, host: 'akinai.lasseharm.space', newToken: () => 'token-1', log: silent })
   assert.deepEqual(result, { id: 'pay000000000001' })
-  assert.deepEqual(created, [{ amount: 19.9, description: 'Akinai sale', source: 'cart', cart: CART, status: 'pending', callback_token: hashToken('token-1') }])
+  assert.deepEqual(store.created, [{ amount: 19.9, description: 'Akinai sale', source: 'cart', cart: CART, status: 'pending', callback_token: hashToken('token-1') }])
   assert.deepEqual(sumup.calls, ['listReaders', `checkout ${READER.id}`])
   assert.deepEqual(store.updates, [['pay000000000001', { sumup_checkout: 'ctx-1' }]])
 })
@@ -1657,21 +1673,21 @@ test('a terminal that is offline or does not answer fails the payment with the t
   for (const kind of ['offline', 'timeout', 'unreachable']) {
     const store = fakeStore([payment('pay000000000001')])
     const sumup = fakeSumUp({ fail: { [`checkout ${READER.id}`]: new SumUpError(kind, kind === 'offline' ? 422 : 0) } })
-    await assert.rejects(startCharge({ input: INPUT, sumup, store, ...owner(), host: 'akinai.lasseharm.space', log: silent }),
+    await assert.rejects(startCharge({ input: INPUT, sumup, store, host: 'akinai.lasseharm.space', log: silent }),
       error => error.statusCode === 502 && error.statusMessage === "The terminal didn't answer. Check that it's on and online.")
     assert.equal(store.db.get('pay000000000001').status, 'failed')
   }
   const store = fakeStore([payment('pay000000000001')])
-  await assert.rejects(startCharge({ input: INPUT, sumup: fakeSumUp({ fail: { [`checkout ${READER.id}`]: new SumUpError('invalid', 400) } }), store, ...owner(), host: 'x.example', log: silent }),
+  await assert.rejects(startCharge({ input: INPUT, sumup: fakeSumUp({ fail: { [`checkout ${READER.id}`]: new SumUpError('invalid', 400) } }), store, host: 'x.example', log: silent }),
     error => error.statusCode === 502 && error.statusMessage === "The payment didn't go through")
   assert.equal(store.db.get('pay000000000001').status, 'failed')
 })
 
 test('no paired terminal, or SumUp unreachable before the start, creates no record', async () => {
   for (const sumup of [fakeSumUp({ readers: [] }), fakeSumUp({ fail: { listReaders: new SumUpError('timeout') } })]) {
-    const { created, createPayment } = owner()
-    await assert.rejects(startCharge({ input: INPUT, sumup, store: fakeStore(), createPayment, host: 'x.example', log: silent }), error => [409, 502].includes(error.statusCode))
-    assert.deepEqual(created, [])
+    const store = fakeStore()
+    await assert.rejects(startCharge({ input: INPUT, sumup, store, host: 'x.example', log: silent }), error => [409, 502].includes(error.statusCode))
+    assert.deepEqual(store.created, [])
   }
 })
 
@@ -1790,18 +1806,85 @@ test('the poll gives up on a run that takes too long, and the next run starts fr
   assert.equal(poller.tracked.size, 1)
 })
 
-test('the owner\'s create goes to PocketBase with the caller\'s token, and a refusal throws its status', async () => {
+test('the owner\'s store talks to PocketBase with the caller\'s token and sends only SumUp\'s fields on update', async () => {
   const requests = []
   const fetch = async (url, options) => {
-    requests.push({ url, options })
+    requests.push({ url, method: options.method, authorization: options.headers.Authorization, body: options.body ? JSON.parse(options.body) : undefined })
     return { ok: true, json: async () => ({ id: 'pay000000000001' }) }
   }
-  const record = await createPaymentAs({ pocketbaseUrl: 'https://pb.example', authorization: 'a.b.c', data: { amount: 8 }, fetch })
-  assert.equal(record.id, 'pay000000000001')
-  assert.equal(requests[0].url, 'https://pb.example/api/collections/card_payments/records')
-  assert.equal(requests[0].options.headers.Authorization, 'a.b.c')
-  assert.deepEqual(JSON.parse(requests[0].options.body), { amount: 8 })
-  await assert.rejects(createPaymentAs({ pocketbaseUrl: 'https://pb.example', authorization: 'a.b.c', data: {}, fetch: async () => ({ ok: false, status: 400 }) }), error => error.status === 400)
+  const store = createOwnerStore({ pocketbaseUrl: 'https://pb.example', authorization: 'a.b.c', fetch })
+  assert.equal((await store.createCardPayment({ amount: 8 })).id, 'pay000000000001')
+  await store.getCardPayment('pay000000000001')
+  await store.updateCardPayment('pay000000000001', { status: 'approved', sumup_transaction: 'TX1', booked_transaction: 'x' })
+  const records = 'https://pb.example/api/collections/card_payments/records'
+  assert.deepEqual(requests, [
+    { url: records, method: 'POST', authorization: 'a.b.c', body: { amount: 8 } },
+    { url: `${records}/pay000000000001`, method: 'GET', authorization: 'a.b.c', body: undefined },
+    { url: `${records}/pay000000000001`, method: 'PATCH', authorization: 'a.b.c', body: { status: 'approved', sumup_transaction: 'TX1' } }
+  ])
+  const refusing = createOwnerStore({ pocketbaseUrl: 'https://pb.example', authorization: 'a.b.c', fetch: async () => ({ ok: false, status: 400 }) })
+  await assert.rejects(refusing.createCardPayment({}), error => error.status === 400)
+})
+
+test('refresh records SumUp\'s result for the open sheet and answers the payment without its token', async () => {
+  const store = fakeStore([payment('pay000000000001')])
+  const sumup = fakeSumUp({ transactions: { pay000000000001: { id: 'u', transaction_code: 'TEENSK4W2K', status: 'SUCCESSFUL' } } })
+  const { payment: changed } = await refreshPayment({ store, sumup, id: 'pay000000000001', now: START + 4000, log: silent })
+  assert.deepEqual([changed.status, changed.sumup_transaction, changed.cart], ['approved', 'TEENSK4W2K', CART])
+  assert.ok(!('callback_token' in changed))
+  assert.deepEqual(store.updates, [['pay000000000001', { status: 'approved', sumup_transaction: 'TEENSK4W2K' }]])
+  // Settled: asked again, nothing is written and SumUp is not asked
+  const again = await refreshPayment({ store, sumup, id: 'pay000000000001', now: START + 6000, log: silent })
+  assert.equal(again.payment.status, 'approved')
+  assert.equal(store.updates.length, 1)
+  assert.equal(sumup.calls.length, 1)
+})
+
+test('refresh leaves an unchanged payment alone and keeps the 10-minute rule', async () => {
+  const store = fakeStore([payment('pay000000000001')])
+  assert.equal((await refreshPayment({ store, sumup: fakeSumUp(), id: 'pay000000000001', now: START + 2000, log: silent })).payment.status, 'pending')
+  assert.deepEqual(store.updates, [])
+  assert.equal((await refreshPayment({ store, sumup: fakeSumUp(), id: 'pay000000000001', now: START + GIVE_UP_MS, log: silent })).payment.status, 'failed')
+})
+
+test('refresh: an unknown id or one the caller may not see is 404; SumUp not answering is a safe 502 and changes nothing', async () => {
+  const store = fakeStore([payment('pay000000000001')])
+  await assert.rejects(refreshPayment({ store, sumup: fakeSumUp(), id: 'pay000000000009', log: silent }), error => error.statusCode === 404)
+  await assert.rejects(refreshPayment({ store, sumup: fakeSumUp(), id: '../users', log: silent }), error => error.statusCode === 404)
+  // Not the owner: PocketBase 0.22 answers the owner-only record as 404 (or 403)
+  const notOwner = { ...fakeStore(), getCardPayment: async () => { throw Object.assign(new Error('Forbidden'), { status: 403 }) } }
+  await assert.rejects(refreshPayment({ store: notOwner, sumup: fakeSumUp(), id: 'pay000000000001', log: silent }), error => error.statusCode === 404)
+  const failing = fakeSumUp({ fail: { 'findTransaction pay000000000001': new SumUpError('timeout') } })
+  await assert.rejects(refreshPayment({ store, sumup: failing, id: 'pay000000000001', now: START + GIVE_UP_MS, log: silent }),
+    error => error.statusCode === 502 && error.statusMessage === "SumUp didn't answer. Try again." && !/timeout/.test(error.statusMessage))
+  assert.deepEqual(store.updates, [])
+  assert.equal(store.db.get('pay000000000001').status, 'pending')
+})
+
+test('a sandbox merchant\'s payment is marked [Sandbox] in SumUp and on the booked sale, once', async () => {
+  const marked = markSandbox(INPUT)
+  assert.equal(marked.description, '[Sandbox] Akinai sale')
+  assert.equal(marked.cart.description, `[Sandbox] ${CART.description}`)
+  assert.deepEqual(markSandbox(marked), marked)
+  assert.equal(INPUT.cart.description, CART.description, 'the input is not changed')
+
+  const store = fakeStore([payment('pay000000000001')])
+  const sumup = fakeSumUp()
+  await startCharge({ input: INPUT, sumup, store, host: 'x.example', isSandbox: async () => true, log: silent })
+  assert.equal(store.created[0].description, '[Sandbox] Akinai sale')
+  assert.equal(store.created[0].cart.description, `[Sandbox] ${CART.description}`)
+})
+
+test('whether the merchant is a sandbox is asked once; a failed question is asked again', async () => {
+  let asked = 0
+  let answer = () => { throw new SumUpError('timeout') }
+  const check = createSandboxCheck({ getMerchant: async () => { asked++; return answer() } })
+  assert.equal(await check(), false)
+  answer = () => ({ sandbox: true })
+  assert.equal(await check(), true)
+  assert.equal(await check(), true)
+  assert.equal(asked, 2)
+  assert.equal(await createSandboxCheck({ getMerchant: async () => ({ sandbox: false }) })(), false)
 })
 ```
 
@@ -1841,16 +1924,20 @@ Create `server/utils/cardSettings.js`:
 ```js
 // Server-only settings for card payments on the SumUp Solo, read from the environment: akinai.env on the
 // server (live keys), the local .env in `nuxt dev` (sandbox keys). None of them ever gets a NUXT_PUBLIC_
-// prefix, and none reaches a log or a response; `missing` lists names only.
+// prefix, and none reaches a log or a response; `missing` and `backgroundMissing` list names only.
 import { notifierSettings } from './notifierSettings.js'
 
 const SUMUP_KEYS = ['SUMUP_API_KEY', 'SUMUP_MERCHANT_CODE', 'SUMUP_AFFILIATE_KEY', 'SUMUP_AFFILIATE_APP_ID']
-// The server records SumUp's answers on the payment with the notifier account, and the routes are the owner's
-const NOTIFIER_KEYS = ['POCKETBASE_URL', 'OWNER_ID', 'NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD']
+// The owner's routes check the owner against PocketBase and write the payment with the owner's own token
+const OWNER_KEYS = ['POCKETBASE_URL', 'OWNER_ID']
+// SumUp's return URL and the 15 s backup poll run without the owner, as the notifier account
+const NOTIFIER_KEYS = ['NOTIFIER_EMAIL', 'NOTIFIER_PASSWORD']
 export const DEFAULT_SUMUP_API_URL = 'https://api.sumup.com'
 // The merchant code is spliced into SumUp's URL paths
 const MERCHANT_CODE = /^[A-Za-z0-9]{1,32}$/
 
+// configured: card payments work (the app's refresh finds each result while its sheet is open).
+// background: the return URL and the backup poll work too (they need the notifier login).
 export function cardSettings (env = process.env) {
   const notifier = notifierSettings(env)
   const value = key => (typeof env[key] === 'string' ? env[key].trim() : '')
@@ -1859,8 +1946,9 @@ export function cardSettings (env = process.env) {
     ...SUMUP_KEYS.filter(key => !value(key) || (key === 'SUMUP_MERCHANT_CODE' && !MERCHANT_CODE.test(value(key)))),
     // The API key never goes over plain http
     ...(/^https:\/\/[^/]+$/.test(apiUrl) ? [] : ['SUMUP_API_URL']),
-    ...NOTIFIER_KEYS.filter(key => notifier.missing.includes(key))
+    ...OWNER_KEYS.filter(key => notifier.missing.includes(key))
   ]
+  const backgroundMissing = NOTIFIER_KEYS.filter(key => !value(key))
   return {
     pocketbaseUrl: notifier.pocketbaseUrl,
     ownerId: notifier.ownerId,
@@ -1872,7 +1960,9 @@ export function cardSettings (env = process.env) {
     appId: value('SUMUP_AFFILIATE_APP_ID'),
     apiUrl,
     configured: missing.length === 0,
-    missing
+    background: missing.length === 0 && backgroundMissing.length === 0,
+    missing,
+    backgroundMissing
   }
 }
 ```
@@ -1977,7 +2067,7 @@ export function createSumUpClient ({ apiKey, merchantCode, apiUrl = 'https://api
 ```
 
 Run: `node --test tests/unit/sumup.test.js`
-Expected: `pass 9`, `fail 0`.
+Expected: `pass 10`, `fail 0`.
 
 - [ ] **Step 4: Write the card payment rules**
 
@@ -1985,8 +2075,8 @@ Create `server/utils/cardPayments.js`:
 
 ```js
 // Card payments on the SumUp Solo: what the card routes and the backup poll do, with SumUp (`sumup`, see
-// sumup.js), the notifier's PocketBase client (`store`) and the owner's own create (`createPayment`) passed in,
-// so the unit tests run against fakes and never reach SumUp.
+// sumup.js) and a card payment store passed in: the owner's own (createOwnerStore, for the owner's routes)
+// or the notifier's (for the return URL and the poll). The unit tests run against fakes and never reach SumUp.
 import { createHash, randomBytes } from 'node:crypto'
 import { sameText } from './access.js'
 import { isUnreachable } from './sumup.js'
@@ -1996,6 +2086,8 @@ export const CARD_PAYMENTS = 'card_payments'
 export const CARD_NOTIFIER_FIELDS = ['status', 'sumup_checkout', 'sumup_transaction']
 // What SumUp shows for the sale, also in the SumUp app
 export const SALE_DESCRIPTION = 'Akinai sale'
+// Payments with a SumUp sandbox merchant are marked, in SumUp and on the booked sale, so test sales are easy to find and delete
+export const SANDBOX_PREFIX = '[Sandbox] '
 export const READER_NAME = 'Akinai'
 export const CARD_POLL_MS = 15_000
 // A payment SumUp knows nothing about this long after it started is given up as failed
@@ -2060,6 +2152,28 @@ export function statusFromTransaction (transaction) {
 // The id the SumUp app and the receipt show (transaction_code), else SumUp's internal id
 export const sumupTransactionOf = transaction => String(transaction?.transaction_code || transaction?.id || '')
 
+// A sandbox payment: `[Sandbox] ` before the description SumUp shows and before the booked sale's
+// description (the stored booking's). Marking twice changes nothing.
+export function markSandbox (input) {
+  const mark = text => (String(text ?? '').startsWith(SANDBOX_PREFIX) ? String(text ?? '') : `${SANDBOX_PREFIX}${text ?? ''}`)
+  return { ...input, description: mark(input.description), cart: { ...input.cart, description: mark(input.cart.description) } }
+}
+
+// Whether the merchant is a SumUp sandbox (Merchant.sandbox), asked once per process. A failed question is
+// asked again next time and counts as "not a sandbox" meanwhile.
+export function createSandboxCheck (sumup) {
+  let known = null
+  return async () => {
+    if (known !== null) return known
+    try {
+      known = (await sumup.getMerchant())?.sandbox === true
+      return known
+    } catch {
+      return false
+    }
+  }
+}
+
 // The return URL SumUp calls when the payment ends: https on the host the app was opened on. A host SumUp
 // cannot reach (localhost, an IP address, a name without a dot) gets none, and the backup poll finds the result.
 export function callbackUrl (host, id, token) {
@@ -2119,8 +2233,9 @@ export async function unpairTerminal ({ sumup }) {
 }
 
 // POST /api/card/charge: the record (as the owner, `pending`), then the checkout on the Solo. A SumUp error
-// or no answer leaves the record `failed`; nothing is booked then.
-export async function startCharge ({ input, sumup, store, createPayment, host, newToken = randomToken, log = console }) {
+// or no answer leaves the record `failed`; nothing is booked then. A sandbox merchant's payment is marked.
+export async function startCharge ({ input: plain, sumup, store, host, isSandbox = async () => false, newToken = randomToken, log = console }) {
+  const input = (await isSandbox()) ? markSandbox(plain) : plain
   let reader
   try {
     reader = await pairedReader(sumup)
@@ -2131,7 +2246,7 @@ export async function startCharge ({ input, sumup, store, createPayment, host, n
   const token = newToken()
   let record
   try {
-    record = await createPayment({ amount: input.amount, description: input.description, source: input.source, cart: input.cart, status: 'pending', callback_token: hashToken(token) })
+    record = await store.createCardPayment({ amount: input.amount, description: input.description, source: input.source, cart: input.cart, status: 'pending', callback_token: hashToken(token) })
   } catch {
     throw refuse(502, 'Could not save the payment. Try again.')
   }
@@ -2149,31 +2264,54 @@ export async function startCharge ({ input, sumup, store, createPayment, host, n
   return { id: record.id }
 }
 
-// Asks SumUp for one pending payment's result and records it. Returns the payment's status afterwards.
-// Ten minutes after the start a payment SumUp does not report as pending (unknown to SumUp, or no answer)
-// is given up as failed.
-export async function checkPayment ({ store, sumup, id, now = Date.now(), log = console }) {
+// Asks SumUp for one pending payment's result and records it. Resolves { status, payment } afterwards
+// (the payment as stored now). Ten minutes after the start a payment SumUp does not report as pending
+// (unknown to SumUp, or no answer) is given up as failed. `strict`: SumUp not answering throws a safe 502
+// and changes nothing (the app's refresh; the poll keeps the 10-minute rule).
+async function settlePayment ({ store, sumup, id, now, log, strict }) {
   const payment = await store.getCardPayment(id)
-  if (payment.status !== 'pending') return payment.status
+  if (payment.status !== 'pending') return { status: payment.status, payment }
   let transaction
   let asked = true
   try {
     transaction = await sumup.findTransaction({ clientTransactionId: payment.sumup_checkout || '', foreignTransactionId: payment.id })
   } catch {
+    if (strict) throw refuse(502, SUMUP_UNREACHABLE)
     asked = false
   }
   const status = statusFromTransaction(transaction)
   if (status === 'pending') {
     const sumupSaysPending = asked && !!transaction
-    if (sumupSaysPending || !(now - createdAt(payment) >= GIVE_UP_MS)) return 'pending'
+    if (sumupSaysPending || !(now - createdAt(payment) >= GIVE_UP_MS)) return { status: 'pending', payment }
     await store.updateCardPayment(id, { status: 'failed' })
     log.info(`[card] ${id} failed: no result from SumUp after 10 minutes`)
-    return 'failed'
+    return { status: 'failed', payment: { ...payment, status: 'failed' } }
   }
-  const sumupTransaction = sumupTransactionOf(transaction)
-  await store.updateCardPayment(id, { status, sumup_transaction: sumupTransaction })
-  log.info(`[card] ${id} ${status}${sumupTransaction ? ` (${sumupTransaction})` : ''}`)
-  return status
+  const patch = { status, sumup_transaction: sumupTransactionOf(transaction) }
+  await store.updateCardPayment(id, patch)
+  log.info(`[card] ${id} ${status}${patch.sumup_transaction ? ` (${patch.sumup_transaction})` : ''}`)
+  return { status, payment: { ...payment, ...patch } }
+}
+
+export async function checkPayment ({ store, sumup, id, now = Date.now(), log = console }) {
+  return (await settlePayment({ store, sumup, id, now, log, strict: false })).status
+}
+
+// POST /api/card/refresh: the open sheet asks every 2 s, with the owner's own store, so a result arrives
+// even without the return URL and the poll (nuxt dev, or no notifier login). Same lookup, mapping and
+// 10-minute rule as the poll. Answers the payment without its callback token.
+export async function refreshPayment ({ store, sumup, id, now = Date.now(), log = console }) {
+  if (!RECORD_ID.test(String(id ?? ''))) throw refuse(404, 'Unknown payment')
+  try {
+    await store.getCardPayment(id)
+  } catch (error) {
+    // PocketBase 0.22 answers a record the caller may not see as 404
+    if (error?.status === 404 || error?.status === 403) throw refuse(404, 'Unknown payment')
+    throw refuse(502, 'Could not read the payment. Try again.')
+  }
+  const { payment } = await settlePayment({ store, sumup, id, now, log, strict: true })
+  const { callback_token: secret, ...visible } = payment
+  return { payment: visible }
 }
 
 // POST /api/card/callback/:id/:token: true when the token is the payment's. The body is never read.
@@ -2273,17 +2411,27 @@ export function createCardPoller ({ store, sumup, log = console, capMs = POLL_RU
   return { track, run, loadPending, tracked }
 }
 
-// The owner's own create: POST to PocketBase with the caller's token, so the collection's create rule
-// (owner only) applies. The token goes to PocketBase only.
-export async function createPaymentAs ({ pocketbaseUrl, authorization, data, fetch = globalThis.fetch }) {
-  const response = await fetch(`${pocketbaseUrl}/api/collections/${CARD_PAYMENTS}/records`, {
-    method: 'POST',
-    headers: { Authorization: authorization, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-    signal: AbortSignal.timeout(10_000)
-  })
-  if (!response.ok) throw Object.assign(new Error(`PocketBase answered ${response.status}`), { status: response.status })
-  return response.json()
+// The owner's own card payment store: PocketBase's REST API with the caller's token, so the collection's
+// rules for the owner apply (create, read, update). Updates send only status and SumUp's ids, like the
+// notifier's. The token goes to PocketBase only.
+export function createOwnerStore ({ pocketbaseUrl, authorization, fetch = globalThis.fetch }) {
+  const records = `${pocketbaseUrl}/api/collections/${CARD_PAYMENTS}/records`
+  const request = async (method, url, data) => {
+    const response = await fetch(url, {
+      method,
+      headers: { Authorization: authorization, ...(data ? { 'Content-Type': 'application/json' } : {}) },
+      body: data ? JSON.stringify(data) : undefined,
+      signal: AbortSignal.timeout(10_000)
+    })
+    if (!response.ok) throw Object.assign(new Error(`PocketBase answered ${response.status}`), { status: response.status })
+    return response.json()
+  }
+  const only = patch => Object.fromEntries(Object.entries(patch).filter(([key]) => CARD_NOTIFIER_FIELDS.includes(key)))
+  return {
+    createCardPayment: data => request('POST', records, data),
+    getCardPayment: id => request('GET', `${records}/${encodeURIComponent(id)}`),
+    updateCardPayment: (id, patch) => request('PATCH', `${records}/${encodeURIComponent(id)}`, only(patch))
+  }
 }
 ```
 
@@ -2308,13 +2456,13 @@ and directly above the line `    // The notifier's own record id in "users", so 
 - [ ] **Step 6: Run the unit tests**
 
 Run: `npm run test:unit`
-Expected: `tests 375`, `pass 375`, `fail 0`. Then the time zones and Node 20: all `fail 0`.
+Expected: `tests 381`, `pass 381`, `fail 0`. Then the time zones and Node 20: all `fail 0`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add server/utils/cardSettings.js server/utils/sumup.js server/utils/cardPayments.js server/utils/notifier.js tests/unit/sumup.test.js tests/unit/card-payments.test.js tests/unit/reminder-job.test.js
-git commit -m "Add the SumUp client and the card payment rules: charge, callback check, cancel and the backup poll
+git commit -m "Add the SumUp client and the card payment rules: charge, refresh, callback check, cancel, the sandbox marker and the backup poll
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2325,7 +2473,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `server/utils/requireCaller.js` (`ownerOnly`)
-- Create: `server/utils/card.js`, `server/api/card/terminal.get.js`, `server/api/card/pair.post.js`, `server/api/card/unpair.post.js`, `server/api/card/charge.post.js`, `server/api/card/cancel.post.js`, `server/api/card/callback/[id]/[token].post.js`, `server/plugins/cardPayments.js`
+- Create: `server/utils/card.js`, `server/api/card/terminal.get.js`, `server/api/card/pair.post.js`, `server/api/card/unpair.post.js`, `server/api/card/charge.post.js`, `server/api/card/cancel.post.js`, `server/api/card/refresh.post.js`, `server/api/card/callback/[id]/[token].post.js`, `server/plugins/cardPayments.js`
 - Create: `scripts/sumup-sandbox-check.mjs`; Modify: `package.json` (script `sumup:sandbox-check`)
 - Test: `tests/unit/require-caller.test.js`
 
@@ -2337,7 +2485,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `POST /api/card/unpair` → `{ paired: false, reader: null }`;
   - `POST /api/card/charge { source, amount, description, cart }` → `{ id }` (the `card_payments` record id); 400 / 409 / 502 with a message; 503 `Card payments aren't configured on the server`;
   - `POST /api/card/cancel { id }` → `{ status }`;
-  - `POST /api/card/callback/:id/:token` → `{ ok: true }` or 404;
+  - `POST /api/card/refresh { id }` → `{ payment }` (the record without `callback_token`, after asking SumUp); 404 unknown; 502 `SumUp didn't answer. Try again.` with the record unchanged;
+  - `POST /api/card/callback/:id/:token` → `{ ok: true }` or 404 (always 404 without the notifier login);
   - `requireCaller(event, settings, { ownerOnly: true })`;
   - `npm run sumup:sandbox-check [-- --pair <code>]`.
 
@@ -2420,18 +2569,18 @@ with
 (The notifier client is now created only when it is needed.)
 
 Run: `npm run test:unit`
-Expected: `tests 376`, `pass 376`, `fail 0`.
+Expected: `tests 382`, `pass 382`, `fail 0`.
 
 - [ ] **Step 4: One SumUp client, store and poll per process**
 
 Create `server/utils/card.js`:
 
 ```js
-// One SumUp client, the notifier's PocketBase client and the backup poll per server process, shared by
-// the card routes and the plugin that starts the poll
+// One SumUp client, the sandbox check and, with the notifier login, the notifier's PocketBase client and the
+// backup poll, per server process: shared by the card routes and the plugin that starts the poll
 import { createSumUpClient } from './sumup.js'
 import { useNotifier } from './notifier.js'
-import { createCardPoller } from './cardPayments.js'
+import { createCardPoller, createSandboxCheck } from './cardPayments.js'
 
 let shared = null
 export const useCard = (settings) => {
@@ -2442,8 +2591,10 @@ export const useCard = (settings) => {
       apiUrl: settings.apiUrl,
       affiliate: { appId: settings.appId, key: settings.affiliateKey }
     })
-    const store = useNotifier(settings)
-    shared = { sumup, store, poller: createCardPoller({ store, sumup }) }
+    // Without the notifier login (the laptop's nuxt dev) there is no store of its own and no poll:
+    // the open sheet's refresh finds each result with the owner's token
+    const store = settings.background ? useNotifier(settings) : null
+    shared = { sumup, isSandbox: createSandboxCheck(sumup), store, poller: store ? createCardPoller({ store, sumup }) : null }
   }
   return shared
 }
@@ -2520,29 +2671,29 @@ Create `server/api/card/charge.post.js`:
 
 ```js
 // POST /api/card/charge { source, amount, description, cart }: puts the amount on the Solo. Answers { id },
-// the card payment's record id; the app watches that record for the result.
+// the card payment's record id; the app's sheet refreshes that payment until it has a result.
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
 import { useCard } from '../../utils/card.js'
-import { chargeInput, startCharge, createPaymentAs, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { chargeInput, startCharge, createOwnerStore, NOT_CONFIGURED } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
   if (!settings.configured) throw createError({ statusCode: 503, statusMessage: NOT_CONFIGURED })
   await requireCaller(event, settings, { ownerOnly: true })
   const input = chargeInput(await readBody(event).catch(() => null))
-  const { sumup, store, poller } = useCard(settings)
-  const callerToken = getHeader(event, 'authorization')
+  const { sumup, isSandbox, poller } = useCard(settings)
   const { id } = await startCharge({
     input,
     sumup,
-    store,
-    // Created with the owner's own token: the collection lets only the owner create
-    createPayment: data => createPaymentAs({ pocketbaseUrl: settings.pocketbaseUrl, authorization: callerToken, data }),
+    // Created and updated with the owner's own token: the collection lets only the owner create
+    store: createOwnerStore({ pocketbaseUrl: settings.pocketbaseUrl, authorization: getHeader(event, 'authorization') }),
+    isSandbox,
     // The return URL's host: the address the app was opened on (nginx passes it through)
     host: getRequestHost(event, { xForwardedHost: true })
   })
-  poller.track(id)
+  // With the notifier login the poll follows it too (the app may close before the result)
+  poller?.track(id)
   return { id }
 })
 ```
@@ -2554,15 +2705,36 @@ Create `server/api/card/cancel.post.js`:
 import { cardSettings } from '../../utils/cardSettings.js'
 import { requireCaller } from '../../utils/requireCaller.js'
 import { useCard } from '../../utils/card.js'
-import { cancelCharge, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+import { cancelCharge, createOwnerStore, NOT_CONFIGURED } from '../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
   if (!settings.configured) throw createError({ statusCode: 503, statusMessage: NOT_CONFIGURED })
   await requireCaller(event, settings, { ownerOnly: true })
   const { id } = (await readBody(event).catch(() => null)) ?? {}
-  const { sumup, store } = useCard(settings)
-  return cancelCharge({ store, sumup, id })
+  const store = createOwnerStore({ pocketbaseUrl: settings.pocketbaseUrl, authorization: getHeader(event, 'authorization') })
+  return cancelCharge({ store, sumup: useCard(settings).sumup, id })
+})
+```
+
+Create `server/api/card/refresh.post.js`:
+
+```js
+// POST /api/card/refresh { id }: the open payment sheet asks every 2 s. The payment is read and, when SumUp
+// has a result, written with the owner's own token (same lookup, mapping and 10-minute rule as the poll),
+// so results arrive without the return URL and the poll. Answers { payment } without its callback token.
+import { cardSettings } from '../../utils/cardSettings.js'
+import { requireCaller } from '../../utils/requireCaller.js'
+import { useCard } from '../../utils/card.js'
+import { refreshPayment, createOwnerStore, NOT_CONFIGURED } from '../../utils/cardPayments.js'
+
+export default defineEventHandler(async (event) => {
+  const settings = cardSettings(process.env)
+  if (!settings.configured) throw createError({ statusCode: 503, statusMessage: NOT_CONFIGURED })
+  await requireCaller(event, settings, { ownerOnly: true })
+  const { id } = (await readBody(event).catch(() => null)) ?? {}
+  const store = createOwnerStore({ pocketbaseUrl: settings.pocketbaseUrl, authorization: getHeader(event, 'authorization') })
+  return refreshPayment({ store, sumup: useCard(settings).sumup, id })
 })
 ```
 
@@ -2573,14 +2745,15 @@ Create `server/api/card/callback/[id]/[token].post.js`:
 ```js
 // POST /api/card/callback/<payment id>/<token>: SumUp's return URL. No owner check: the per-payment token is
 // the key, compared in constant time; a wrong one is a 404. The body is never read (SumUp does not sign it):
-// the result is asked of SumUp's transactions API, after the 200 has gone out.
+// the result is asked of SumUp's transactions API, after the 200 has gone out. Without the notifier login
+// (the laptop's nuxt dev) it is off: 404, and the open sheet's refresh finds the result instead.
 import { cardSettings } from '../../../../utils/cardSettings.js'
 import { useCard } from '../../../../utils/card.js'
 import { callbackMatches } from '../../../../utils/cardPayments.js'
 
 export default defineEventHandler(async (event) => {
   const settings = cardSettings(process.env)
-  if (!settings.configured) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  if (!settings.background) throw createError({ statusCode: 404, statusMessage: 'Not found' })
   const id = getRouterParam(event, 'id') ?? ''
   const token = getRouterParam(event, 'token') ?? ''
   const { store, poller } = useCard(settings)
@@ -2598,8 +2771,8 @@ Create `server/plugins/cardPayments.js`:
 
 ```js
 // Starts the card payments' backup poll: every 15 s it asks SumUp about the payments still pending (and
-// does nothing while none is). Unlike the reminders it also runs in `nuxt dev`: there the sandbox keys in
-// .env are used, and SumUp cannot reach a return URL on localhost, so the poll is what finds the result.
+// does nothing while none is), so a payment whose app closed before the result is settled anyway. It needs
+// the notifier login; without it (the laptop's nuxt dev) only the open sheet's refresh finds results.
 import { cardSettings } from '../utils/cardSettings.js'
 import { useCard } from '../utils/card.js'
 import { CARD_POLL_MS } from '../utils/cardPayments.js'
@@ -2609,6 +2782,10 @@ export default defineNitroPlugin(() => {
   const settings = cardSettings(process.env)
   if (!settings.configured) {
     console.info(`[card] off, missing: ${settings.missing.join(', ')}`)
+    return
+  }
+  if (!settings.background) {
+    console.info(`[card] return URL and backup poll off, missing: ${settings.backgroundMissing.join(', ')}`)
     return
   }
   const { poller } = useCard(settings)
@@ -2752,10 +2929,26 @@ When `curl -s localhost:3100/api/card/terminal` answers, run:
 ```bash
 curl -s localhost:3100/api/card/terminal
 curl -s -o /dev/null -w "charge %{http_code}\n" -X POST -H 'content-type: application/json' -d '{"source":"cart","amount":5,"cart":{}}' localhost:3100/api/card/charge
+curl -s -o /dev/null -w "refresh %{http_code}\n" -X POST localhost:3100/api/card/refresh
 curl -s -o /dev/null -w "callback %{http_code}\n" -X POST localhost:3100/api/card/callback/pay000000000001/x
 ```
 
-Expected: `{ "configured": false, "paired": false, "reader": null }`, `charge 503`, `callback 404`. Stop that server (TaskStop on its background task). Start it again from the same folder with placeholder settings:
+Expected: `{ "configured": false, "paired": false, "reader": null }`, `charge 503`, `refresh 503`, `callback 404`. Stop that server and start it again the laptop's way (no notifier login):
+
+```bash
+cd "<the folder>" && test ! -e .env && POCKETBASE_URL=https://pb.invalid OWNER_ID=owner0000000001 SUMUP_API_KEY=placeholder SUMUP_MERCHANT_CODE=TEST0000 SUMUP_AFFILIATE_KEY=placeholder SUMUP_AFFILIATE_APP_ID=com.example.test SUMUP_API_URL=https://sumup.invalid npx nuxt dev --port 3100
+```
+
+When it answers, run:
+
+```bash
+curl -s -o /dev/null -w "terminal %{http_code}\n" localhost:3100/api/card/terminal
+curl -s -o /dev/null -w "refresh %{http_code}\n" -X POST localhost:3100/api/card/refresh
+curl -s -o /dev/null -w "charge %{http_code}\n" -X POST localhost:3100/api/card/charge
+curl -s -o /dev/null -w "callback %{http_code}\n" -X POST localhost:3100/api/card/callback/pay000000000001/tok
+```
+
+Expected: `terminal 401`, `refresh 401`, `charge 401`, `callback 404`, and the output shows `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`. Stop that server (TaskStop on its background task). Start it again from the same folder with placeholder settings:
 
 ```bash
 cd "<the folder>" && test ! -e .env && POCKETBASE_URL=https://pb.invalid OWNER_ID=owner0000000001 NOTIFIER_EMAIL=n@example.invalid NOTIFIER_PASSWORD=placeholder SUMUP_API_KEY=placeholder SUMUP_MERCHANT_CODE=TEST0000 SUMUP_AFFILIATE_KEY=placeholder SUMUP_AFFILIATE_APP_ID=com.example.test SUMUP_API_URL=https://sumup.invalid npx nuxt dev --port 3100
@@ -2775,13 +2968,13 @@ Expected: `terminal 401`, `terminal junk 401`, `charge 401`, `callback bad id 40
 
 - [ ] **Step 10: Run all unit tests**
 
-Run the time zones and Node 20 (Working setup). Expected: `tests 376` and `fail 0` everywhere.
+Run the time zones and Node 20 (Working setup). Expected: `tests 382` and `fail 0` everywhere.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add server/utils/requireCaller.js server/utils/card.js server/api/card/terminal.get.js server/api/card/pair.post.js server/api/card/unpair.post.js server/api/card/charge.post.js server/api/card/cancel.post.js "server/api/card/callback/[id]/[token].post.js" server/plugins/cardPayments.js scripts/sumup-sandbox-check.mjs package.json tests/unit/require-caller.test.js
-git commit -m "Add the owner's card routes, SumUp's return URL, the 15 s backup poll and the sandbox check
+git add server/utils/requireCaller.js server/utils/card.js server/api/card/terminal.get.js server/api/card/pair.post.js server/api/card/unpair.post.js server/api/card/charge.post.js server/api/card/cancel.post.js server/api/card/refresh.post.js "server/api/card/callback/[id]/[token].post.js" server/plugins/cardPayments.js scripts/sumup-sandbox-check.mjs package.json tests/unit/require-caller.test.js
+git commit -m "Add the owner's card routes with the 2 s refresh, SumUp's return URL, the 15 s backup poll and the sandbox check
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2799,9 +2992,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 5's routes; `useTransactions().transactionExists(recordId)`; `useCheckout().bookSale(booking, payment)`; `useToast().toast`.
 - Produces:
-  - `useCardPayments()` → `{ terminalState, terminal(), loadTerminal(), pair(code), unpair(), charge(request) → { id }, cancel(id) → { status }, watch(id, onChange) → stop(), bookPayment(payment) → Promise<boolean>, bookApproved() → Promise<number>, startCardBooking() }`. `terminalState` is an app-wide ref `{ configured, paired, reader } | null`;
+  - `useCardPayments()` → `{ terminalState, terminal(), loadTerminal(), pair(code), unpair(), charge(request) → { id }, cancel(id) → { status }, refresh(id) → { payment }, watch(id, onChange) → stop(), bookPayment(payment) → Promise<boolean>, bookApproved() → Promise<number>, startCardBooking() }`. `watch` refreshes every 2 s; `bookApproved` refreshes pending payments first. `terminalState` is an app-wide ref `{ configured, paired, reader } | null`;
   - the icon `credit-card`;
-  - in the e2e fixture: `api.card` (`configured`, `paired`, `reader`, `pairStatus`, `chargeStatus`, `cancelStatus`, `message`, `cancelResult`, `charges`, `pairs`, `cancels`, `unpairs`), `api.pairTerminal()`, `api.settleCard(status, sumupTransaction?)`; the fake PocketBase has an owner-only `card_payments` collection.
+  - in the e2e fixture: `api.card` (`configured`, `paired`, `reader`, `pairStatus`, `chargeStatus`, `cancelStatus`, `refreshStatus`, `message`, `cancelResult`, `charges`, `pairs`, `cancels`, `unpairs`, `refreshes`, `onRefresh`), `api.pairTerminal()`, `api.settleCard(status, sumupTransaction?)`; the fake PocketBase has an owner-only `card_payments` collection.
 
 - [ ] **Step 1: Fake the card routes in the e2e fixture**
 
@@ -2838,7 +3031,7 @@ In `tests/e2e/fixtures.js`, below the line `const NOTIFIER_ROUTES = /\/api\/(pus
 
 ```js
 // The card routes, answered from `api.card`: the tests never reach SumUp
-const CARD_ROUTES = /\/api\/card\/(terminal|pair|unpair|charge|cancel)$/
+const CARD_ROUTES = /\/api\/card\/(terminal|pair|unpair|charge|cancel|refresh)$/
 ```
 
 replace
@@ -2862,12 +3055,16 @@ with
         pairStatus: 200,
         chargeStatus: 200,
         cancelStatus: 200,
+        refreshStatus: 200,
         message: '',
         cancelResult: 'cancelled',
         charges: [],
         pairs: [],
         cancels: [],
-        unpairs: 0
+        unpairs: 0,
+        refreshes: 0,
+        // What SumUp would answer when the server refreshes a payment: (payment) => changes it, or null
+        onRefresh: null
       },
       // A configured server with a paired Solo
       pairTerminal () {
@@ -2927,6 +3124,16 @@ and directly above `    await use(api)` add:
           created: new Date().toISOString().replace('T', ' ')
         })
         return json(200, { id })
+      }
+      if (path === '/api/card/refresh') {
+        // The server would ask SumUp here; the fake answers what api.settleCard() or onRefresh recorded
+        state.refreshes++
+        if (state.refreshStatus !== 200) return failed(state.refreshStatus)
+        const found = fake.db.card_payments.find(item => item.id === body.id)
+        if (!found) return json(404, { statusCode: 404, message: 'Unknown payment' })
+        if (found.status === 'pending' && state.onRefresh) state.onRefresh(found)
+        const { callback_token: secret, ...visible } = found
+        return json(200, { payment: visible })
       }
       state.cancels.push(body.id)
       if (state.cancelStatus !== 200) return failed(state.cancelStatus)
@@ -3096,19 +3303,30 @@ export const useCardPayments = () => {
   // → { status } once SumUp has taken the stop
   const cancel = id => $fetch('/api/card/cancel', { method: 'POST', headers: auth(), body: { id } })
 
-  // Reads the payment every 2 s and hands each answer to onChange, until it is no longer pending or stop()
-  // is called. A failed read is simply tried again.
+  // → { payment }: the server asks SumUp and records a result with the owner's token
+  const refresh = id => $fetch('/api/card/refresh', { method: 'POST', headers: auth(), body: { id }, timeout: 20_000 })
+
+  // Refreshes the payment every 2 s and hands each answer to onChange, until it is no longer pending or
+  // stop() is called. The refresh brings the result even without SumUp's return URL and the server's poll;
+  // when it fails (SumUp did not answer), the record is read instead, and the next round tries again.
   const watch = (id, onChange) => {
     let stopped = false
     let timer = null
     const read = async () => {
       if (stopped) return
+      let payment = null
       try {
-        const payment = await pb.collection(CARD_PAYMENTS).getOne(id)
-        if (stopped) return
+        payment = (await refresh(id)).payment
+      } catch {
+        try {
+          payment = await pb.collection(CARD_PAYMENTS).getOne(id)
+        } catch {}
+      }
+      if (stopped) return
+      if (payment) {
         onChange(payment)
         if (payment.status !== 'pending') return
-      } catch {}
+      }
       if (!stopped) timer = setTimeout(read, WATCH_MS)
     }
     read()
@@ -3142,10 +3360,27 @@ export const useCardPayments = () => {
     return bookings.get(payment.id)
   }
 
+  // Payments still pending (the app closed before the result, and no return URL or poll settled them, as in
+  // nuxt dev): each is refreshed once, so an approved one is booked below
+  const settlePending = async () => {
+    let pending = []
+    try {
+      pending = await pb.collection(CARD_PAYMENTS).getFullList({ filter: 'status = "pending"', sort: 'created' })
+    } catch {
+      return
+    }
+    for (const payment of pending) {
+      try {
+        await refresh(payment.id)
+      } catch {}
+    }
+  }
+
   // Approved payments that no device has booked yet (the app closed or lost signal while the customer
   // paid): each is booked once, with a toast. Offline or logged out it does nothing.
   const bookApproved = async () => {
     if (!navigator.onLine || !pb.authStore.isValid) return 0
+    await settlePending()
     let approved
     try {
       approved = await pb.collection(CARD_PAYMENTS).getFullList({ filter: 'status = "approved" && booked_transaction = ""', sort: 'created' })
@@ -3174,7 +3409,7 @@ export const useCardPayments = () => {
     }
   }
 
-  return { terminalState, terminal, loadTerminal, pair, unpair, charge, cancel, watch, bookPayment, bookApproved, startCardBooking }
+  return { terminalState, terminal, loadTerminal, pair, unpair, charge, cancel, refresh, watch, bookPayment, bookApproved, startCardBooking }
 }
 ```
 
@@ -3422,6 +3657,8 @@ test.describe('Pay by card in the cart', () => {
 
     api.settleCard('approved', 'TEENSK4W2K')
     await expect(state(page)).toHaveText('Paid ✓')
+    // The sheet asked the server to refresh the payment (no return URL needed)
+    expect(api.card.refreshes).toBeGreaterThan(0)
     await expect.poll(() => api.posted.length).toBe(1)
     const sale = api.posted[0]
     expect(sale).toMatchObject({ id: 'pay000000000001', amount: 29, payment_method: 'card', sumup_transaction: 'TEENSK4W2K', description: charged.cart.description, date: charged.cart.date })
@@ -3440,6 +3677,17 @@ test.describe('Pay by card in the cart', () => {
     await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
     await page.waitForLoadState('networkidle')
     expect(api.posted).toHaveLength(1)
+  })
+
+  test('when the refresh fails (SumUp did not answer) the sheet reads the payment itself', async ({ page, api }) => {
+    await cartWithTwoArticles(page, api)
+    api.card.refreshStatus = 502
+    api.card.message = "SumUp didn't answer. Try again."
+    await payByCard(page).click()
+    await expect(state(page)).toHaveText(/Waiting for card/)
+    api.settleCard('approved', 'TXREAD')
+    await expect(state(page)).toHaveText('Paid ✓')
+    await expect.poll(() => api.posted.map(sale => sale.sumup_transaction)).toEqual(['TXREAD'])
   })
 
   test('declined: nothing is booked and the cart stays', async ({ page, api }) => {
@@ -3573,6 +3821,16 @@ test.describe('approved payments booked later', () => {
     await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe('pay000000000078')
     expect(api.db.budget_tracker_transactions).toHaveLength(1)
     await expect(page.getByText(/Card payment of .* booked/)).toHaveCount(0)
+  })
+
+  test('one left pending (no return URL, no poll) is refreshed on the next start and booked once', async ({ page, api }) => {
+    await api.mockTransactions()
+    api.pairTerminal()
+    api.db.card_payments.push(approvedPayment('pay000000000080', { status: 'pending', sumup_transaction: '' }))
+    api.card.onRefresh = (payment) => Object.assign(payment, { status: 'approved', sumup_transaction: 'TXLAPTOP' })
+    await gotoReady(page, '/')
+    await expect(page.getByText(/Card payment of 12,50.* booked/)).toBeVisible()
+    await expect.poll(() => api.posted.map(sale => [sale.id, sale.sumup_transaction])).toEqual([['pay000000000080', 'TXLAPTOP']])
   })
 
   test('one approved while offline is booked when the connection returns', async ({ page, api, context }) => {
@@ -4250,7 +4508,7 @@ onMounted(async () => {
 - [ ] **Step 7: Run the e2e tests**
 
 Run: `npx playwright test tests/e2e/card-payments.spec.js`
-Expected: 26 passed.
+Expected: 30 passed.
 
 Run: `npx playwright test tests/e2e/mobile.spec.js -g "Pay by card" --project=mobile`
 Expected: 2 passed (light and dark).
@@ -4277,7 +4535,7 @@ In the *How it works* mermaid chart, below `    Push --> Phone` add:
 and directly above the bullet `- Rules that are worth testing live in plain modules …` add:
 
 ```markdown
-- Card payments go through the Nuxt server, which alone holds the SumUp keys. It creates a `card_payments` record (as the owner), sends the checkout to the Solo and records SumUp's result with the notifier account: from SumUp's call to the return URL, or from its own check every 15 s. The app watches the record and books the sale once it is approved.
+- Card payments go through the Nuxt server, which alone holds the SumUp keys. It creates a `card_payments` record with the owner's login and sends the checkout to the Solo. While the payment sheet is open, the app asks the server every 2 s to look the result up at SumUp; with the notifier login the server also takes SumUp's call to the return URL and checks pending payments every 15 s on its own. The app books the sale once the payment is approved.
 ```
 
 Below the **Tests** code block (after `npx playwright test --project=mobile   # the phone layout only` and its closing fence) add:
@@ -4296,7 +4554,7 @@ In *PocketBase and migrations*, replace the **Collections** bullet's list ending
 In *The env file* table, below the `CALENDAR_SECRET` row add:
 
 ```markdown
-| `SUMUP_API_KEY` | SumUp API key (Developer settings → API keys). Card payments also need `POCKETBASE_URL`, `OWNER_ID` and the notifier login above. |
+| `SUMUP_API_KEY` | SumUp API key (Developer settings → API keys). Card payments also need `POCKETBASE_URL` and `OWNER_ID`; SumUp's return URL and the 15 s check of pending payments also need the notifier login (without it, `[card] return URL and backup poll off` in the log). |
 | `SUMUP_MERCHANT_CODE` | the merchant code of that SumUp account (letters and digits) |
 | `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID` | the affiliate key and the app id it was made for; SumUp's Cloud API needs them on every checkout |
 | `SUMUP_API_URL` | optional, `https://api.sumup.com` by default; https only |
@@ -4305,7 +4563,13 @@ In *The env file* table, below the `CALENDAR_SECRET` row add:
 and replace `None of these may get a \`NUXT_PUBLIC_\` prefix, except the VAPID public key.` with:
 
 ```markdown
-None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. The live SumUp keys go only into this file; the local `.env` may hold sandbox `SUMUP_*` keys for `npm run sumup:sandbox-check`, nothing else of SumUp's.
+None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. The live SumUp keys go only into this file; the local `.env` may hold the sandbox `SUMUP_*` keys for the laptop test (see [Rollout: card payments](#rollout-card-payments)).
+```
+
+and in the next paragraph replace its bold first sentence (the one starting **Never put the server env**, which lists `OWNER_ID` and `POCKETBASE_URL` too) with:
+
+```markdown
+**Never put the server's secrets (`NOTIFIER_*`, `VAPID_*`, `CALENDAR_SECRET`) or live SumUp keys into a local `.env`, committed or not.** (`POCKETBASE_URL` and `OWNER_ID` are no secrets and may be there for the card payment test on the laptop.)
 ```
 
 Directly above `## Credits`, add:
@@ -4316,37 +4580,38 @@ Directly above `## Credits`, add:
 Run these yourself, in this order.
 
 1. **Schema.** Run `npm run pb:migrate`. The dry run should list exactly `create collection "card_payments" (amount, description, source, cart, status, sumup_checkout, sumup_transaction, booked_transaction, callback_token)` and `add to "budget_tracker_transactions": payment_method, sumup_transaction`. Then run `npm run pb:migrate -- --apply`.
-2. **Rules.** Run `npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>`. It should list only `set access rules on "card_payments"`: the owner may do everything, the notifier may read and set the status and SumUp's ids. Both steps run **before** the deploy: until then the old app keeps working, and the new one needs the collection open to book anything by card.
-3. **Sandbox check from your machine** (optional, before the server gets any keys). Put the sandbox `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY` and `SUMUP_AFFILIATE_APP_ID` into the local `.env` and open the Virtual Solo (virtual-solo.sumup.com) with the sandbox merchant. Then:
-   ```bash
-   npm run sumup:sandbox-check -- --pair <code the Virtual Solo shows under Connections → API → Connect>
-   npm run sumup:sandbox-check
-   ```
-   It stops unless SumUp marks the account as a sandbox. It lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). Press Enter while it waits to try *Cancel on terminal*. It prints statuses and SumUp ids only.
-4. **Sandbox keys on the server first.** Write the four sandbox `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file)), deploy (push to `main`), and check that `pm2 logs budget-tracker` shows no `[card] off` line.
-5. **Pair.** In Settings → Card terminal, enter the code the (Virtual) Solo shows under *Connections → API → Connect* and tap *Pair terminal*. The section then shows the Solo as *Online*.
-6. **Sandbox test checklist** (with the Virtual Solo and the sandbox merchant):
-   - [ ] Cart → *Pay by card · <total>*: the Solo shows the amount, the sheet shows `Waiting for card`.
-   - [ ] Pay: the sheet shows `Paid ✓`, the cart empties, the sale is in the history once, and `pm2 logs budget-tracker` shows `[card] <id> approved (<SumUp code>)`. The code matches the one in the SumUp app.
-   - [ ] *Cancel on terminal* while the Solo waits: `Cancelled`, nothing booked.
-   - [ ] Cancel on the Solo itself: `Cancelled` (or `Card declined`: note which; SumUp may report a cancel on the terminal as failed).
-   - [ ] Home → *Pay by card* for an income: booked with its description, as card.
-   - [ ] Close the app while the customer pays, open it again: `Card payment of <amount> booked`, once.
-   - [ ] Turn the Virtual Solo off (or log it out) and pay: `The terminal didn't answer. Check that it's on and online.`
-   - [ ] Reports → Market day and Money show the card sales under Card.
+2. **Rules.** Run `npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>`. It should list only `set access rules on "card_payments"`: the owner may do everything, the notifier may read and set the status and SumUp's ids. Both steps run **before** the laptop test and before the deploy: the app needs the collection open to take any card payment.
+3. **Sandbox test on the laptop** (`nuxt dev`, with the sandbox merchant and the Virtual Solo at virtual-solo.sumup.com):
+   1. Put into the local `.env`: the four sandbox keys `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID`, plus `POCKETBASE_URL=https://pocket.lasseharm.space` and `OWNER_ID=<the id --apply-rules printed>`. **Never the notifier login.**
+   2. Optional: `npm run sumup:sandbox-check` checks the keys without the app. It stops unless SumUp marks the account as a sandbox, lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). `-- --pair <code>` pairs the Virtual Solo first.
+   3. Restart `npm run dev`. Its log shows `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`: expected on the laptop. The open payment sheet asks for the result every 2 s instead, and the next start settles a payment whose sheet was closed.
+   4. Log in, open Settings → Card terminal, enter the code the Virtual Solo shows under *Connections → API → Connect* and tap *Pair terminal*. The section shows the Solo as *Online*.
+   5. Checklist:
+      - [ ] Cart → *Pay by card · <total>*: the Solo shows the amount, the sheet shows `Waiting for card`.
+      - [ ] Pay: `Paid ✓`, the cart empties, the sale is in the history once, as card, its description starting with `[Sandbox] `. Its SumUp code matches the sandbox transaction.
+      - [ ] *Cancel on terminal* while the Solo waits: `Cancelled`, nothing booked.
+      - [ ] Cancel on the Solo itself: `Cancelled` (or `Card declined`: note which; SumUp may report a cancel on the terminal as failed).
+      - [ ] Home → *Pay by card* for an income: booked with its description (with `[Sandbox] `), as card.
+      - [ ] Reload the page while the customer pays, pay, then open the app again: `Card payment of <amount> booked`, once.
+      - [ ] Log the Virtual Solo out and pay: `The terminal didn't answer. Check that it's on and online.`
+      - [ ] Reports → Market day and Money show the card sales under Card.
+   6. **Delete the test sales.** They are real entries in the production books: in the PocketBase admin, delete the `budget_tracker_transactions` whose description starts with `[Sandbox] ` (a card sale's id is its card payment's id) and their `stock_movements`, and the `card_payments` marked `[Sandbox]`. In Settings → Card terminal, *Unpair* the Virtual Solo, then remove the four `SUMUP_*` lines from `.env` (or keep them for the next test).
+4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`.
+5. **Pair the real Solo** in Settings → Card terminal, the same way.
+6. **First live payments:**
+   - [ ] A small real payment: `Paid ✓`, and `pm2 logs budget-tracker` shows `[card] <id> approved (<SumUp code>)` within seconds (SumUp's call to the return URL reaches the server). The code matches the SumUp app. Refund it in the SumUp app if you like; Akinai keeps the sale (delete it there too).
+   - [ ] Pairing and paying work for the German merchant account (the Cloud API's region).
    - [ ] **Can the paired Solo still take manually typed amounts** (outside Akinai)? This decides how the stall works, not the code.
-   - [ ] With the live keys later: pairing and a first small payment work for the German merchant account (the Cloud API's region).
-   - [ ] Does the return URL reach the server? `pm2 logs` shows the result within a few seconds; without it the 15 s check still finds it.
-   - The test sales are real entries in the books: delete them afterwards in the PocketBase admin (`budget_tracker_transactions`: a card sale's id is its card payment's id) together with their `stock_movements`.
-7. **Live keys.** In Settings → Card terminal, *Unpair* the Virtual Solo. Replace the four `SUMUP_*` lines in `akinai.env` with the live ones, restart pm2 (see [The env file](#the-env-file)), and pair the real Solo the same way.
 
-A card payment that stays pending is checked every 15 s; after 10 minutes without SumUp knowing it, it is marked failed. Refunds stay in the SumUp app.
+A card payment that stays pending is checked every 15 s on the server; after 10 minutes without SumUp knowing it, it is marked failed. Refunds stay in the SumUp app.
 ````
 
 In `.env.example`, below `POCKETBASE_ADMIN_TOKEN=` add:
 
 ```bash
-# SumUp SANDBOX keys for `npm run sumup:sandbox-check` only. The live keys go into akinai.env on the server.
+# Card payment test on the laptop (README, Rollout: card payments): SumUp SANDBOX keys and the owner's id.
+# Never the notifier login or live keys: those go into akinai.env on the server.
+OWNER_ID=
 SUMUP_API_KEY=
 SUMUP_MERCHANT_CODE=
 SUMUP_AFFILIATE_KEY=
@@ -4356,10 +4621,10 @@ SUMUP_AFFILIATE_APP_ID=
 - [ ] **Step 9: Run everything**
 
 Run the unit tests in the time zones and on Node 20 (Working setup).
-Expected: `tests 376`, `fail 0` in all four.
+Expected: `tests 382`, `fail 0` in all four.
 
 Run: `npx playwright test`
-Expected: 775 passed, 87 skipped, 0 failed (734 + 41 new: card-payments 26, card-terminal 8, reports 2, mobile 5; skipped +5: the mobile-only tests on chromium).
+Expected: 779 passed, 87 skipped, 0 failed (734 + 45 new: card-payments 30, card-terminal 8, reports 2, mobile 5; skipped +5: the mobile-only tests on chromium).
 
 - [ ] **Step 10: Commit**
 
@@ -4372,7 +4637,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 11: Hand over the rollout**
 
-Tell the owner the rollout order from the README (*Rollout: card payments*): `pb:migrate` dry run, `--apply`, `--apply-rules --owner … --notifier …`, all **before** the deploy; sandbox keys into `akinai.env` first; pairing in Settings → Card terminal; the sandbox checklist (including "can the paired Solo still take manual amounts?"); then the live keys. Do not run any of these yourself.
+Tell the owner the rollout order from the README (*Rollout: card payments*): `pb:migrate` dry run, `--apply`, `--apply-rules --owner … --notifier …`, all **before** the laptop test and the deploy; the laptop sandbox test (sandbox `SUMUP_*`, `POCKETBASE_URL`, `OWNER_ID` in `.env`, never the notifier login; pair the Virtual Solo in Settings; the checklist; delete the `[Sandbox] ` sales); then the live keys in `akinai.env`, the deploy, pairing the real Solo and the first live payments (including "can the paired Solo still take manual amounts?" and the region). Do not run any of these yourself.
 
 - [ ] **Step 12: The sandbox check, only with the owner's go**
 
@@ -4394,7 +4659,8 @@ Without the owner's yes, skip this step and say so in the hand-over.
 | Waiting sheet, `Paid ✓`, `Card declined`, `Cancelled`, `The payment didn't go through`, 120 s `Still waiting for the terminal` with **Keep waiting** and **Cancel on terminal** | Task 7 (CardPaymentSheet); Task 5 (`/api/card/cancel`) |
 | Approved books exactly what *Add to Balance* books (lines, `sold_at`, stock movements, deals, gatcha prizes), card, cart empties; Home books with its description | Task 2 (shared booking); Task 7 |
 | Declined/cancelled/failed book nothing; cart and form stay | Task 7 |
-| Exactly once: record id as `recordId`, `booked_transaction`, booking on open and on `online`, toast, server dedupe, snapshot | Task 2 (`saleTransaction` with `recordId`), Task 6 (`bookPayment`, `bookApproved`, `startCardBooking`), Task 7 (catalog/Home mount) |
+| Exactly once: record id as `recordId`, `booked_transaction`, booking on open and on `online`, toast, server dedupe, snapshot | Task 2 (`saleTransaction` with `recordId`), Task 6 (`bookPayment`, `bookApproved` refreshing pending ones first, `startCardBooking`), Task 7 (catalog/Home mount) |
+| Owner decision: laptop sandbox test; `/api/card/refresh` every 2 s; configured without the notifier (return URL and poll off); `[Sandbox] ` marker | Task 4 (`cardSettings`, `refreshPayment`, `createOwnerStore`, `markSandbox`, `createSandboxCheck`), Task 5 (routes, plugin), Task 6 (`watch`), Task 7 (README) |
 | Unreachable terminal message, record `failed` | Task 4 (`startCharge`), Task 7 |
 | Settings → Card terminal: name, online/offline, Pair (code), Unpair, not configured | Task 5 (routes), Task 6 |
 | `payment_method` card/cash/empty, `sumup_transaction` | Task 1 (fields), Task 2 (cash, posting), Task 6 (card) |
@@ -4406,5 +4672,5 @@ Without the owner's yes, skip this step and say so in the hand-over.
 | Callback: token in constant time, body ignored, status from SumUp's transactions API, 200 quickly, wrong token 404 | Task 4 (`callbackMatches`, `checkPayment`), Task 5 (route) |
 | Backup poll every 15 s while pending, single-flight, capped, 10-minute give-up unless SumUp says pending | Task 4 (`createCardPoller`, `checkPayment`), Task 5 (plugin) |
 | Logs: payment id, status and SumUp ids only | Task 4 (`[card] …` lines) |
-| `nuxt dev` uses the local `.env`; unit tests fake SumUp; e2e fakes `/api/card/*` | Task 4–7; Decision 8 |
+| `nuxt dev` uses the local `.env` (sandbox keys, `POCKETBASE_URL`, `OWNER_ID`); unit tests fake SumUp; e2e fakes `/api/card/*` | Task 4–7; Decisions 8–9 |
 | Manual use and region to confirm in the sandbox test | README checklist (Task 7); Task 7, Step 12 |
