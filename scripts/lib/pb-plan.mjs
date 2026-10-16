@@ -78,11 +78,11 @@ const rulesFor = (ownerId, notifierId = null, conventionFields = [], cardFields 
   const O = ownerRule(ownerId)
   if (notifierId && notifierId === ownerId) throw new Error('The notifier must be a different account from the owner')
   const ON = notifierId ? `(${O}) || (${ownerRule(notifierId)})` : O
-  // The owner may write anything; the notifier only an update that leaves every other field unset
-  const limitedUpdate = (fields, allowed) => {
+  // The owner may write anything; the notifier only an update (while `notifierOnly` holds) that leaves every other field unset
+  const limitedUpdate = (fields, allowed, notifierOnly = []) => {
     if (!notifierId) return O
     const untouched = fields.filter(name => !allowed.includes(name)).map(name => `@request.data.${name}:isset = false`)
-    return `(${O}) || (${[ownerRule(notifierId), ...untouched].join(' && ')})`
+    return `(${O}) || (${[ownerRule(notifierId), ...notifierOnly, ...untouched].join(' && ')})`
   }
   return {
     users: { createRule: null },
@@ -95,7 +95,7 @@ const rulesFor = (ownerId, notifierId = null, conventionFields = [], cardFields 
     print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(conventionFields, ['reminders']), deleteRule: O },
     push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON },
-    [CARD_PAYMENTS]: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(cardFields, CARD_NOTIFIER_FIELDS), deleteRule: O }
+    [CARD_PAYMENTS]: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(cardFields, CARD_NOTIFIER_FIELDS, ['status = "pending"']), deleteRule: O }
   }
 }
 
@@ -364,7 +364,7 @@ export function planRules (collections, ownerId, notifierId = null) {
       const rules = collection ? [collection.listRule, collection.viewRule, collection.updateRule, collection.deleteRule] : []
       for (const rule of rules) {
         for (const [, id] of String(rule ?? '').matchAll(/@request\.auth\.id = "([^"]*)"/g)) {
-          if (id !== ownerId) throw new Error(`The calendar rules still allow the notifier ${id}. Pass --notifier <email> to keep it.`)
+          if (id !== ownerId) throw new Error(`The ${name} rules still allow the notifier ${id}. Pass --notifier <email> to keep it.`)
         }
       }
     }

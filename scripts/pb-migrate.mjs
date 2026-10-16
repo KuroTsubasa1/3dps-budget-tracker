@@ -201,7 +201,7 @@ async function migrateRules () {
   console.log(`Owner: ${owner.email} (${owner.id})`)
   console.log(notifier
     ? `Notifier: ${notifier.email} (${notifier.id}), may read conventions, push subscriptions and card payments`
-    : 'No --notifier: conventions, push subscriptions and card payments stay owner-only (reminders and card payments cannot work)')
+    : 'No --notifier: reminders are off, and card payments work without their return URL and backup poll')
   // users comes first, so sign-up is closed before the other collections are pinned
   const ops = planRules(await listCollections(), owner.id, notifier?.id)
   if (!ops.length) return console.log('Rules: up to date')
