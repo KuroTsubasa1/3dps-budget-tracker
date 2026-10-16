@@ -189,7 +189,7 @@
   {
     "id": "j0cxry2bb8mlusa",
     "created": "2025-04-11 23:48:59.661Z",
-    "updated": "2026-10-14 13:08:54.527Z",
+    "updated": "2026-10-16 19:03:36.847Z",
     "name": "budget_tracker_transactions",
     "type": "base",
     "system": false,
@@ -287,6 +287,36 @@
         "options": {
           "min": "",
           "max": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "3ixyv7nr",
+        "name": "payment_method",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "card",
+            "cash"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "jcpu4xxe",
+        "name": "sumup_transaction",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
         }
       }
     ],
@@ -1157,6 +1187,154 @@
     "createRule": "@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\"",
     "updateRule": null,
     "deleteRule": "(@request.auth.collectionName = \"users\" && @request.auth.id = \"inkcup9s1klsdur\") || (@request.auth.collectionName = \"users\" && @request.auth.id = \"5v501ljt410r70k\")",
+    "options": {}
+  },
+  {
+    "id": "aiolw6eq8suun43",
+    "created": "2026-10-16 19:03:35.244Z",
+    "updated": "2026-10-16 19:03:35.244Z",
+    "name": "card_payments",
+    "type": "base",
+    "system": false,
+    "schema": [
+      {
+        "system": false,
+        "id": "6vnpoexc",
+        "name": "amount",
+        "type": "number",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": 0.01,
+          "max": null,
+          "noDecimal": false
+        }
+      },
+      {
+        "system": false,
+        "id": "leot88sg",
+        "name": "description",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "fihiiyar",
+        "name": "source",
+        "type": "select",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "cart",
+            "home"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "f5vvhj91",
+        "name": "cart",
+        "type": "json",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSize": 200000
+        }
+      },
+      {
+        "system": false,
+        "id": "dwnyudnq",
+        "name": "status",
+        "type": "select",
+        "required": true,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "maxSelect": 1,
+          "values": [
+            "pending",
+            "approved",
+            "declined",
+            "cancelled",
+            "failed"
+          ]
+        }
+      },
+      {
+        "system": false,
+        "id": "bamfwayy",
+        "name": "sumup_checkout",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "5mzwyorc",
+        "name": "sumup_transaction",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "yefdcabw",
+        "name": "booked_transaction",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      },
+      {
+        "system": false,
+        "id": "6qszkf6y",
+        "name": "callback_token",
+        "type": "text",
+        "required": false,
+        "presentable": false,
+        "unique": false,
+        "options": {
+          "min": null,
+          "max": null,
+          "pattern": ""
+        }
+      }
+    ],
+    "indexes": [],
+    "listRule": null,
+    "viewRule": null,
+    "createRule": null,
+    "updateRule": null,
+    "deleteRule": null,
     "options": {}
   }
 ]
