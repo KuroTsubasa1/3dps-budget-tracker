@@ -107,11 +107,15 @@ const parseBody = (request) => {
   return body
 }
 
-// File fields accept PocketBase's `field+` (append) and `field-` (remove) modifiers
+// Multiple file fields behave like PocketBase 0.22 (checked against a real 0.22.10): uploading to `field`
+// appends, `field-` removes the named files, and `field+` is not a field 0.22 knows, so it is ignored
+const FILE_FIELDS = new Set(['images'])
 const applyChanges = (record, body) => {
   for (const [key, value] of Object.entries(body)) {
+    if (key.endsWith('+') && FILE_FIELDS.has(key.slice(0, -1))) continue
     if (key.endsWith('+')) record[key.slice(0, -1)] = [...(record[key.slice(0, -1)] || []), ...[].concat(value)]
     else if (key.endsWith('-')) record[key.slice(0, -1)] = (record[key.slice(0, -1)] || []).filter(item => ![].concat(value).includes(item))
+    else if (FILE_FIELDS.has(key)) record[key] = [...(record[key] || []), ...[].concat(value)]
     else record[key] = value
   }
   return record

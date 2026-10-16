@@ -17,11 +17,12 @@ export const useArticles = () => {
   const createArticle = (fields, images = []) =>
     pb.collection(ARTICLES).create({ ...fields, active: true, stock: 0, ...(images.length ? { images } : {}) }, withCategory)
 
-  // `images+` appends and `images-` removes files without touching the rest
+  // PocketBase 0.22 appends files sent to `images` and removes those named in `images-`; it has no
+  // `images+` (that came with 0.23) and would silently drop the new files
   const updateArticle = (id, fields, { add = [], remove = [] } = {}) =>
     pb.collection(ARTICLES).update(id, {
       ...fields,
-      ...(add.length ? { 'images+': add } : {}),
+      ...(add.length ? { images: add } : {}),
       ...(remove.length ? { 'images-': remove } : {})
     }, withCategory)
 

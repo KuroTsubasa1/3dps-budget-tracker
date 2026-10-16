@@ -177,6 +177,18 @@ test.describe('managing articles', () => {
     await expect(sheet(page)).toHaveCount(0)
     expect(api.db.budget_tracket_catalog[0].images).toEqual(['pikachu.png'])
   })
+
+  test('an article that already has an image gets another one added, and a removed one goes', async ({ page, api }) => {
+    api.db.budget_tracket_catalog[0].images = ['old.png', 'side.png']
+    await page.reload()
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await page.locator('h3', { hasText: 'Pikachu Keychain' }).click()
+    await sheet(page).getByLabel('Add images').setInputFiles({ name: 'pikachu.png', mimeType: 'image/png', buffer: Buffer.from('89504e47', 'hex') })
+    await sheet(page).getByRole('button', { name: 'Remove image side.png' }).click()
+    await sheet(page).getByRole('button', { name: 'Save changes' }).click()
+    await expect(sheet(page)).toHaveCount(0)
+    expect(api.db.budget_tracket_catalog[0].images).toEqual(['old.png', 'pikachu.png'])
+  })
 })
 
 test.describe('visitors', () => {
