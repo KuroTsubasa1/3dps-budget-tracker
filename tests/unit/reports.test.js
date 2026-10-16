@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { NOW, ARTICLES, CATEGORIES, KEYCHAIN_DEAL, TRANSACTIONS, MOVEMENTS, COMMISSIONS } from '../fixtures/reports.js'
 import { periodRange } from '../../utils/reports/period.js'
-import { hasLines } from '../../utils/reports/common.js'
+import { hasLines, paymentSplit } from '../../utils/reports/common.js'
 import { salesSummary, sortRows } from '../../utils/reports/sales.js'
 import { marketDays, dayReport, hourWindow, compareWithPrevious } from '../../utils/reports/marketDay.js'
 import { buckets, moneySeries } from '../../utils/reports/money.js'
@@ -261,4 +261,17 @@ test('money splits the period\'s income into card, cash and other, and only the 
   // The shared history has no payment methods yet: all of it is Other
   assert.deepEqual(moneySeries({ transactions: TRANSACTIONS, range: MONTH }).incomeByMethod, { card: 0, cash: 0, other: 114 })
   assert.deepEqual(moneySeries({ transactions: PAID, range: EMPTY }).incomeByMethod, { card: 0, cash: 0, other: 0 })
+})
+
+test('the card, cash and other split adds up in cents, not floats', () => {
+  const split = paymentSplit([
+    { amount: 0.1, payment_method: 'cash' },
+    { amount: 0.2, payment_method: 'cash' },
+    { amount: 0.1, payment_method: 'card' },
+    { amount: 0.2, payment_method: 'card' },
+    { amount: 0.1 },
+    { amount: 0.2, payment_method: '' },
+    { amount: -0.3, payment_method: 'cash' }
+  ])
+  assert.deepEqual(split, { card: 0.3, cash: 0.3, other: 0.3 })
 })
