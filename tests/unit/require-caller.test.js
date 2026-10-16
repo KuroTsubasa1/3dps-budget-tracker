@@ -21,7 +21,7 @@ function setup () {
     return id ? { ok: true, json: async () => ({ record: { collectionName: 'users', id } }) } : { ok: false, status: 401, json: async () => ({}) }
   }
   const notifier = { logins: 0, accountId: async () => { notifier.logins++; return NOTIFIER_ID } }
-  const call = authorization => requireCaller({ headers: authorization === undefined ? {} : { authorization } }, SETTINGS, { notifier, fetch })
+  const call = (authorization, options = {}) => requireCaller({ headers: authorization === undefined ? {} : { authorization } }, SETTINGS, { notifier, fetch, ...options })
   return { call, fetches, notifier }
 }
 const refused = async (promise) => {
@@ -59,4 +59,12 @@ test('any other account is refused, and so is everybody when the owner id is not
   await refused(requireCaller({ headers: { authorization: TOKENS.owner } }, { ...SETTINGS, ownerId: '' }, { notifier: { accountId: async () => '' }, fetch: async () => { fetches.push(1); return { ok: false } } }))
   // Without an owner id nothing is even asked of PocketBase
   assert.equal(fetches.length, 0)
+})
+
+test('ownerOnly lets the owner in and refuses the notifier without logging it in', async () => {
+  const { call, notifier } = setup()
+  await call(TOKENS.owner, { ownerOnly: true })
+  await refused(call(TOKENS.notifier, { ownerOnly: true }))
+  await refused(call(TOKENS.stranger, { ownerOnly: true }))
+  assert.equal(notifier.logins, 0)
 })

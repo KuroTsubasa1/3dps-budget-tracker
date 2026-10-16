@@ -10,7 +10,8 @@
     "postinstall": "nuxt prepare",
     "test:e2e": "playwright test",
     "test:unit": "node --test tests/unit/*.test.js",
-    "pb:migrate": "node scripts/pb-migrate.mjs"
+    "pb:migrate": "node scripts/pb-migrate.mjs",
+    "sumup:sandbox-check": "node --env-file=.env scripts/sumup-sandbox-check.mjs"
   },
   "dependencies": {
     "@tailwindcss/forms": "^0.5.11",
