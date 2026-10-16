@@ -3,7 +3,7 @@
 // or the notifier's (for the return URL and the poll). The unit tests run against fakes and never reach SumUp.
 import { createHash, randomBytes } from 'node:crypto'
 import { sameText } from './access.js'
-import { isUnreachable } from './sumup.js'
+import { isSandboxMerchant, isUnreachable } from './sumup.js'
 
 export const CARD_PAYMENTS = 'card_payments'
 // The only fields the notifier may write (the collection's update rule refuses the rest; pb-plan.mjs)
@@ -19,6 +19,8 @@ export const GIVE_UP_MS = 10 * 60_000
 // One poll run may take this long and check this many payments at most
 export const POLL_RUN_CAP_MS = 12_000
 export const POLL_MAX_PER_RUN = 10
+// Cancel on terminal: SumUp not knowing the payment confirms the stop only this long after the start
+export const CANCEL_CONFIRM_MS = 60_000
 const MAX_CART_BYTES = 200_000
 const MAX_AMOUNT_CENTS = 10_000_00
 const RECORD_ID = /^[a-z0-9]{15}$/
@@ -27,6 +29,7 @@ export const PAIRING_CODE = /^[A-Z0-9]{8,9}$/
 
 export const NOT_CONFIGURED = "Card payments aren't configured on the server"
 export const TERMINAL_UNREACHABLE = "The terminal didn't answer. Check that it's on and online."
+export const AMOUNT_TOO_HIGH = 'The amount is above 10 000 €'
 export const PAYMENT_FAILED = "The payment didn't go through"
 export const SUMUP_UNREACHABLE = "SumUp didn't answer. Try again."
 export const NOT_PAIRED = 'Pair the terminal in Settings first'
@@ -51,7 +54,8 @@ export function chargeInput (body) {
   const { source, amount, cart } = isPlainObject(body) ? body : {}
   if (!['cart', 'home'].includes(source)) throw refuse(400, 'Unknown payment source')
   const cents = toCents(amount)
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || cents < 1 || cents > MAX_AMOUNT_CENTS) throw refuse(400, 'Enter an amount above 0')
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || cents < 1) throw refuse(400, 'Enter an amount above 0')
+  if (cents > MAX_AMOUNT_CENTS) throw refuse(400, AMOUNT_TOO_HIGH)
   if (!isPlainObject(cart)) throw refuse(400, 'Missing the sale to book')
   if (Buffer.byteLength(JSON.stringify(cart)) > MAX_CART_BYTES) throw refuse(400, 'The cart is too large for one payment')
   return { source, amount: cents / 100, cents, description: SALE_DESCRIPTION, cart }
@@ -90,7 +94,7 @@ export function createSandboxCheck (sumup) {
   return async () => {
     if (known !== null) return known
     try {
-      known = (await sumup.getMerchant())?.sandbox === true
+      known = isSandboxMerchant(await sumup.getMerchant())
       return known
     } catch {
       return false
@@ -178,9 +182,32 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
   try {
     checkout = await sumup.checkout(reader.id, { cents: input.cents, description: input.description, returnUrl: callbackUrl(host, record.id, token), foreignId: record.id })
   } catch (error) {
-    log.info(`[card] ${record.id} failed: ${error?.message || 'SumUp error'}`)
-    await store.updateCardPayment(record.id, { status: 'failed' }).catch(() => {})
-    throw refuse(502, isUnreachable(error) ? TERMINAL_UNREACHABLE : PAYMENT_FAILED)
+    // SumUp said no (the reader is offline, or it refused the request): the payment never started
+    if (!['timeout', 'unreachable', 'failed'].includes(error?.kind)) {
+      log.info(`[card] ${record.id} failed: ${error?.message || 'SumUp error'}`)
+      await store.updateCardPayment(record.id, { status: 'failed' }).catch(() => {})
+      throw refuse(502, isUnreachable(error) ? TERMINAL_UNREACHABLE : PAYMENT_FAILED)
+    }
+    // No answer (or a 5xx): the checkout may have reached the Solo. Stop it, then ask SumUp. Only SumUp's
+    // "I do not know this payment" after a successful stop fails it; anything else stays pending for the
+    // refresh, the poll and the 10-minute rule, and the sheet watches it.
+    let stopped = true
+    try {
+      await sumup.terminate(reader.id)
+    } catch {
+      stopped = false
+    }
+    let known = true
+    try {
+      known = !!(await sumup.findTransaction({ foreignTransactionId: record.id }))
+    } catch {}
+    if (stopped && !known) {
+      log.info(`[card] ${record.id} failed: ${error?.message || 'SumUp error'}`)
+      await store.updateCardPayment(record.id, { status: 'failed' }).catch(() => {})
+      throw refuse(502, TERMINAL_UNREACHABLE)
+    }
+    log.info(`[card] ${record.id} sent, SumUp did not confirm`)
+    return { id: record.id }
   }
   // Without it the result is looked up by our record id (the affiliate's foreign_transaction_id)
   if (checkout?.client_transaction_id) await store.updateCardPayment(record.id, { sumup_checkout: String(checkout.client_transaction_id) }).catch(() => {})
@@ -188,12 +215,20 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
   return { id: record.id }
 }
 
+// The payment as stored right now, when it is still pending; else null. Every write of a result is
+// preceded by this, so a payment settled meanwhile (the owner booked it, the poll got there first) is
+// never written over.
+const pendingNow = async (store, id) => {
+  const fresh = await store.getCardPayment(id)
+  return fresh.status === 'pending' ? fresh : null
+}
+
 // Asks SumUp for one pending payment's result and records it. Resolves { status, payment } afterwards
-// (the payment as stored now). Ten minutes after the start a payment SumUp does not report as pending
-// (unknown to SumUp, or no answer) is given up as failed. `strict`: SumUp not answering throws a safe 502
-// and changes nothing (the app's refresh; the poll keeps the 10-minute rule).
-async function settlePayment ({ store, sumup, id, now, log, strict }) {
-  const payment = await store.getCardPayment(id)
+// (the payment as stored now). Ten minutes after the start a payment is given up as failed only when SumUp
+// answered that it does not know it; no answer never gives up. `strict`: SumUp not answering throws a safe
+// 502 and changes nothing (the app's refresh). `payment`: the record as the caller has just read it.
+async function settlePayment ({ store, sumup, id, now, log, strict, payment: read }) {
+  const payment = read ?? await store.getCardPayment(id)
   if (payment.status !== 'pending') return { status: payment.status, payment }
   let transaction
   let asked = true
@@ -205,16 +240,25 @@ async function settlePayment ({ store, sumup, id, now, log, strict }) {
   }
   const status = statusFromTransaction(transaction)
   if (status === 'pending') {
-    const sumupSaysPending = asked && !!transaction
-    if (sumupSaysPending || !(now - createdAt(payment) >= GIVE_UP_MS)) return { status: 'pending', payment }
+    const unknownToSumUp = asked && !transaction
+    if (!unknownToSumUp || !(now - createdAt(payment) >= GIVE_UP_MS)) return { status: 'pending', payment }
+  }
+  const settled = await pendingNow(store, id)
+  if (!settled) return settledMeanwhile(store, id)
+  if (status === 'pending') {
     await store.updateCardPayment(id, { status: 'failed' })
-    log.info(`[card] ${id} failed: no result from SumUp after 10 minutes`)
-    return { status: 'failed', payment: { ...payment, status: 'failed' } }
+    log.info(`[card] ${id} failed: SumUp does not know it after 10 minutes`)
+    return { status: 'failed', payment: { ...settled, status: 'failed' } }
   }
   const patch = { status, sumup_transaction: sumupTransactionOf(transaction) }
   await store.updateCardPayment(id, patch)
   log.info(`[card] ${id} ${status}${patch.sumup_transaction ? ` (${patch.sumup_transaction})` : ''}`)
-  return { status, payment: { ...payment, ...patch } }
+  return { status, payment: { ...settled, ...patch } }
+}
+
+const settledMeanwhile = async (store, id) => {
+  const payment = await store.getCardPayment(id)
+  return { status: payment.status, payment }
 }
 
 export async function checkPayment ({ store, sumup, id, now = Date.now(), log = console }) {
@@ -226,14 +270,15 @@ export async function checkPayment ({ store, sumup, id, now = Date.now(), log = 
 // 10-minute rule as the poll. Answers the payment without its callback token.
 export async function refreshPayment ({ store, sumup, id, now = Date.now(), log = console }) {
   if (!RECORD_ID.test(String(id ?? ''))) throw refuse(404, 'Unknown payment')
+  let read
   try {
-    await store.getCardPayment(id)
+    read = await store.getCardPayment(id)
   } catch (error) {
     // PocketBase 0.22 answers a record the caller may not see as 404
     if (error?.status === 404 || error?.status === 403) throw refuse(404, 'Unknown payment')
     throw refuse(502, 'Could not read the payment. Try again.')
   }
-  const { payment } = await settlePayment({ store, sumup, id, now, log, strict: true })
+  const { payment } = await settlePayment({ store, sumup, id, now, log, strict: true, payment: read })
   const { callback_token: secret, ...visible } = payment
   return { payment: visible }
 }
@@ -253,7 +298,7 @@ export async function callbackMatches ({ store, id, token }) {
 // POST /api/card/cancel: stops the checkout on the Solo. Once SumUp has taken the stop, the payment is
 // `cancelled` (or `approved`, should the card have gone through after all). When there was nothing left to
 // stop (the customer already paid or cancelled), the status stays for the poll to settle.
-export async function cancelCharge ({ store, sumup, id, log = console }) {
+export async function cancelCharge ({ store, sumup, id, now = Date.now(), log = console }) {
   if (!RECORD_ID.test(String(id ?? ''))) throw refuse(404, 'Unknown payment')
   let payment
   try {
@@ -272,12 +317,23 @@ export async function cancelCharge ({ store, sumup, id, log = console }) {
     stopped = false
   }
   let transaction = null
+  let asked = true
   try {
     transaction = await sumup.findTransaction({ clientTransactionId: payment.sumup_checkout || '', foreignTransactionId: payment.id })
-  } catch {}
+  } catch {
+    asked = false
+  }
+  // Only SumUp's word settles it: approved when the card went through, cancelled when SumUp has it as
+  // CANCELLED or FAILED, or does not know it a minute after the start (and the stop was accepted). A payment
+  // SumUp still has as PENDING, or does not answer about, stays pending for the refresh and the poll.
   const found = statusFromTransaction(transaction)
-  const status = found === 'approved' ? 'approved' : stopped ? 'cancelled' : found
+  let status = 'pending'
+  if (found === 'approved') status = 'approved'
+  else if (found === 'cancelled') status = 'cancelled'
+  else if (found === 'declined') status = stopped ? 'cancelled' : 'declined'
+  else if (asked && !transaction && stopped && now - createdAt(payment) > CANCEL_CONFIRM_MS) status = 'cancelled'
   if (status === 'pending') return { status }
+  if (!(await pendingNow(store, id))) return { status: (await store.getCardPayment(id)).status }
   await store.updateCardPayment(id, { status, sumup_transaction: sumupTransactionOf(transaction) })
   log.info(`[card] ${id} ${status}`)
   return { status }
@@ -289,37 +345,48 @@ export async function cancelCharge ({ store, sumup, id, log = console }) {
 export function createCardPoller ({ store, sumup, log = console, capMs = POLL_RUN_CAP_MS, maxPerRun = POLL_MAX_PER_RUN, now = () => Date.now() }) {
   const tracked = new Set()
   let running = null
+  let limited = null
   let again = false
 
+  // One pass over the payments, oldest first: stops starting checks once the deadline has passed. A payment
+  // checked moves to the back, so the ones left over come first next time.
   const runOnce = async () => {
+    const deadline = Date.now() + capMs
     for (const id of [...tracked].slice(0, maxPerRun)) {
+      if (Date.now() >= deadline) break
       try {
         const status = await checkPayment({ store, sumup, id, now: now(), log })
-        if (status !== 'pending') tracked.delete(id)
+        tracked.delete(id)
+        if (status === 'pending') tracked.add(id)
       } catch (error) {
         // A record that is gone is dropped; anything else is tried again next run
         if (error?.status === 404) tracked.delete(id)
-        else log.error(`[card] Could not check ${id}: ${error?.kind || error?.status || 'error'}`)
+        else {
+          tracked.delete(id)
+          tracked.add(id)
+          log.error(`[card] Could not check ${id}: ${error?.kind || error?.status || 'error'}`)
+        }
       }
     }
   }
 
+  // `running` stays set until the checks really have settled, so a stuck check is never joined by a second
+  // check of the same payment; the caller gets its answer after at most capMs.
   const run = () => {
     if (running) {
       again = true
-      return running
+      return limited
     }
     if (!tracked.size) return Promise.resolve()
     running = (async () => {
       do {
         again = false
-        let timer
-        const cap = new Promise((resolve) => { timer = setTimeout(resolve, capMs) })
-        await Promise.race([runOnce(), cap])
-        clearTimeout(timer)
+        await runOnce()
       } while (again && tracked.size)
     })().finally(() => { running = null })
-    return running
+    let timer
+    limited = Promise.race([running, new Promise((resolve) => { timer = setTimeout(resolve, capMs) })]).finally(() => clearTimeout(timer))
+    return limited
   }
 
   const track = (id) => { tracked.add(id) }

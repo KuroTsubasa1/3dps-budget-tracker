@@ -79,11 +79,13 @@ const rulesFor = (ownerId, notifierId = null, conventionFields = [], cardFields 
   if (notifierId && notifierId === ownerId) throw new Error('The notifier must be a different account from the owner')
   const ON = notifierId ? `(${O}) || (${ownerRule(notifierId)})` : O
   // The owner may write anything; the notifier only an update (while `notifierOnly` holds) that leaves every other field unset
-  const limitedUpdate = (fields, allowed, notifierOnly = []) => {
-    if (!notifierId) return O
+  const limitedUpdate = (fields, allowed, notifierOnly = [], ownerHalf = O) => {
+    if (!notifierId) return ownerHalf
     const untouched = fields.filter(name => !allowed.includes(name)).map(name => `@request.data.${name}:isset = false`)
-    return `(${O}) || (${[ownerRule(notifierId), ...notifierOnly, ...untouched].join(' && ')})`
+    return `(${ownerHalf}) || (${[ownerRule(notifierId), ...notifierOnly, ...untouched].join(' && ')})`
   }
+  // A settled card payment keeps its status: the owner may still book it (booked_transaction) but change its status only while pending
+  const cardOwnerUpdate = `${O} && (@request.data.status:isset = false || status = "pending")`
   return {
     users: { createRule: null },
     categories: { listRule: '', viewRule: '', createRule: O, updateRule: O, deleteRule: O },
@@ -95,7 +97,7 @@ const rulesFor = (ownerId, notifierId = null, conventionFields = [], cardFields 
     print_jobs: { listRule: O, viewRule: O, createRule: O, updateRule: O, deleteRule: O },
     conventions: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(conventionFields, ['reminders']), deleteRule: O },
     push_subscriptions: { listRule: ON, viewRule: ON, createRule: O, updateRule: null, deleteRule: ON },
-    [CARD_PAYMENTS]: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(cardFields, CARD_NOTIFIER_FIELDS, ['status = "pending"']), deleteRule: O }
+    [CARD_PAYMENTS]: { listRule: ON, viewRule: ON, createRule: O, updateRule: limitedUpdate(cardFields, CARD_NOTIFIER_FIELDS, ['status = "pending"'], cardOwnerUpdate), deleteRule: O }
   }
 }
 

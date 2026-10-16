@@ -583,7 +583,9 @@ test('the notifier may write only the reminders of a convention, and a new field
 const CARD_FIELDS = ['amount', 'description', 'source', 'cart', 'status', 'sumup_checkout', 'sumup_transaction', 'booked_transaction', 'callback_token']
 const withoutCard = collections => withoutFields(collections.filter(collection => collection.name !== CARD_PAYMENTS), ['payment_method', 'sumup_transaction'])
 // The notifier records SumUp's answer only (status, sumup_checkout, sumup_transaction), and only while the stored status is still pending
-const CARD_NOTIFIER_UPDATE = `(${OWNER_EXPR}) || (${NOTIFIER_EXPR} && status = "pending" && ${['amount', 'description', 'source', 'cart', 'booked_transaction', 'callback_token'].map(name => `@request.data.${name}:isset = false`).join(' && ')})`
+// The owner may change the status only while it is pending (booked_transaction any time)
+const CARD_OWNER_UPDATE = `${OWNER_EXPR} && (@request.data.status:isset = false || status = "pending")`
+const CARD_NOTIFIER_UPDATE = `(${CARD_OWNER_UPDATE}) || (${NOTIFIER_EXPR} && status = "pending" && ${['amount', 'description', 'source', 'cart', 'booked_transaction', 'callback_token'].map(name => `@request.data.${name}:isset = false`).join(' && ')})`
 
 test('card payments are created locked, with a required status and a 200 kB cart', () => {
   const op = planSchema(current()).find(item => item.op === 'createCollection' && item.name === CARD_PAYMENTS)
@@ -623,7 +625,10 @@ test('the notifier may read card payments and set only their status and SumUp id
   // Only the new collection's rules change
   assert.deepEqual(opKeys(ops), [`setRules:${CARD_PAYMENTS}`])
   assert.deepEqual(ops[0].rules, { listRule: OWNER_OR_NOTIFIER, viewRule: OWNER_OR_NOTIFIER, createRule: OWNER_EXPR, updateRule: CARD_NOTIFIER_UPDATE, deleteRule: OWNER_EXPR })
-  for (const name of ['status', 'sumup_checkout', 'sumup_transaction']) assert.ok(!ops[0].rules.updateRule.includes(`@request.data.${name}:`), name)
+  // The notifier's half never restricts its three fields; the owner's half may change the status only while pending
+  const notifierHalf = ops[0].rules.updateRule.split(') || (')[1]
+  for (const name of ['status', 'sumup_checkout', 'sumup_transaction']) assert.ok(!notifierHalf.includes(`@request.data.${name}:`), name)
+  assert.ok(ops[0].rules.updateRule.startsWith(`(${OWNER_EXPR} && (@request.data.status:isset = false || status = "pending"))`))
   assert.deepEqual(planRules(simulate(withCard, ops), OWNER_ID, NOTIFIER_ID), [])
   // The conventions update rule is unchanged: no status clause
   assert.ok(!NOTIFIER_UPDATE.includes('status = "pending"'))
@@ -637,7 +642,7 @@ test('the notifier may read card payments and set only their status and SumUp id
 test('without a notifier card payments belong to the owner alone, and a later run without --notifier keeps it', () => {
   const afterSchema = simulate(current(), planSchema(current()))
   const ownerOnly = planRules(afterSchema, OWNER_ID).find(op => op.collection === CARD_PAYMENTS)
-  assert.deepEqual(ownerOnly.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: OWNER_EXPR, deleteRule: OWNER_EXPR })
+  assert.deepEqual(ownerOnly.rules, { listRule: OWNER_EXPR, viewRule: OWNER_EXPR, createRule: OWNER_EXPR, updateRule: CARD_OWNER_UPDATE, deleteRule: OWNER_EXPR })
   // Only card payments still naming the notifier: dropping it silently is refused
   const cardOnly = simulate(afterSchema, [{ op: 'setRules', collection: CARD_PAYMENTS, rules: { listRule: OWNER_OR_NOTIFIER } }])
   assert.throws(() => planRules(cardOnly, OWNER_ID), new RegExp(`still allow the notifier ${NOTIFIER_ID}`))
