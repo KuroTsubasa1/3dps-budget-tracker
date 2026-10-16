@@ -300,6 +300,47 @@ test.describe('phone layout sweep', () => {
     })
   }
   for (const dark of [false, true]) {
+    test(`Pay by card, its sheet and the Card terminal section fit at 375px${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
+      await page.addInitScript((dark) => {
+        localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))
+      }, dark)
+      await api.mockCatalog(longProducts)
+      api.pairTerminal()
+      api.card.reader.name = 'Supercalifragilisticexpialidocious-Solo-With-A-Very-Long-Unbroken-Name'
+      const fits = async (label) => {
+        const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+        expect(scrollWidth, label).toBeLessThanOrEqual(page.viewportSize().width)
+        expect(await smallTargets(page), label).toEqual([])
+      }
+      await gotoReady(page, '/catalog')
+      // The seven-digit article
+      await page.locator('h3', { hasText: 'Extremely Long' }).click()
+      await page.getByRole('button', { name: /View cart/ }).click()
+      await expect(page.getByRole('button', { name: /^Pay by card · 123\.456,78/ })).toBeVisible()
+      await fits('cart')
+      await page.getByRole('button', { name: /^Pay by card/ }).click()
+      const payment = page.getByRole('dialog', { name: 'Card payment' })
+      await expect(payment.getByTestId('card-payment-state')).toHaveText(/Waiting for card · 123\.456,78/)
+      await fits('waiting')
+      expect(await payment.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false)
+      api.settleCard('declined')
+      await expect(payment.getByTestId('card-payment-state')).toHaveText('Card declined')
+      await fits('declined')
+      await payment.getByRole('button', { name: 'Close' }).last().click()
+
+      await gotoReady(page, '/settings#card')
+      await expect(page.getByTestId('card-reader-status')).toHaveText('Online')
+      await fits('paired')
+      await page.getByRole('button', { name: 'Unpair' }).click()
+      await expect(page.getByText('Unpair the terminal?')).toBeVisible()
+      await fits('confirm unpair')
+      await page.getByRole('button', { name: 'Unpair', exact: true }).last().click()
+      await expect(page.getByLabel('Pairing code')).toBeVisible()
+      await fits('pairing')
+    })
+  }
+
+  for (const dark of [false, true]) {
     test(`the calendar fits at 375px with long names, in Upcoming, Month and the sheet${dark ? ' (dark)' : ''}`, async ({ page, api }) => {
       await page.addInitScript((dark) => {
         localStorage.setItem('budget-tracker-settings', JSON.stringify({ display: { darkMode: dark } }))

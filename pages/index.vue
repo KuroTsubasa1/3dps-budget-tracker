@@ -117,6 +117,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useAppSettings } from '~/composables/useAppSettings'
 import { useMediaQuery } from '~/composables/useMediaQuery'
+import { useCardPayments } from '~/composables/useCardPayments'
 import { useCommissions } from '~/composables/useCommissions'
 import { usePrintJobs } from '~/composables/usePrintJobs'
 import { formatCurrency } from '~/utils/currency'
@@ -132,8 +133,12 @@ const { loadBoardData } = usePrintJobs()
 const openCommissions = ref(0)
 const toPrintCount = ref(0)
 
+const { startCardBooking } = useCardPayments()
+
 // One commissions fetch feeds the open count, the DSGVO wipe and the print-board count
 onMounted(async () => {
+  // Card payments approved while the app was closed or offline are booked now, and when the connection returns
+  startCardBooking()
   let list
   try {
     list = await listCommissions()

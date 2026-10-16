@@ -260,3 +260,12 @@ test('fromRecord keeps the sale lines, the sale time and the created stamp for t
   assert.equal('sold_at' in older, false)
   assert.equal(older.created, '2026-10-12 10:00:00.000Z')
 })
+
+test('withHistoryEntry replaces the entry with the same record id in place, else appends', () => {
+  const history = [{ id: 1, recordId: 'a', amount: 1 }, { id: 2, recordId: 'b', amount: 2 }]
+  assert.deepEqual(tx.withHistoryEntry(history, { id: 3, recordId: 'a', amount: 5 }), [{ id: 3, recordId: 'a', amount: 5 }, { id: 2, recordId: 'b', amount: 2 }])
+  assert.deepEqual(tx.withHistoryEntry(history, { id: 4, recordId: 'c', amount: 3 }).map(entry => entry.recordId), ['a', 'b', 'c'])
+  // Entries from before record ids are never matched
+  assert.deepEqual(tx.withHistoryEntry([{ id: 1, amount: 1 }], { id: 2, amount: 1 }).map(entry => entry.id), [1, 2])
+  assert.equal(history.length, 2)
+})

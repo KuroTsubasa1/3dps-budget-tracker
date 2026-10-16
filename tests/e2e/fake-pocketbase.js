@@ -126,6 +126,8 @@ export function createFakePocketBase () {
   const db = Object.fromEntries(COLLECTIONS.map(name => [name, []]))
   const failures = {}
   const readFailures = {}
+  // Like readFailures, for list reads only (a single record can still be read)
+  const listReadFailures = {}
   const delays = {}
   // Collections whose write replies drop `items`, like a server that has not been migrated yet
   const stripItems = new Set()
@@ -183,6 +185,7 @@ export function createFakePocketBase () {
         return route.abort()
       }
       if (readFailures[name]) return reply(readFailures[name], { code: readFailures[name], message: 'Only admins can perform this action.', data: {} })
+      if (!id && listReadFailures[name]) return reply(listReadFailures[name], { code: listReadFailures[name], message: 'Forced failure.', data: {} })
       const perPage = Number(url.searchParams.get('perPage') || 30)
       if (OWNER_READ_ONLY.has(name) && !isOwner) return reply(200, { page: 1, perPage, totalItems: 0, totalPages: 0, items: [] })
       if (id) {
@@ -252,5 +255,5 @@ export function createFakePocketBase () {
     return reply(405, { code: 405, message: 'Method not allowed.', data: {} })
   }
 
-  return { db, failures, readFailures, delays, stripItems, missingFields, requests, state, handle }
+  return { db, failures, readFailures, listReadFailures, delays, stripItems, missingFields, requests, state, handle }
 }

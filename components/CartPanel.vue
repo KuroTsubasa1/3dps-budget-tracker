@@ -47,6 +47,12 @@
       <BaseButton size="lg" block icon="cash" :disabled="!items.length" @click="$emit('submit')">
         Add to Balance
       </BaseButton>
+      <template v-if="card?.show">
+        <BaseButton size="lg" block variant="secondary" icon="credit-card" :disabled="!items.length || card.offline" @click="$emit('card')">
+          Pay by card · {{ formatCurrency(total) }}
+        </BaseButton>
+        <p v-if="card.offline" class="text-center text-xs text-ink-muted">Needs a connection</p>
+      </template>
       <BaseButton variant="secondary" block icon="clipboard" :disabled="!items.length" @click="$emit('commission')">
         Commission
       </BaseButton>
@@ -62,7 +68,9 @@ defineProps({
   items: { type: Array, required: true },
   total: { type: Number, required: true },
   priceOf: { type: Function, default: item => item.price },
-  applied: { type: Array, default: () => [] }
+  applied: { type: Array, default: () => [] },
+  // Pay by card: { show (a Solo is paired), offline }; null hides it
+  card: { type: Object, default: null }
 })
-defineEmits(['increment', 'decrement', 'remove', 'submit', 'commission'])
+defineEmits(['increment', 'decrement', 'remove', 'submit', 'commission', 'card'])
 </script>

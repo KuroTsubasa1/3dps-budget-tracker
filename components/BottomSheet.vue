@@ -19,6 +19,7 @@
             <!-- A long title (a convention's name) wraps instead of squeezing the close button -->
             <h2 :id="titleId" class="min-w-0 break-words text-base font-semibold text-ink">{{ title }}</h2>
             <button
+              v-if="dismissible"
               type="button"
               class="-mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-muted"
               aria-label="Close"
@@ -36,12 +37,20 @@
   </Teleport>
 </template>
 
+<script>
+// Sheets open right now, app-wide: the page scrolls again once the last one closes
+let openSheets = 0
+</script>
+
 <script setup>
 import { ref, watch, nextTick, onBeforeUnmount, useId } from 'vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  title: { type: String, required: true }
+  title: { type: String, required: true },
+  // false while something must finish first (a card payment on the terminal): no close button, and the
+  // backdrop and Escape do nothing
+  dismissible: { type: Boolean, default: true }
 })
 const emit = defineEmits(['update:open'])
 
@@ -49,11 +58,20 @@ const panel = ref(null)
 const titleId = useId()
 let previouslyFocused = null
 
-const close = () => emit('update:open', false)
+const close = () => {
+  if (props.dismissible) emit('update:open', false)
+}
+
+// With a sheet opened over another (the card payment over Home's form), only the top one takes the keys
+const isTopmost = () => {
+  const dialogs = document.querySelectorAll('#teleports [role="dialog"]')
+  return dialogs[dialogs.length - 1] === panel.value
+}
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
 
 const onKeydown = (event) => {
+  if (!isTopmost()) return
   if (event.key === 'Escape') {
     close()
     return
@@ -72,15 +90,27 @@ const onKeydown = (event) => {
   }
 }
 
+let holding = false
+const hold = () => {
+  if (holding) return
+  holding = true
+  openSheets++
+  document.body.style.overflow = 'hidden'
+}
 const release = () => {
-  document.body.style.overflow = ''
+  if (holding) {
+    holding = false
+    openSheets--
+  }
+  // A sheet still open underneath (Home's form under the card payment) keeps the page from scrolling
+  if (!openSheets) document.body.style.overflow = ''
   document.removeEventListener('keydown', onKeydown)
 }
 
 watch(() => props.open, async (isOpen) => {
   if (isOpen) {
     previouslyFocused = document.activeElement
-    document.body.style.overflow = 'hidden'
+    hold()
     document.addEventListener('keydown', onKeydown)
     await nextTick()
     panel.value?.focus()

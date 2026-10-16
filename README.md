@@ -25,6 +25,7 @@ Akinai is an installable web app for one owner. It runs on the phone at the mark
 |---|---|
 | **Sales** | The dashboard shows the balance, today's takings and the Japan savings (10%). A sale can be typed in with the numpad or rung up from the catalog. Sales made offline are queued and sync once the connection is back. |
 | **Catalog and deals** | Articles with photos, categories with base prices, and the stock of each article, set with one "Stock now" field. Cart deals ("Keychain 2 for 7", "Big items") are applied at checkout. A gatcha (an article with prize categories) asks for its prizes right after the checkout, also offline; the prizes' stock goes down, not the gatcha's. Every stock change is recorded as a movement. |
+| **Card payments** | *Pay by card* in the cart and on Home puts the total on the shop's SumUp Solo. An approved card books the sale automatically, exactly once, as a card sale; a declined or cancelled one books nothing. Reports split takings into card, cash and other. |
 | **Commissions** | Made-to-order prints with several articles, from Open to Printing, Ready and Delivered. Switching a commission to Paid books the income, Unpaid takes it back. Customer data is wiped six months after a commission is finished. |
 | **Print board** | What to print next: articles at or below their low-stock threshold, and open commissions. It also shows what is printing and what was done today. |
 | **Reports** | Sales by article and category, a market day hour by hour, money over time and stock (what runs out soonest, printed vs sold), for any period. Each tab exports as CSV. |
@@ -42,11 +43,16 @@ flowchart LR
     Nuxt -- akinai-notifier account --> PB
     Nuxt -- web-push every 5 min --> Push[Browser push service]
     Push --> Phone
+    Phone -- pay by card --> Nuxt
+    Nuxt -- Readers API, transactions --> SumUp[SumUp Cloud API]
+    SumUp -- return URL --> Nuxt
+    SumUp --> Solo([SumUp Solo])
     Calendar([Phone Calendar]) -- private .ics link --> Nuxt
 ```
 
 - The app talks to PocketBase directly with the owner's login. PocketBase rules let only the owner write.
 - The Nuxt server also runs the reminder job. Every 5 minutes it logs in as `akinai-notifier`, a second account that may only read conventions, read and delete push subscriptions, and mark reminders as sent. It sends the due reminders with `web-push`, and it serves the calendar feed.
+- Card payments go through the Nuxt server, which alone holds the SumUp keys. It creates a `card_payments` record with the owner's login and sends the checkout to the Solo. While the payment sheet is open, the app asks the server every 2 s to look the result up at SumUp; with the notifier login the server also takes SumUp's call to the return URL and checks pending payments every 15 s on its own. The app books the sale once the payment is approved.
 - Rules that are worth testing live in plain modules under `utils/` (and `server/utils/` for the server). `node --test` runs them, and Playwright checks the pages against an in-memory fake PocketBase.
 
 ## Setup
@@ -71,6 +77,8 @@ npx playwright test                    # e2e against the dev server and a fake P
 npx playwright test --project=mobile   # the phone layout only
 ```
 
+The tests never reach SumUp: the unit tests use a fake SumUp client and the e2e tests fake the `/api/card/*` routes. `npm run sumup:sandbox-check` is the only thing that talks to SumUp from your machine, and only to a sandbox account (see [Rollout: card payments](#rollout-card-payments)).
+
 ## PocketBase and migrations
 
 Akinai needs PocketBase **0.22** with an owner account in the `users` collection. Schema changes are made with a script that reads your PocketBase admin login from your local `.env`. Set `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` there (`POCKETBASE_ADMIN_TOKEN` is an optional alternative). Never prefix them with `NUXT_PUBLIC_`.
@@ -81,11 +89,11 @@ npm run pb:migrate -- --apply            # create collections and fields, seed c
 npm run pb:migrate -- --apply-rules --owner you@example.com --notifier akinai-notifier@example.com
 ```
 
-- **Collections:** `budget_tracket_catalog` (articles), `budget_tracker_transactions`, `categories`, `deals`, `stock_movements`, `commissions`, `print_jobs`, `conventions` and `push_subscriptions`.
+- **Collections:** `budget_tracket_catalog` (articles), `budget_tracker_transactions`, `categories`, `deals`, `stock_movements`, `commissions`, `print_jobs`, `conventions`, `push_subscriptions` and `card_payments`.
 - **New collections start locked.** Only the admin can use them until `--apply-rules` opens them to the owner.
 - **`--apply-rules`** closes public sign-up on `users` and pins every write to the owner's record id. It prints that id: `Owner: you@example.com (abc123…)`.
   - `--owner` names the owner. It is required once `users` holds more than one account, which is the case as soon as the notifier exists.
-  - `--notifier` lets the reminder account read and update conventions and read and delete push subscriptions. Without it those two collections stay owner-only, and the reminder job can't read them.
+  - `--notifier` lets the reminder account read and update conventions, read and delete push subscriptions, and read card payments and record SumUp's result on them (`status`, `sumup_checkout`, `sumup_transaction`, nothing else). Without it those collections stay owner-only, and neither the reminder job nor card payments work.
   - **Every later `--apply-rules` must repeat both** `--owner <email>` and `--notifier <email>`. Once the notifier exists, a run without `--notifier` stops with an error rather than silently cutting the notifier off.
 - **The snapshot:** every run writes the resulting schema to `pocketbase/schema.json`. The unit tests check the plan against it.
 - **Order:** run `--apply` before deploying a release that needs new fields, and `--apply-rules` right after the release is live.
@@ -148,12 +156,17 @@ Reminders run only in the built server (never in `nuxt dev`), every 5 minutes. T
 | `VAPID_PRIVATE_KEY` | the VAPID private key |
 | `VAPID_SUBJECT` | a `mailto:` address that push services can contact |
 | `CALENDAR_SECRET` | the random part of the private calendar link: at least 32 characters of `A-Z a-z 0-9 _ -` (otherwise the feed stays off). `openssl rand -hex 32` works. |
+| `SUMUP_API_KEY` | SumUp API key (Developer settings → API keys). Card payments also need `POCKETBASE_URL` and `OWNER_ID`; SumUp's return URL and the 15 s check of pending payments also need the notifier login (without it, `[card] return URL and backup poll off` in the log). |
+| `SUMUP_MERCHANT_CODE` | the merchant code of that SumUp account (letters and digits) |
+| `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID` | the affiliate key and the app id it was made for; SumUp's Cloud API needs them on every checkout |
+| `SUMUP_API_URL` | optional, `https://api.sumup.com` by default; https only |
+| `CARD_PUBLIC_URL` | optional: the app's public https address for SumUp's return URL (just the origin, for example `https://akinai.example.com`). Without it the built server uses `https://akinai.lasseharm.space`, and `nuxt dev` sends no return URL. Set it only if the app moves to another domain. |
 
 Push goes only to the real push services (Apple, Google FCM, Mozilla and Microsoft), and only over https.
 
-None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. None of them go into the repository or a local `.env` that is committed.
+None of these may get a `NUXT_PUBLIC_` prefix, except the VAPID public key. None of them go into the repository or a local `.env` that is committed. The live SumUp keys go only into this file; the local `.env` may hold the sandbox `SUMUP_*` keys for the laptop test (see [Rollout: card payments](#rollout-card-payments)).
 
-**Never put the server env (`NOTIFIER_*`, `VAPID_*`, `CALENDAR_SECRET`, `OWNER_ID`, `POCKETBASE_URL`) into a local `.env`, committed or not.** `nuxt preview` loads `.env` (and so does Playwright's webServer when no dev server is running), which would start a second reminder job against production and send every notification twice. These values belong only in `/opt/budget-tracker/shared/akinai.env` on the server.
+**Never put the server's secrets (`NOTIFIER_*`, `VAPID_*`, `CALENDAR_SECRET`) or live SumUp keys into a local `.env`, committed or not.** (`POCKETBASE_URL` and `OWNER_ID` are no secrets and may be there for the card payment test on the laptop.) `nuxt preview` loads `.env` (and so does Playwright's webServer when no dev server is running), which would start a second reminder job against production and send every notification twice. These values belong only in `/opt/budget-tracker/shared/akinai.env` on the server.
 
 pm2 reads the file when the process starts. After editing it, restart from the current release:
 ```bash
@@ -221,6 +234,37 @@ Run these yourself, in this order.
 2. **Deploy.** Push to `main`. From now on *Mark delivered* books nothing; the income is booked when the commission's *Paid* switch is turned on, and taken back when it is turned off.
 3. **Old commissions.** Commissions delivered before 16 October 2026 (UTC) count as delivered before payments were tracked: those from before the deploy already booked their income and show `Unpaid`. Turning one to *Paid* asks first: *Only mark paid* books nothing, *Book income again* books a second income.
 4. **Unpaid and other devices.** *Unpaid* removes the income from this device's queue and from the server. It cannot reach an income still waiting in another device's offline queue: that one is sent when that device comes back online, so check the balance after switching a commission to Unpaid that another device marked Paid while offline.
+
+### Rollout: card payments
+
+Run these yourself, in this order.
+
+1. **Schema.** Run `npm run pb:migrate`. The dry run should list exactly `create collection "card_payments" (amount, description, source, cart, status, sumup_checkout, sumup_transaction, booked_transaction, callback_token)` and `add to "budget_tracker_transactions": payment_method, sumup_transaction`. Then run `npm run pb:migrate -- --apply`.
+2. **Rules.** Run `npm run pb:migrate -- --apply-rules --owner <your email> --notifier <notifier email>`. It should list only `set access rules on "card_payments"`: the owner may do everything, the notifier may read and set the status and SumUp's ids. Both steps run **before** the laptop test and before the deploy: the app needs the collection open to take any card payment.
+3. **Sandbox test on the laptop** (`nuxt dev`, with the sandbox merchant and the Virtual Solo at virtual-solo.sumup.com):
+   1. Put into the local `.env`: the four sandbox keys `SUMUP_API_KEY`, `SUMUP_MERCHANT_CODE`, `SUMUP_AFFILIATE_KEY`, `SUMUP_AFFILIATE_APP_ID`, plus `POCKETBASE_URL=https://pocket.lasseharm.space` and `OWNER_ID=<the id --apply-rules printed>`. **Never the notifier login.**
+   2. Optional: `npm run sumup:sandbox-check` checks the keys without the app. It stops unless SumUp marks the account as a sandbox, lists the readers, sends a 1,00 € checkout to the paired one after you say yes, and prints how SumUp's status maps to Akinai's (`SUCCESSFUL → approved`, `FAILED → declined`, `CANCELLED → cancelled`). `-- --pair <code>` pairs the Virtual Solo first.
+   3. Restart `npm run dev`. Its log shows `[card] return URL and backup poll off, missing: NOTIFIER_EMAIL, NOTIFIER_PASSWORD`: expected on the laptop. The open payment sheet asks for the result every 2 s instead, and the next start settles a payment whose sheet was closed.
+   4. Log in and open Settings → Card terminal. The Virtual Solo is already paired with the sandbox account, so the section shows it as *Online*. (If it shows the code field instead, enter the code the Virtual Solo shows under *Connections → API → Connect* and tap *Pair terminal*.)
+   5. Checklist:
+      - [ ] Cart → *Pay by card · <total>*: the Solo shows the amount, the sheet shows `Waiting for card`.
+      - [ ] Pay: `Paid ✓`, the cart empties, the sale is in the history once, as card, its description starting with `[Sandbox] `. Its SumUp code matches the sandbox transaction.
+      - [ ] *Cancel on terminal* while the Solo waits: `Cancelled`, nothing booked.
+      - [ ] Cancel on the Solo itself: `Cancelled` (or `Card declined`: note which; SumUp may report a cancel on the terminal as failed).
+      - [ ] Decline a card on the Solo (the Virtual Solo can simulate one): `Card declined`, nothing booked. **Does the Solo then offer a retry on the same checkout?** Note it: if it does, a card that goes through on the retry would arrive after Akinai already showed `Card declined`.
+      - [ ] Home → *Pay by card* for an income: booked with its description (with `[Sandbox] `), as card.
+      - [ ] Reload the page while the customer pays, pay, then open the app again: `Card payment of <amount> booked`, once.
+      - [ ] Log the Virtual Solo out and pay: `The terminal didn't answer. Check that it's on and online.`
+      - [ ] Reports → Market day and Money show the card sales under Card.
+   6. **Delete the test sales.** They are real entries in the production books: in the PocketBase admin, delete the `budget_tracker_transactions` whose description starts with `[Sandbox] ` (a card sale's id is its card payment's id) and their `stock_movements`, and the `card_payments` marked `[Sandbox]`. Then remove the four `SUMUP_*` lines from `.env` (or keep them, with the Virtual Solo paired, for the next test). The sandbox and the live account have separate readers, so the Virtual Solo never shows up for the live keys.
+4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there; `CARD_PUBLIC_URL` only if the app no longer runs at `https://akinai.lasseharm.space`), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`; pm2 reads the file only when the process starts, so if it still shows one of them, restart it as described there.
+5. **Pair the real Solo** in Settings → Card terminal: enter the code the Solo shows under *Connections → API → Connect* and tap *Pair terminal*. The section shows the Solo as *Online*.
+6. **First live payments:**
+   - [ ] A small real payment: `Paid ✓`, and `pm2 logs budget-tracker` shows `[card] <id> approved (<SumUp code>)` within seconds (SumUp's call to the return URL reaches the server). The code matches the SumUp app. Refund it in the SumUp app if you like; Akinai keeps the sale (delete it there too).
+   - [ ] Pairing and paying work for the German merchant account (the Cloud API's region).
+   - [ ] **Can the paired Solo still take manually typed amounts** (outside Akinai)? This decides how the stall works, not the code.
+
+A card payment that stays pending is checked every 15 s on the server; after 10 minutes without SumUp knowing it, it is marked failed. Refunds stay in the SumUp app.
 
 ## Credits
 

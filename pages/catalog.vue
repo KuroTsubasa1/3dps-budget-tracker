@@ -157,11 +157,13 @@
             :total="totalAmount"
             :price-of="priceOf"
             :applied="pricedCart.applied"
+            :card="cardButton"
             @increment="incrementQuantity"
             @decrement="decrementQuantity"
             @remove="removeProduct"
             @submit="submitToBalance"
-          @commission="startCommission"
+            @commission="startCommission"
+            @card="payByCard"
           />
         </BaseCard>
       </aside>
@@ -188,14 +190,18 @@
           :total="totalAmount"
           :price-of="priceOf"
           :applied="pricedCart.applied"
+          :card="cardButton"
           @increment="incrementQuantity"
           @decrement="decrementQuantity"
           @remove="removeProduct"
           @submit="submitToBalance"
-            @commission="startCommission"
+          @commission="startCommission"
+          @card="payByCard"
         />
       </BottomSheet>
     </template>
+
+    <CardPaymentSheet v-if="isOwner" v-model:open="isCardSheetOpen" :request="cardRequest" @paid="onCardPaid" />
 
     <GatchaPrizeSheet
       v-if="isOwner"
@@ -228,6 +234,7 @@ import { useAuth } from '~/composables/useAuth'
 import { useMediaQuery } from '~/composables/useMediaQuery'
 import { useToast } from '~/composables/useToast'
 import { useCommissionDraft } from '~/composables/useCommissionDraft'
+import { useCardPayments } from '~/composables/useCardPayments'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
@@ -417,8 +424,8 @@ const { toast } = useToast()
 const currentBooking = () => checkoutBooking({ products: selectedProducts.value, pricedCart: pricedCart.value, deals: deals.value })
 
 // A booked checkout on this page: the catalog's stock follows at once (the server's follows when the sale
-// syncs), the cart empties, and the gatcha prizes are picked
-const finishCheckout = (booking) => {
+// syncs), the cart empties, and the gatcha prizes are picked (after a card payment, once its sheet closes)
+const finishCheckout = (booking, { pickPrizesNow = true } = {}) => {
   const moved = new Set(booking.stockMovements.map(movement => movement.article))
   for (const line of booking.items) {
     const product = products.value.find(item => item.id === line.article)
@@ -426,8 +433,10 @@ const finishCheckout = (booking) => {
   }
   products.value.forEach((product) => { product.quantity = 0 })
   isCartOpen.value = false
+  if (!booking.prizes.count) return
   // Opens once the cart sheet has let go of the page
-  if (booking.prizes.count) nextTick(() => { isPrizeSheetOpen.value = true })
+  if (pickPrizesNow) nextTick(() => { isPrizeSheetOpen.value = true })
+  else prizesAfterCard.value = true
 }
 
 const submitToBalance = () => {
@@ -437,6 +446,34 @@ const submitToBalance = () => {
   finishCheckout(booking)
   toast(`Added ${formatCurrency(booking.amount)} to balance`)
 }
+
+// Pay by card: the same booking, stored with the card payment and booked once the card is approved
+const { terminalState, loadTerminal, startCardBooking } = useCardPayments()
+const online = ref(true)
+const cardButton = computed(() => ({ show: !!terminalState.value?.configured && !!terminalState.value?.paired, offline: !online.value }))
+const isCardSheetOpen = ref(false)
+const cardRequest = ref(null)
+const prizesAfterCard = ref(false)
+
+const payByCard = () => {
+  if (selectedProducts.value.length === 0 || !online.value) return
+  const booking = currentBooking()
+  cardRequest.value = { source: 'cart', amount: booking.amount, description: 'Akinai sale', cart: booking }
+  isCartOpen.value = false
+  // Opens once the cart sheet has let go of the page
+  nextTick(() => { isCardSheetOpen.value = true })
+}
+
+// Approved: booked by the sheet from the stored booking; here the page follows (declined: the cart stays)
+const onCardPaid = payment => finishCheckout(payment.cart, { pickPrizesNow: false })
+
+watch(isCardSheetOpen, (open) => {
+  if (open || !prizesAfterCard.value) return
+  prizesAfterCard.value = false
+  nextTick(() => { isPrizeSheetOpen.value = true })
+})
+
+const setOnline = () => { online.value = navigator.onLine }
 
 // Ctrl/Cmd+F focuses search, Ctrl/Cmd+S focuses sort
 const handleKeyboardShortcuts = (event) => {
@@ -455,9 +492,22 @@ onMounted(() => {
   // Open prizes from earlier, and picks still waiting to sync (sent only with the owner's session)
   startPrizeSync()
   window.addEventListener('keydown', handleKeyboardShortcuts)
+  setOnline()
+  window.addEventListener('online', setOnline)
+  window.addEventListener('offline', setOnline)
 })
+
+// The owner is known once app.vue has restored the session (after this page mounted)
+watch(isOwner, (owner) => {
+  if (!owner) return
+  loadTerminal()
+  // Card payments approved while the app was closed or offline are booked now, and when the connection returns
+  startCardBooking()
+}, { immediate: true })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyboardShortcuts)
+  window.removeEventListener('online', setOnline)
+  window.removeEventListener('offline', setOnline)
 })
 </script>

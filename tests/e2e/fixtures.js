@@ -116,6 +116,8 @@ export const test = base.extend({
       failOnce (collection, status) { fake.failures[collection] = { status, once: true } },
       // Every read of the collection answers `status` (a collection whose listRule is still locked)
       failReads (collection, status) { fake.readFailures[collection] = status },
+      // Only the collection's list reads answer `status`; one record by its id still reads
+      failListReads (collection, status) { fake.listReadFailures[collection] = status },
       // Write replies for the collection come back without `items` (a server that is not migrated yet)
       stripItems (collection) { fake.stripItems.add(collection) },
       // The collection lacks these fields (not migrated yet): writes drop them, reads and replies leave them out
@@ -146,6 +148,10 @@ export const test = base.extend({
         cancels: [],
         unpairs: 0,
         refreshes: 0,
+        // A refresh answers only after this many ms; refreshesAtOnce is the most that were out together
+        refreshDelay: 0,
+        refreshesOut: 0,
+        refreshesAtOnce: 0,
         // What SumUp would answer when the server refreshes a payment: (payment) => changes it, or null
         onRefresh: null
       },
@@ -178,7 +184,7 @@ export const test = base.extend({
       state.tests.push(request.postDataJSON())
       return json(state.testStatus, state.testStatus === 200 ? { sent: true } : { statusCode: state.testStatus, message: `Push server answered ${state.testStatus}` })
     })
-    await context.route(CARD_ROUTES, (route) => {
+    await context.route(CARD_ROUTES, async (route) => {
       const request = route.request()
       const path = new URL(request.url()).pathname
       const state = api.card
@@ -229,6 +235,11 @@ export const test = base.extend({
       if (path === '/api/card/refresh') {
         // The server would ask SumUp here; the fake answers what api.settleCard() or onRefresh recorded
         state.refreshes++
+        if (state.refreshDelay) {
+          state.refreshesAtOnce = Math.max(state.refreshesAtOnce, ++state.refreshesOut)
+          await new Promise(resolve => setTimeout(resolve, state.refreshDelay))
+          state.refreshesOut--
+        }
         if (state.refreshStatus !== 200) return failed(state.refreshStatus)
         const found = fake.db.card_payments.find(item => item.id === body.id)
         if (!found) return json(404, { statusCode: 404, message: 'Unknown payment' })

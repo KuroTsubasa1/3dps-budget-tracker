@@ -58,16 +58,26 @@
       />
     </div>
 
-    <BaseButton type="submit" size="lg" block :loading="isLoading">
-      {{ isLoading ? 'Saving...' : 'Add to Balance' }}
-    </BaseButton>
+    <div class="space-y-2">
+      <BaseButton type="submit" size="lg" block :loading="isLoading">
+        {{ isLoading ? 'Saving...' : 'Add to Balance' }}
+      </BaseButton>
+      <!-- Income only, and only with a paired Solo -->
+      <template v-if="showCard">
+        <BaseButton size="lg" block variant="secondary" icon="credit-card" :disabled="!online" @click="payByCard">Pay by card</BaseButton>
+        <p v-if="!online" class="text-center text-xs text-ink-muted">Needs a connection</p>
+      </template>
+    </div>
+
+    <CardPaymentSheet v-model:open="isCardSheetOpen" :request="cardRequest" @paid="onCardPaid" />
   </form>
 </template>
 
 <script setup>
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
 import { useCheckout } from '~/composables/useCheckout'
+import { useCardPayments } from '~/composables/useCardPayments'
 import { localDate } from '~/utils/transactions'
 import { homeBooking } from '~/utils/checkout'
 
@@ -94,7 +104,6 @@ watch(error, (message) => {
   clearTimeout(errorTimer)
   if (message) errorTimer = setTimeout(() => { error.value = '' }, 5000)
 })
-onBeforeUnmount(() => clearTimeout(errorTimer))
 
 const pressKey = (key) => {
   const current = String(transactionAmount.value ?? '')
@@ -109,19 +118,30 @@ const pressKey = (key) => {
 
 const parseAmount = value => Number(String(value).trim().replace(',', '.'))
 
-const handleSubmit = async () => {
+// The checked amount, or null after showing what is missing
+const validAmount = () => {
   error.value = ''
-
   if (!transactionDescription.value.trim()) {
     error.value = 'Please enter a description for the transaction'
-    return
+    return null
   }
-
   const amount = parseAmount(transactionAmount.value)
   if (!(amount > 0)) {
     error.value = 'Please enter a valid amount'
-    return
+    return null
   }
+  return amount
+}
+
+const clearForm = () => {
+  transactionDescription.value = ''
+  transactionAmount.value = ''
+  transactionNotes.value = ''
+}
+
+const handleSubmit = async () => {
+  const amount = validAmount()
+  if (amount === null) return
 
   // Both save locally first and never throw; API failures surface via apiError. Income typed here is cash
   // (Pay by card books its own); an expense has no payment method.
@@ -131,9 +151,52 @@ const handleSubmit = async () => {
     await addTransaction({ description: transactionDescription.value.trim(), amount: -amount, date: localDate(), notes: transactionNotes.value })
   }
 
-  transactionDescription.value = ''
-  transactionAmount.value = ''
-  transactionNotes.value = ''
+  clearForm()
   emit('saved')
 }
+
+// Pay by card: the income this form would book, stored with the card payment and booked on approval.
+// Declined or cancelled, the form keeps what was typed.
+const { terminalState, loadTerminal } = useCardPayments()
+const online = ref(true)
+const showCard = computed(() => transactionType.value === 'income' && !!terminalState.value?.configured && !!terminalState.value?.paired)
+const isCardSheetOpen = ref(false)
+const cardRequest = ref(null)
+let paidByCard = false
+
+const payByCard = () => {
+  const amount = validAmount()
+  if (amount === null || !online.value) return
+  const booking = homeBooking({ description: transactionDescription.value.trim(), amount, notes: transactionNotes.value })
+  cardRequest.value = { source: 'home', amount: booking.amount, description: 'Akinai sale', cart: booking }
+  paidByCard = false
+  isCardSheetOpen.value = true
+}
+
+const onCardPaid = () => {
+  paidByCard = true
+  clearForm()
+}
+
+// Done on Paid ✓ closes the form too, like Add to Balance
+watch(isCardSheetOpen, (open) => {
+  if (open || !paidByCard) return
+  paidByCard = false
+  emit('saved')
+})
+
+const setOnline = () => { online.value = navigator.onLine }
+
+onMounted(() => {
+  setOnline()
+  window.addEventListener('online', setOnline)
+  window.addEventListener('offline', setOnline)
+  loadTerminal()
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(errorTimer)
+  window.removeEventListener('online', setOnline)
+  window.removeEventListener('offline', setOnline)
+})
 </script>

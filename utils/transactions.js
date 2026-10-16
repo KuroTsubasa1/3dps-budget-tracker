@@ -106,6 +106,14 @@ export const recheckOrphans = ({ server, orphans }) => {
   return orphans.filter(entry => !(entry.recordId && onServer.has(entry.recordId)))
 }
 
+// The history with this entry: one already there under the same record id (a sale posted again after a
+// reload) is replaced in place, so it never shows twice
+export const withHistoryEntry = (history, entry) => {
+  const index = entry.recordId ? history.findIndex(item => item.recordId === entry.recordId) : -1
+  if (index === -1) return [...history, entry]
+  return history.map((item, position) => (position === index ? entry : item))
+}
+
 // A queued sale is pending under its record id and, for items from before record ids, its local id
 export const pendingQueueIds = queue => queue
   .filter(item => item.status !== 'synced')

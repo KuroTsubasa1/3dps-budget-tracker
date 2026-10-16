@@ -5,7 +5,7 @@ import { usePocketBase } from './usePocketBase'
 import { useInventory } from './useInventory'
 import { forgetGatchaPrizes } from './useGatchaPrizes'
 import { newRecordId } from '~/utils/inventory'
-import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds } from '~/utils/transactions'
+import { localDate, mergeTransactions, pendingQueueIds, recheckOrphans, unconfirmedCount, withRecordIds, withHistoryEntry } from '~/utils/transactions'
 import { clearLegacyApiCache } from '~/utils/legacyCaches'
 import { forgetCopy } from '~/utils/calendar/copy'
 import { forgetCharged } from '~/utils/cardCharged'
@@ -288,7 +288,7 @@ export const useTransactions = () => {
     // Add to local state first
     // Stock movements travel with the queued transaction but are not part of the local history
     const { stockMovements, ...historyEntry } = newTransaction
-    transactions.value = [...transactions.value, historyEntry]
+    transactions.value = withHistoryEntry(transactions.value, historyEntry)
     saveTransactions()
     sending.add(newTransaction.recordId)
     sendingMovements.set(newTransaction.recordId, stockMovements || [])
