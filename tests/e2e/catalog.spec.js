@@ -53,6 +53,9 @@ test.describe('product catalog', () => {
     expect(api.posted[0].amount).toBe(29) // 2 × 12.50 + 1 × 4.00
     expect(api.posted[0].description).toContain('Dragon Figure')
     expect(api.posted[0].description).toContain('Phone Stand')
+    // Add to Balance is a cash sale
+    expect(api.posted[0].payment_method).toBe('cash')
+    expect(api.posted[0].sumup_transaction).toBeUndefined()
 
     // Cart is cleared afterwards
     await expect(page.getByText('0 items')).toBeVisible()
@@ -81,6 +84,7 @@ test.describe('product catalog', () => {
 
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0].amount).toBe(29)
+    expect(api.posted[0].payment_method).toBe('cash')
     await expect(sheet).toHaveCount(0)
     await expect(cartBar).toHaveCount(0)
     await expect(page.getByText(/Added 29,00/)).toBeVisible()

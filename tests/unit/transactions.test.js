@@ -17,6 +17,14 @@ test('fromRecord maps a PocketBase record to a history entry', () => {
   assert.match(entry.date, /^\d{4}-\d{2}-\d{2}$/)
 })
 
+test('fromRecord keeps the payment method and SumUp transaction, and leaves them out when empty', () => {
+  const card = fromRecord({ id: 'c', description: 'Sale', amount: 19, created: '2026-10-16 10:00:00.000Z', payment_method: 'card', sumup_transaction: 'TEENSK4W2K' })
+  assert.deepEqual([card.payment_method, card.sumup_transaction], ['card', 'TEENSK4W2K'])
+  // PocketBase answers an unset select or text as ''
+  const old = fromRecord({ id: 'o', description: 'Sale', amount: 19, created: '2026-10-16 10:00:00.000Z', payment_method: '', sumup_transaction: '' })
+  assert.ok(!('payment_method' in old) && !('sumup_transaction' in old))
+})
+
 test('fromRecord uses the local calendar date of the UTC created stamp', () => {
   const created = '2026-10-12 23:30:00.000Z'
   const d = new Date('2026-10-12T23:30:00.000Z')

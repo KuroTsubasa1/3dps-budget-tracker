@@ -208,7 +208,10 @@ export const useTransactions = () => {
           date: SALE_DATE.test(data.date || '') ? data.date : undefined,
           // The sale's lines and time for the reports; a server without these fields ignores them
           items: Array.isArray(data.items) && data.items.length ? data.items : undefined,
-          sold_at: data.sold_at || undefined
+          sold_at: data.sold_at || undefined,
+          // Card or cash, and SumUp's transaction for a card sale; a server without these fields ignores them
+          payment_method: data.payment_method || undefined,
+          sumup_transaction: data.sumup_transaction || undefined
         })
       })
       const body = await response.json().catch(() => null)
@@ -325,7 +328,7 @@ export const useTransactions = () => {
     discardOrphan(entry)
     try {
       // An orphan keeps the lines and sale time it was recorded with; old entries have neither
-      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date, items: entry.items, sold_at: entry.sold_at })
+      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date, items: entry.items, sold_at: entry.sold_at, payment_method: entry.payment_method, sumup_transaction: entry.sumup_transaction })
     } finally {
       uploadingOrphans.value = uploadingOrphans.value.filter(item => item !== key)
     }

@@ -219,9 +219,8 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { useTransactions } from '~/composables/useTransactions'
+import { useCheckout } from '~/composables/useCheckout'
 import { useGatchaPrizes } from '~/composables/useGatchaPrizes'
-import { localDate } from '~/utils/transactions'
 import { useArticles } from '~/composables/useArticles'
 import { useCategories } from '~/composables/useCategories'
 import { useDeals } from '~/composables/useDeals'
@@ -232,9 +231,9 @@ import { useCommissionDraft } from '~/composables/useCommissionDraft'
 import { formatCurrency } from '~/utils/currency'
 import { effectivePrice } from '~/utils/pricing'
 import { priceCart, describeDeal, dealForCategory } from '~/utils/deals'
-import { saleLines } from '~/utils/reports/lines'
-import { stockStatus, saleMovement, newRecordId } from '~/utils/inventory'
-import { isGatcha, prizesFor } from '~/utils/gatcha'
+import { cartLines, checkoutBooking } from '~/utils/checkout'
+import { stockStatus } from '~/utils/inventory'
+import { isGatcha } from '~/utils/gatcha'
 
 const STOCK_BADGE = {
   out: 'bg-expense/10 text-expense',
@@ -260,7 +259,7 @@ watch(isDesktop, (desktop) => { if (desktop) isCartOpen.value = false })
 const searchInput = ref(null)
 const sortSelect = ref(null)
 
-const { openPrizes, outbox: prizeOutbox, addOpenPrizes, startPrizeSync, syncedStocks, pendingChange } = useGatchaPrizes()
+const { openPrizes, outbox: prizeOutbox, startPrizeSync, syncedStocks, pendingChange } = useGatchaPrizes()
 const withPendingPrizes = (id, stock) => Math.max(0, Number(stock) + pendingChange(id))
 
 const fetchProducts = async () => {
@@ -326,19 +325,7 @@ const clearFilters = () => {
 
 const selectedProducts = computed(() => products.value.filter(p => p.quantity > 0))
 
-// Cart lines in the shape priceCart expects; an article's own price (> 0) is an override that skips deals
-const cartLines = computed(() => selectedProducts.value.map(product => ({
-  articleId: product.id,
-  name: product.name,
-  quantity: product.quantity,
-  categoryId: product.category,
-  // Stored on the sale's lines, so the reports can name the category even after it changes
-  categoryName: product.expand?.category?.name ?? '',
-  basePrice: product.expand?.category?.base_price ?? 0,
-  override: Number(product.price) > 0 ? Number(product.price) : 0
-})))
-
-const pricedCart = computed(() => priceCart(cartLines.value, deals.value))
+const pricedCart = computed(() => priceCart(cartLines(selectedProducts.value), deals.value))
 const totalAmount = computed(() => pricedCart.value.total)
 
 // Card hint: only regular (non-override) articles take part in deals
@@ -423,51 +410,32 @@ const startCommission = () => {
   navigateTo('/commissions')
 }
 
-const { addTransaction } = useTransactions()
+const { bookSale } = useCheckout()
 const { toast } = useToast()
+
+// The cart's booking, the same for Add to Balance and Pay by card
+const currentBooking = () => checkoutBooking({ products: selectedProducts.value, pricedCart: pricedCart.value, deals: deals.value })
+
+// A booked checkout on this page: the catalog's stock follows at once (the server's follows when the sale
+// syncs), the cart empties, and the gatcha prizes are picked
+const finishCheckout = (booking) => {
+  const moved = new Set(booking.stockMovements.map(movement => movement.article))
+  for (const line of booking.items) {
+    const product = products.value.find(item => item.id === line.article)
+    if (product && moved.has(line.article)) product.stock = Math.max(0, product.stock - line.quantity)
+  }
+  products.value.forEach((product) => { product.quantity = 0 })
+  isCartOpen.value = false
+  // Opens once the cart sheet has let go of the page
+  if (booking.prizes.count) nextTick(() => { isPrizeSheetOpen.value = true })
+}
 
 const submitToBalance = () => {
   if (selectedProducts.value.length === 0) return
-
-  const total = totalAmount.value
-  // One prize per gatcha unit, picked right after the checkout
-  const prizes = prizesFor(selectedProducts.value)
-  const productNames = selectedProducts.value
-    .map(product => `${product.name} (${formatCurrency(priceOf(product))} × ${product.quantity})`)
-    .join('\n')
-  // Overselling is allowed: the movement deducts what is left and notes the rest.
-  // A gatcha's own stock is never touched: the prizes picked for it are.
-  const stockMovements = selectedProducts.value.filter(product => !isGatcha(product)).map(product => ({
-    id: newRecordId(),
-    article: product.id,
-    ...saleMovement(product.stock, product.quantity)
-  }))
-
-  const dealNote = pricedCart.value.applied.length
-    ? `\nDeals: ${pricedCart.value.applied.map(deal => `${deal.name} (−${formatCurrency(deal.saving)})`).join(', ')}`
-    : ''
-
-  addTransaction({
-    description: `3D Printing Products:\n${productNames}${dealNote}`,
-    amount: total,
-    date: localDate(),
-    // The lines and the time of the sale for the reports: Σ lineTotal − Σ discount = amount
-    items: saleLines(pricedCart.value, deals.value),
-    sold_at: new Date().toISOString(),
-    stockMovements
-  })
-
-  products.value.forEach((product) => {
-    if (product.quantity && !isGatcha(product)) product.stock = Math.max(0, product.stock - product.quantity)
-    product.quantity = 0
-  })
-  isCartOpen.value = false
-  toast(`Added ${formatCurrency(total)} to balance`)
-  if (prizes.count) {
-    addOpenPrizes(prizes)
-    // Opens once the cart sheet has let go of the page
-    nextTick(() => { isPrizeSheetOpen.value = true })
-  }
+  const booking = currentBooking()
+  bookSale(booking, { paymentMethod: 'cash' })
+  finishCheckout(booking)
+  toast(`Added ${formatCurrency(booking.amount)} to balance`)
 }
 
 // Ctrl/Cmd+F focuses search, Ctrl/Cmd+S focuses sort

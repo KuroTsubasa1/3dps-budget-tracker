@@ -67,7 +67,9 @@
 <script setup>
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { useTransactions } from '~/composables/useTransactions'
+import { useCheckout } from '~/composables/useCheckout'
 import { localDate } from '~/utils/transactions'
+import { homeBooking } from '~/utils/checkout'
 
 const emit = defineEmits(['saved'])
 
@@ -78,6 +80,7 @@ const TYPE_OPTIONS = [
 const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back']
 
 const { addTransaction, isLoading } = useTransactions()
+const { bookSale } = useCheckout()
 
 const transactionType = ref('income')
 const transactionDescription = ref('')
@@ -120,14 +123,13 @@ const handleSubmit = async () => {
     return
   }
 
-  // addTransaction saves locally first and never throws; API failures surface via apiError
-  await addTransaction({
-    id: Date.now(),
-    description: transactionDescription.value.trim(),
-    amount: transactionType.value === 'expense' ? -amount : amount,
-    date: localDate(),
-    notes: transactionNotes.value
-  })
+  // Both save locally first and never throw; API failures surface via apiError. Income typed here is cash
+  // (Pay by card books its own); an expense has no payment method.
+  if (transactionType.value === 'income') {
+    await bookSale(homeBooking({ description: transactionDescription.value.trim(), amount, notes: transactionNotes.value }), { paymentMethod: 'cash' })
+  } else {
+    await addTransaction({ description: transactionDescription.value.trim(), amount: -amount, date: localDate(), notes: transactionNotes.value })
+  }
 
   transactionDescription.value = ''
   transactionAmount.value = ''

@@ -518,6 +518,8 @@ test.describe('phone and payment', () => {
     ])
     expect(Number.isNaN(Date.parse(api.posted[0].sold_at))).toBe(false)
     expect(api.posted[0].date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    // Commission income has no payment method (it is paid outside the stall)
+    expect(api.posted[0].payment_method).toBeUndefined()
     expect(api.db.commissions[0].paid_at).toBeTruthy()
     // The income's record id is the commission's own id, so two devices can never book it twice
     expect(api.posted[0].id).toBe('c1')

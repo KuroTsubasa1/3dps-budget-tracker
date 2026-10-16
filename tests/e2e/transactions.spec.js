@@ -33,7 +33,8 @@ test.describe('home page transactions', () => {
 
     await expect(page.getByText('Market sale').first()).toBeVisible()
     await expect.poll(() => api.posted.length).toBe(1)
-    expect(api.posted[0]).toMatchObject({ description: 'Market sale', amount: 25 })
+    // Income typed on Home is cash
+    expect(api.posted[0]).toMatchObject({ description: 'Market sale', amount: 25, payment_method: 'cash' })
     // A manual entry has no lines and no sale time
     expect(api.posted[0].items).toBeUndefined()
     expect(api.posted[0].sold_at).toBeUndefined()
@@ -60,6 +61,8 @@ test.describe('home page transactions', () => {
 
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0].amount).toBe(-7.5)
+    // An expense has no payment method
+    expect(api.posted[0].payment_method).toBeUndefined()
     expect((await storedTransactions(page))[0].amount).toBe(-7.5)
   })
 

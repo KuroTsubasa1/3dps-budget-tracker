@@ -18,6 +18,9 @@ export const fromRecord = record => ({
   // empty json field as null and an unset date as ''; those are left out.
   ...(Array.isArray(record.items) && record.items.length ? { items: record.items } : {}),
   ...(record.sold_at ? { sold_at: record.sold_at } : {}),
+  // Card or cash for Reports; empty on commission income, expenses and older entries
+  ...(record.payment_method ? { payment_method: record.payment_method } : {}),
+  ...(record.sumup_transaction ? { sumup_transaction: record.sumup_transaction } : {}),
   ...(record.created ? { created: record.created } : {})
 })
 
