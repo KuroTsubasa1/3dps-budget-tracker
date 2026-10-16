@@ -18,6 +18,18 @@ export function toDate (value) {
 
 // Expenses are negative amounts and never count as sales
 export const isIncome = transaction => Number(transaction.amount) > 0
+
+// How a sale was paid: card or cash; commission income and entries from before payment methods are Other
+export const PAYMENT_SPLIT = ['card', 'cash', 'other']
+export const paymentMethodOf = transaction =>
+  (transaction.payment_method === 'card' || transaction.payment_method === 'cash' ? transaction.payment_method : 'other')
+
+// Income in euros per payment method, added up in cents: { card, cash, other }. Expenses never count.
+export function paymentSplit (transactions) {
+  const cents = { card: 0, cash: 0, other: 0 }
+  for (const transaction of transactions.filter(isIncome)) cents[paymentMethodOf(transaction)] += toCents(transaction.amount)
+  return { card: toEuros(cents.card), cash: toEuros(cents.cash), other: toEuros(cents.other) }
+}
 // PocketBase returns an empty json field as null; entries from before line data have no items at all
 export const linesOf = transaction => (Array.isArray(transaction?.items) ? transaction.items : [])
 export const hasLines = transaction => linesOf(transaction).length > 0

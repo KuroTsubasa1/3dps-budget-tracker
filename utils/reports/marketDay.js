@@ -1,5 +1,5 @@
 // Market day tab: one day's takings, items and sales, per hour, against the market days before it
-import { toCents, toEuros, isIncome, linesOf, saleTime } from './common.js'
+import { toCents, toEuros, isIncome, linesOf, saleTime, paymentSplit } from './common.js'
 
 // Local days ('YYYY-MM-DD') with at least one sale, newest first
 export function marketDays (transactions) {
@@ -17,7 +17,8 @@ const figuresFor = (transactions, day) => {
 }
 
 // perHour[h] holds the takings of local hour h, from sold_at or else created. A sale with neither
-// (an old entry queued on this device) counts in the takings but in no hour.
+// (an old entry queued on this device) counts in the takings but in no hour. byMethod splits the
+// takings into card, cash and other.
 export function dayReport ({ transactions, day }) {
   const { sales, cents, items } = figuresFor(transactions, day)
   const hours = Array(24).fill(0)
@@ -25,7 +26,7 @@ export function dayReport ({ transactions, day }) {
     const at = saleTime(sale)
     if (at) hours[at.getHours()] += toCents(sale.amount)
   }
-  return { takings: toEuros(cents), items, sales: sales.length, perHour: hours.map(toEuros) }
+  return { takings: toEuros(cents), items, sales: sales.length, perHour: hours.map(toEuros), byMethod: paymentSplit(sales) }
 }
 
 // The hours to chart: first to last hour with takings, or 9 to 17 when no sale has a time

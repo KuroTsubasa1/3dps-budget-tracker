@@ -116,7 +116,7 @@ test('a day report adds takings, items and sales, per hour from sold_at or else 
   assert.deepEqual(report.perHour.map((value, hour) => [hour, value]).filter(([, value]) => value), [[10, 41], [12, 19]])
   // The queued 5 € has no time: it counts in the takings, not in an hour
   assert.deepEqual(dayReport({ transactions: TRANSACTIONS, day: '2026-10-10' }), {
-    takings: 37, items: 3, sales: 1, perHour: Array.from({ length: 24 }, (_, hour) => (hour === 14 ? 37 : 0))
+    takings: 37, items: 3, sales: 1, perHour: Array.from({ length: 24 }, (_, hour) => (hour === 14 ? 37 : 0)), byMethod: { card: 0, cash: 0, other: 37 }
   })
 })
 
@@ -229,4 +229,36 @@ test('amounts add up to the cent, not as floats', () => {
   const lines = [{ article: 'k1', name: 'Pikachu Keychain', category: 'cat-keychain', quantity: 1, unitPrice: 0.1, lineTotal: 0.1, discount: 0 }]
   const sales = [day('a', 0.1, lines), day('b', 0.2, [{ ...lines[0], unitPrice: 0.2, lineTotal: 0.2 }])]
   assert.equal(salesSummary({ transactions: sales, range: TODAY }).topArticles[0].revenue, 0.3)
+})
+
+// Card or cash (spec 2026-10-16): older entries and commission income count as Other
+const paid = (id, date, amount, method, extra = {}) =>
+  ({ id, description: `Sale ${id}`, amount, notes: '', date, ...(method ? { payment_method: method } : {}), ...extra })
+const PAID = [
+  paid('p1', '2026-10-14', 19.9, 'card', { sumup_transaction: 'TEENSK4W2K' }),
+  paid('p2', '2026-10-14', 10.1, 'cash'),
+  paid('p3', '2026-10-14', 0.1, 'cash'),
+  // Commission income, and an unknown method from a hand-edited record
+  paid('p4', '2026-10-14', 30, ''),
+  paid('p5', '2026-10-14', 2, 'cheque'),
+  // An expense paid by card is no takings
+  paid('p6', '2026-10-14', -15, 'card'),
+  paid('p7', '2026-10-13', 5, 'card'),
+  paid('p8', '2026-09-30', 7, 'cash')
+]
+
+test('a market day splits its takings into card, cash and other, to the cent', () => {
+  const report = dayReport({ transactions: PAID, day: '2026-10-14' })
+  assert.deepEqual(report.byMethod, { card: 19.9, cash: 10.2, other: 32 })
+  assert.equal(report.takings, 62.1)
+  assert.deepEqual(dayReport({ transactions: PAID, day: '2026-10-01' }).byMethod, { card: 0, cash: 0, other: 0 })
+})
+
+test('money splits the period\'s income into card, cash and other, and only the period\'s', () => {
+  const money = moneySeries({ transactions: PAID, range: MONTH, bucket: 'week' })
+  assert.deepEqual(money.incomeByMethod, { card: 24.9, cash: 10.2, other: 32 })
+  assert.equal(money.totals.income, 67.1)
+  // The shared history has no payment methods yet: all of it is Other
+  assert.deepEqual(moneySeries({ transactions: TRANSACTIONS, range: MONTH }).incomeByMethod, { card: 0, cash: 0, other: 114 })
+  assert.deepEqual(moneySeries({ transactions: PAID, range: EMPTY }).incomeByMethod, { card: 0, cash: 0, other: 0 })
 })

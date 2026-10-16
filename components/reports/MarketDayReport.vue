@@ -14,6 +14,9 @@
           <p class="mt-1 truncate text-xl font-semibold tabular-nums text-ink" :data-testid="`market-${tile.id}`">{{ tile.value }}</p>
         </div>
       </div>
+      <BaseCard title="Takings by payment" subtitle="Older entries and commission income count as Other" icon="cash" flush>
+        <PaymentSplit :split="report.byMethod" prefix="market" />
+      </BaseCard>
       <BaseCard title="Takings per hour" icon="chart">
         <BarChart :labels="hours.map(hourLabel)" :series="[{ name: 'Takings', values: hourValues, tone: 'accent' }]" :label="chartLabel" />
       </BaseCard>
@@ -33,6 +36,7 @@
 <script setup>
 import { computed } from 'vue'
 import BarChart from '~/components/charts/BarChart.vue'
+import PaymentSplit from '~/components/reports/PaymentSplit.vue'
 import { formatCurrency } from '~/utils/currency'
 import { toDate } from '~/utils/reports/common'
 import { hourWindow } from '~/utils/reports/marketDay'

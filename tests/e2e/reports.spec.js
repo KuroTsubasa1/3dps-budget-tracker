@@ -87,6 +87,30 @@ test.describe('reports', () => {
     await expect(page.getByTestId('money-income')).toContainText('131,00')
   })
 
+  test('Market day and Money split the takings into card, cash and other', async ({ page, api }) => {
+    await openReports(page, api, {
+      before (api) {
+        // 14 October: the 37 € sale by card, the 4 € sale in cash; everything older has no payment method
+        const sale = id => api.db.budget_tracker_transactions.find(item => item.id === id)
+        Object.assign(sale('tx0000000000005'), { payment_method: 'card', sumup_transaction: 'TEENSK4W2K' })
+        Object.assign(sale('tx0000000000006'), { payment_method: 'cash' })
+      }
+    })
+    await reportChip(page, 'Market day').click()
+    const market = card(page, 'Takings by payment')
+    await expect(market).toContainText('Older entries and commission income count as Other')
+    await expect(page.getByTestId('market-card')).toContainText('37,00')
+    await expect(page.getByTestId('market-cash')).toContainText('4,00')
+    await expect(page.getByTestId('market-other')).toContainText('0,00')
+    await expect(market).toContainText('90 %')
+
+    await reportChip(page, 'Money').click()
+    // 83 € income in October: 37 card, 4 cash, 12 + 30 from before payment methods
+    await expect(page.getByTestId('money-card')).toContainText('37,00')
+    await expect(page.getByTestId('money-cash')).toContainText('4,00')
+    await expect(page.getByTestId('money-other')).toContainText('42,00')
+  })
+
   test('the Stock tab shows stock value, what runs out first, printed vs sold and commissions', async ({ page, api }) => {
     await openReports(page, api)
     await reportChip(page, 'Stock').click()

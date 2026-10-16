@@ -19,6 +19,9 @@
         <LineChart :labels="labels" :values="balances" :label="lineLabel" />
       </BaseCard>
     </div>
+    <BaseCard title="Income by payment" subtitle="Older entries and commission income count as Other" icon="cash" flush>
+      <PaymentSplit :split="series.incomeByMethod" prefix="money" />
+    </BaseCard>
     <BaseCard title="Breakdown" icon="clipboard" flush>
       <ul class="divide-y divide-line">
         <li v-for="row in series.buckets" :key="row.label" class="px-4 py-3 md:px-5">
@@ -47,6 +50,7 @@
 import { computed } from 'vue'
 import BarChart from '~/components/charts/BarChart.vue'
 import LineChart from '~/components/charts/LineChart.vue'
+import PaymentSplit from '~/components/reports/PaymentSplit.vue'
 import { formatCurrency } from '~/utils/currency'
 
 const props = defineProps({
