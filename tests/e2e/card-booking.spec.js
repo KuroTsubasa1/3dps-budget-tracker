@@ -69,6 +69,66 @@ test.describe('Booking approved card payments', () => {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('akinai-card-charged') || '[]'))).toEqual([])
   })
 
+  test('another device booked the sale first: the charging device still gets its prizes, once', async ({ page, api }) => {
+    api.enable()
+    api.pairTerminal()
+    api.db.budget_tracker_transactions.push({ id: PAYMENT_ID, collectionName: 'budget_tracker_transactions', description: 'Card sale', amount: 12, notes: '', date: '2026-10-16', created: '2026-10-16 10:00:05.000Z', payment_method: 'card' })
+    api.db.card_payments.push(approved())
+    await page.addInitScript((id) => {
+      if (sessionStorage.getItem('charged-seeded')) return
+      localStorage.setItem('akinai-card-charged', JSON.stringify([id]))
+      sessionStorage.setItem('charged-seeded', '1')
+    }, PAYMENT_ID)
+    await gotoReady(page, '/catalog')
+    await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe(PAYMENT_ID)
+    await expect(page.getByTestId('gatcha-banner')).toContainText('1 gatcha prize to pick')
+    expect(posts(api)).toHaveLength(0)
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('akinai-card-charged') || '[]'))).toEqual([])
+    // A second look (unmarked again, as if the mark had been lost) adds nothing
+    api.db.card_payments[0].booked_transaction = ''
+    await page.reload()
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe(PAYMENT_ID)
+    expect(await openPrizes(page)).toBe(1)
+  })
+
+  test('another device booked the sale first: a device that did not charge gets no prizes', async ({ page, api }) => {
+    api.enable()
+    api.pairTerminal()
+    api.db.budget_tracker_transactions.push({ id: PAYMENT_ID, collectionName: 'budget_tracker_transactions', description: 'Card sale', amount: 12, notes: '', date: '2026-10-16', created: '2026-10-16 10:00:05.000Z', payment_method: 'card' })
+    api.db.card_payments.push(approved())
+    await gotoReady(page, '/catalog')
+    await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe(PAYMENT_ID)
+    expect(await openPrizes(page)).toBe(0)
+  })
+
+  test('a second start while the charging device still posts the sale adds its prizes once', async ({ page, api }) => {
+    api.enable()
+    api.pairTerminal()
+    api.db.card_payments.push(approved())
+    await page.addInitScript((id) => {
+      if (sessionStorage.getItem('charged-seeded')) return
+      localStorage.setItem('akinai-card-charged', JSON.stringify([id]))
+      sessionStorage.setItem('charged-seeded', '1')
+    }, PAYMENT_ID)
+    // The sale is stored at once, its answer comes late, so the first booking is still out
+    api.delayNext('budget_tracker_transactions', 8000)
+    // Not gotoReady: it waits for the network to go quiet, which the slow answer prevents
+    await page.goto('/catalog')
+    await page.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect.poll(() => posts(api).length).toBe(1)
+    await expect.poll(() => openPrizes(page)).toBe(1)
+    expect(api.db.card_payments[0].booked_transaction).toBe('')
+    // Another start of the app on this device (a second tab, or the app reopened after being killed)
+    const again = await page.context().newPage()
+    await again.goto('/catalog')
+    await again.locator('html[data-hydrated]').waitFor({ state: 'attached' })
+    await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe(PAYMENT_ID)
+    expect(await openPrizes(again)).toBe(1)
+    await page.close()
+    await again.close()
+  })
+
   test('a throwing watch callback does not stop the watch', async ({ page, api }) => {
     api.enable()
     api.pairTerminal()

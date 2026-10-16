@@ -108,7 +108,15 @@ test.describe('local entries that are not on the server', () => {
     await expect.poll(async () => (await page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), STORAGE_KEY)).map(t => t.date)).toEqual([lonely.date])
   })
 
-  test('a double tap on Upload posts the entry once', async ({ page, api, context }) => {
+  test('Upload keeps a card sale\'s own id, so it can never become a second sale', async ({ page, api, context }) => {
+    await api.mockTransactions()
+    await seedLocal(context, [{ id: 1, recordId: 'pay000000000060', description: 'Card sale', amount: 9, date: '2026-10-12', notes: '', payment_method: 'card', sumup_transaction: 'TXORPHAN' }])
+    await gotoReady(page, '/settings#data')
+    await page.getByRole('button', { name: 'Upload' }).click()
+    await expect.poll(() => api.posted.map(sale => [sale.id, sale.payment_method, sale.sumup_transaction])).toEqual([['pay000000000060', 'card', 'TXORPHAN']])
+  })
+
+    test('a double tap on Upload posts the entry once', async ({ page, api, context }) => {
     await api.mockTransactions()
     await seedLocal(context, [lonely])
     await gotoReady(page, '/settings#data')

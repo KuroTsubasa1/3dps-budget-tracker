@@ -6,6 +6,10 @@ import { sameText } from './access.js'
 import { SumUpError, isSandboxMerchant, isUnreachable } from './sumup.js'
 
 export const CARD_PAYMENTS = 'card_payments'
+// Whole cents only: 19.9 or 0.1 + 0.2 are (float noise aside), 1.005 is not. The same rule as the app's
+// isWholeCents (utils/currency.js), kept here because Nitro does not bundle that module for the server.
+export const WHOLE_CENTS_MESSAGE = 'Enter the amount in whole cents'
+const isWholeCents = amount => Math.abs(amount * 100 - Math.round(amount * 100)) <= 1e-6
 // The only fields the notifier may write (the collection's update rule refuses the rest; pb-plan.mjs)
 export const CARD_NOTIFIER_FIELDS = ['status', 'sumup_checkout', 'sumup_transaction']
 // What SumUp shows for the sale, also in the SumUp app
@@ -61,10 +65,12 @@ export function chargeInput (body) {
   const cents = toCents(amount)
   if (typeof amount !== 'number' || !Number.isFinite(amount) || cents < 1) throw refuse(400, 'Enter an amount above 0')
   if (cents > MAX_AMOUNT_CENTS) throw refuse(400, AMOUNT_TOO_HIGH)
+  if (!isWholeCents(amount)) throw refuse(400, WHOLE_CENTS_MESSAGE)
   if (!isPlainObject(cart)) throw refuse(400, 'Missing the sale to book')
   if (Buffer.byteLength(JSON.stringify(cart)) > MAX_CART_BYTES) throw refuse(400, 'The cart is too large for one payment')
   // The booking's own total is what is charged: a cart that says otherwise is a mix-up, not a payment
-  if (typeof cart.amount !== 'number' || toCents(cart.amount) !== cents) throw refuse(400, CART_MISMATCH)
+  if (typeof cart.amount !== 'number' || !Number.isFinite(cart.amount) || toCents(cart.amount) !== cents) throw refuse(400, CART_MISMATCH)
+  if (!isWholeCents(cart.amount)) throw refuse(400, WHOLE_CENTS_MESSAGE)
   return { source, amount: cents / 100, cents, description: SALE_DESCRIPTION, cart }
 }
 
@@ -246,6 +252,11 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
     try {
       known = !!(await sumup.findTransaction({ foreignTransactionId: record.id }))
     } catch {}
+    // In practice this branch never fails the payment: `now` is taken when the charge starts and the record
+    // was created a moment ago, so the payment is never a minute old here. It stays (deliberately) for a
+    // caller that passes an older `now`. The payment therefore stays pending: the sheet's 2 s refresh, the
+    // 15 s poll and the next start keep asking SumUp, and ten minutes after `created` a payment SumUp says it
+    // does not know is marked failed (settlePayment's give-up rule); only SumUp saying PENDING keeps it open.
     if (stopped && !known && now - createdAt(record) > CANCEL_CONFIRM_MS) {
       log.info(`[card] ${record.id} failed: ${error?.message || 'SumUp error'}`)
       await store.updateCardPayment(record.id, { status: 'failed' }).catch(() => {})

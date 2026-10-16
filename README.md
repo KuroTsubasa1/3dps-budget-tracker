@@ -256,7 +256,13 @@ Run these yourself, in this order.
       - [ ] Reload the page while the customer pays, pay, then open the app again: `Card payment of <amount> booked`, once.
       - [ ] Log the Virtual Solo out and pay: `The terminal didn't answer. Check that it's on and online.`
       - [ ] Reports → Market day and Money show the card sales under Card.
-   6. **Delete the test sales.** They are real entries in the production books: in the PocketBase admin, delete the `budget_tracker_transactions` whose description starts with `[Sandbox] ` (a card sale's id is its card payment's id) and their `stock_movements`, and the `card_payments` marked `[Sandbox]`. Then remove the four `SUMUP_*` lines from `.env` (or keep them, with the Virtual Solo paired, for the next test). The sandbox and the live account have separate readers, so the Virtual Solo never shows up for the live keys.
+   6. **Delete the test sales.** They are real entries in the production books. In the PocketBase admin:
+      - `card_payments`: every test payment's `description` starts with `[Sandbox] `. Note each one's `id` and, in its `cart` field, the `id`s under `stockMovements`.
+      - `budget_tracker_transactions`: the test sales are the ones whose description starts with `[Sandbox] `; a card sale's `id` is its card payment's `id`. Delete them.
+      - `stock_movements`: delete the movements with the ids you noted (reason `sale`, the cart's articles, created right after the payment). A Home income has none. The article's stock is recounted from its movements at its next stock change; to correct it at once, set *Stock now* on the article in the catalog.
+      - Then delete the `[Sandbox] ` card payments themselves.
+
+      Afterwards remove the four `SUMUP_*` lines from `.env` (or keep them, with the Virtual Solo paired, for the next test). The sandbox and the live account have separate readers, so the Virtual Solo never shows up for the live keys.
 4. **Live keys on the server.** Write the four live `SUMUP_*` lines into `/opt/budget-tracker/shared/akinai.env` (see [The env file](#the-env-file); the notifier login is already there; `CARD_PUBLIC_URL` only if the app no longer runs at `https://akinai.lasseharm.space`), then deploy (push to `main`). `pm2 logs budget-tracker` should show neither `[card] off` nor `[card] return URL and backup poll off`; pm2 reads the file only when the process starts, so if it still shows one of them, restart it as described there.
 5. **Pair the real Solo** in Settings → Card terminal: enter the code the Solo shows under *Connections → API → Connect* and tap *Pair terminal*. The section shows the Solo as *Online*.
 6. **First live payments:**

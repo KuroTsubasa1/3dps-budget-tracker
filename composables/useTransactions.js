@@ -329,7 +329,9 @@ export const useTransactions = () => {
     discardOrphan(entry)
     try {
       // An orphan keeps the lines and sale time it was recorded with; old entries have neither
-      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date, items: entry.items, sold_at: entry.sold_at, payment_method: entry.payment_method, sumup_transaction: entry.sumup_transaction })
+      // A card sale keeps its id (its card payment's): if it reached the server after all, the server refuses
+      // the twin instead of booking the card payment twice
+      await addTransaction({ description: entry.description, amount: entry.amount, notes: entry.notes || '', date: entry.date, items: entry.items, sold_at: entry.sold_at, payment_method: entry.payment_method, sumup_transaction: entry.sumup_transaction, recordId: entry.payment_method === 'card' ? entry.recordId : undefined })
     } finally {
       uploadingOrphans.value = uploadingOrphans.value.filter(item => item !== key)
     }

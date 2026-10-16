@@ -630,3 +630,20 @@ test('route errors: rule errors pass, SumUp errors are 502, PocketBase 401 is 40
     assert.ok(!JSON.stringify(mapped).includes('pb.example') && !JSON.stringify(mapped).includes('abc123'))
   }
 })
+
+test('a charge refuses amounts that are not whole cents, in the amount and in the cart', () => {
+  const refused = (body) => assert.throws(() => chargeInput(body), error => error.statusCode === 400 && error.statusMessage === 'Enter the amount in whole cents')
+  refused({ source: 'home', amount: 1.005, cart: { amount: 1.005 } })
+  refused({ source: 'home', amount: 12.345, cart: { amount: 12.345 } })
+  refused({ source: 'home', amount: 1, cart: { amount: 1.004 } })
+  // Float noise is not a fraction of a cent
+  assert.equal(chargeInput({ source: 'home', amount: 19.9, cart: { amount: 19.9 } }).cents, 1990)
+  assert.equal(chargeInput({ source: 'home', amount: 0.1 + 0.2, cart: { amount: 0.30000000000000004 } }).cents, 30)
+})
+
+test('the app checks whole cents with the same message as the server', async () => {
+  const { isWholeCents, WHOLE_CENTS_MESSAGE } = await import('../../utils/currency.js')
+  assert.equal(WHOLE_CENTS_MESSAGE, 'Enter the amount in whole cents')
+  for (const amount of [19.9, 0.1 + 0.2, 25, 123456.78]) assert.equal(isWholeCents(amount), true, String(amount))
+  for (const amount of [1.005, 12.345, 0.001]) assert.equal(isWholeCents(amount), false, String(amount))
+})

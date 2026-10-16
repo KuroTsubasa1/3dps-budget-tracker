@@ -80,6 +80,7 @@ import { useCheckout } from '~/composables/useCheckout'
 import { useCardPayments } from '~/composables/useCardPayments'
 import { localDate } from '~/utils/transactions'
 import { homeBooking } from '~/utils/checkout'
+import { isWholeCents, WHOLE_CENTS_MESSAGE } from '~/utils/currency'
 
 const emit = defineEmits(['saved'])
 
@@ -128,6 +129,10 @@ const validAmount = () => {
   const amount = parseAmount(transactionAmount.value)
   if (!(amount > 0)) {
     error.value = 'Please enter a valid amount'
+    return null
+  }
+  if (!isWholeCents(amount)) {
+    error.value = WHOLE_CENTS_MESSAGE
     return null
   }
   return amount

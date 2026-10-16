@@ -207,7 +207,8 @@ test.describe('approved payments booked later', () => {
     await api.mockTransactions()
     api.db.card_payments.push(approvedPayment('pay000000000077'))
     await gotoReady(page, '/')
-    await expect(page.getByText(/Card payment of 12,50.* booked/)).toBeVisible()
+    // Paid from Home's form: there is no cart to tidy
+    await expect(page.getByText(/^Card payment of 12,50\s€ booked$/)).toBeVisible()
     await expect.poll(() => api.posted.length).toBe(1)
     expect(api.posted[0]).toMatchObject({ id: 'pay000000000077', description: 'Print at the stall', amount: 12.5, date: '2026-10-16', payment_method: 'card', sumup_transaction: 'TXLATE' })
     await expect.poll(() => api.db.card_payments[0].booked_transaction).toBe('pay000000000077')
@@ -504,8 +505,9 @@ test.describe('a way out while the terminal has the payment', () => {
     expect(api.card.refreshes).toBe(refreshes)
 
     api.settleCard('approved', 'TXLANDED')
-    await gotoReady(page, '/')
-    await expect(page.getByText(/Card payment of 29,00.* booked/)).toBeVisible()
+    await gotoReady(page, '/catalog')
+    // The cart may still hold what was paid for
+    await expect(page.getByText(/^Card payment of 29,00\s€ booked\. Remove those items from the cart if it still holds them\.$/)).toBeVisible()
     await expect.poll(() => api.posted.map(sale => sale.id)).toEqual(['pay000000000001'])
   })
 
@@ -575,4 +577,21 @@ test('a gatcha whose card booking could not be made yet opens no empty prize pic
   await page.waitForTimeout(1000)
   await expect(prizeSheet(page)).toHaveCount(0)
   expect(api.posted).toHaveLength(0)
+})
+
+test.describe('whole cents only', () => {
+  test('Home refuses 1.005 before anything reaches the terminal, for Pay by card and Add to Balance', async ({ page, api }) => {
+    await api.mockTransactions()
+    api.pairTerminal()
+    await gotoReady(page, '/')
+    await openTransactionForm(page)
+    await page.getByPlaceholder('What is this transaction for?').fill('Market sale')
+    await page.getByPlaceholder('0.00').fill('1.005')
+    await page.getByRole('button', { name: 'Pay by card' }).click()
+    await expect(page.getByText('Enter the amount in whole cents')).toBeVisible()
+    expect(api.card.charges).toHaveLength(0)
+    await page.getByRole('button', { name: 'Add to Balance' }).click()
+    await expect(page.getByText('Enter the amount in whole cents')).toBeVisible()
+    expect(api.posted).toHaveLength(0)
+  })
 })

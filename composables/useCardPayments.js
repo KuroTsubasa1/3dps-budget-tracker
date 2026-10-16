@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { usePocketBase } from './usePocketBase'
 import { useTransactions } from './useTransactions'
 import { useCheckout } from './useCheckout'
+import { useGatchaPrizes } from './useGatchaPrizes'
 import { useToast } from './useToast'
 import { formatCurrency } from '~/utils/currency'
 import { wasCharged, rememberCharged, forgetCharged } from '~/utils/cardCharged'
@@ -34,12 +35,19 @@ const save = (value) => {
   } catch {}
 }
 
+// A cart payment booked here was not booked by its sheet (closed with "Close, book it when it lands", or
+// uncertain): the cart may still hold what was paid for
+export const bookedMessage = payment => payment.source === 'cart'
+  ? `Card payment of ${formatCurrency(payment.amount)} booked. Remove those items from the cart if it still holds them.`
+  : `Card payment of ${formatCurrency(payment.amount)} booked`
+
 // Card payments on the SumUp Solo: the server's card routes (with the owner's token), watching a payment's
 // record, and booking an approved payment exactly once
 export const useCardPayments = () => {
   const pb = usePocketBase()
   const { transactionExists } = useTransactions()
   const { bookSale } = useCheckout()
+  const { addOpenPrizes } = useGatchaPrizes()
   const { toast } = useToast()
   const auth = () => ({ Authorization: pb.authStore.token })
 
@@ -146,18 +154,21 @@ export const useCardPayments = () => {
     // Only the server, the queue and sends in flight count: this device's cached history may hold an entry
     // that never reached the server. Posting the same id again is safe, the server refuses the duplicate.
     const exists = await transactionExists(payment.id, { history: false })
-    if (!exists) {
-      // The gatcha prizes go to the device that charged
-      let charged = false
-      try {
-        charged = wasCharged(localStorage, payment.id)
-      } catch {}
-      const { prizes, ...withoutPrizes } = payment.cart
-      await bookSale(charged ? payment.cart : withoutPrizes, { paymentMethod: 'card', sumupTransaction: payment.sumup_transaction, recordId: payment.id })
-    }
+    // The gatcha prizes go to the device that charged, once: it forgets the payment before anything else is
+    // awaited, so a reload mid-post cannot add them a second time
+    let charged = false
     try {
+      charged = wasCharged(localStorage, payment.id)
       forgetCharged(localStorage, payment.id)
     } catch {}
+    const { prizes, ...withoutPrizes } = payment.cart
+    if (!exists) {
+      // bookSale adds the prizes at once, before its post
+      await bookSale(charged ? payment.cart : withoutPrizes, { paymentMethod: 'card', sumupTransaction: payment.sumup_transaction, recordId: payment.id })
+    } else if (charged && prizes?.count) {
+      // Another device booked the sale (without prizes): this one still owes them
+      addOpenPrizes(prizes)
+    }
     try {
       await pb.collection(CARD_PAYMENTS).update(payment.id, { booked_transaction: payment.id })
     } catch {
@@ -206,7 +217,7 @@ export const useCardPayments = () => {
       try {
         if (await bookPayment(payment)) {
           booked++
-          toast(`Card payment of ${formatCurrency(payment.amount)} booked`)
+          toast(bookedMessage(payment))
         }
       } catch {}
     }
