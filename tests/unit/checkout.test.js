@@ -63,3 +63,10 @@ test('the Home quick entry books its description, amount and notes on the device
   assert.deepEqual(saleTransaction(homeBooking({ description: 'Print', amount: 12.5, now: NOW }), { paymentMethod: 'cash' }),
     { description: 'Print', amount: 12.5, notes: '', date: '2026-10-16', payment_method: 'cash' })
 })
+
+test('a booking takes its date from the local day, just after midnight and just before it', () => {
+  for (const now of [new Date(2026, 9, 16, 0, 30), new Date(2026, 9, 16, 23, 30)]) {
+    assert.equal(checkoutBooking({ products: CART, pricedCart: priceCart(cartLines(CART), [DEAL]), deals: [DEAL], newId: () => 'm', now }).date, '2026-10-16')
+    assert.equal(homeBooking({ description: 'Sale', amount: 5, now }).date, '2026-10-16')
+  }
+})
