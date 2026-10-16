@@ -168,7 +168,7 @@ test('a charge creates the pending record as the owner, then sends the checkout 
 const CHECKOUT = `checkout ${READER.id}`
 const TERMINATE = `terminate ${READER.id}`
 const FOREIGN = 'findTransaction pay000000000001'
-const charge = (store, sumup) => startCharge({ input: INPUT, sumup, store, host: 'akinai.lasseharm.space', log: silent })
+const charge = (store, sumup, now = START + 61_000) => startCharge({ input: INPUT, sumup, store, host: 'akinai.lasseharm.space', now, log: silent })
 
 test('a terminal SumUp says is offline fails the payment at once with the terminal message', async () => {
   const store = fakeStore([payment('pay000000000001')])
@@ -187,7 +187,7 @@ test('a checkout SumUp refuses (4xx) fails the payment at once', async () => {
   }
 })
 
-test('a checkout that gets no answer is failed only when the stop worked and SumUp says it does not know the payment', async () => {
+test('a checkout that gets no answer is failed only when the stop worked, SumUp says it does not know the payment and a minute has passed', async () => {
   for (const kind of ['timeout', 'unreachable', 'failed']) {
     const store = fakeStore([payment('pay000000000001')])
     const sumup = fakeSumUp({ fail: { [CHECKOUT]: new SumUpError(kind, kind === 'failed' ? 503 : 0) } })
@@ -195,6 +195,25 @@ test('a checkout that gets no answer is failed only when the stop worked and Sum
     assert.equal(store.db.get('pay000000000001').status, 'failed')
     assert.deepEqual(sumup.calls, ['listReaders', CHECKOUT, TERMINATE, FOREIGN])
   }
+})
+
+test('right after the start SumUp not knowing the payment is weak evidence: it stays pending until a later check, and a later SUCCESSFUL wins', async () => {
+  const id = 'pay000000000001'
+  const store = fakeStore([payment(id)])
+  const fail = { [CHECKOUT]: new SumUpError('timeout') }
+  assert.deepEqual(await charge(store, fakeSumUp({ fail }), START + 5000), { id })
+  assert.equal(store.db.get(id).status, 'pending')
+  assert.deepEqual(store.updates, [])
+  // Exactly 60 s is still not past the minute
+  assert.deepEqual(await charge(store, fakeSumUp({ fail }), START + 60_000), { id })
+  assert.equal(store.db.get(id).status, 'pending')
+  // A later check that SumUp does not know it keeps it pending until the 10-minute rule
+  assert.equal(await checkPayment({ store, sumup: fakeSumUp(), id, now: START + 90_000, log: silent }), 'pending')
+  assert.equal(await checkPayment({ store, sumup: fakeSumUp(), id, now: START + GIVE_UP_MS, log: silent }), 'failed')
+  const late = fakeStore([payment(id)])
+  await charge(late, fakeSumUp({ fail }), START + 5000)
+  const paid = fakeSumUp({ transactions: { [id]: { id: 'u', transaction_code: 'TX1', status: 'SUCCESSFUL' } } })
+  assert.equal(await checkPayment({ store: late, sumup: paid, id, now: START + 20_000, log: silent }), 'approved')
 })
 
 test('a checkout that gets no answer stays pending when the stop or the lookup does not settle it, and the sheet still watches it', async () => {
@@ -314,6 +333,22 @@ test('Cancel on terminal writes cancelled only when SumUp confirms it; anything 
   assert.deepEqual(mute.updates, [])
 })
 
+test('Cancel with no paired terminal stopped nothing: SumUp not knowing the payment is not enough to cancel it', async () => {
+  const id = 'pay000000000001'
+  const store = fakeStore([payment(id)])
+  const sumup = fakeSumUp({ readers: [] })
+  assert.deepEqual(await cancelCharge({ store, sumup, id, now: START + 600_000, log: silent }), { status: 'pending' })
+  assert.deepEqual(store.updates, [])
+  assert.ok(!sumup.calls.some(call => call.startsWith('terminate')))
+})
+
+test('Cancel with the stop refused records a FAILED payment as declined, not cancelled', async () => {
+  const id = 'pay000000000001'
+  const store = fakeStore([payment(id)])
+  const sumup = fakeSumUp({ fail: { [`terminate ${READER.id}`]: new SumUpError('invalid', 400) }, transactions: { [id]: { id: 'u', status: 'FAILED' } } })
+  assert.deepEqual(await cancelCharge({ store, sumup, id, now: START + 1000, log: silent }), { status: 'declined' })
+})
+
 test('a payment the owner settled meanwhile is not written over by a cancel or a refresh', async () => {
   const id = 'pay000000000001'
   for (const run of [
@@ -378,6 +413,19 @@ test('a poll run asks about 10 payments at most, and the ones it asked wait behi
   assert.ok(second.includes('findTransaction pay000000000010') && second.includes('findTransaction pay000000000011'))
 })
 
+test('a payment that could not be checked waits behind the others next run', async () => {
+  const payments = Array.from({ length: 12 }, (_, index) => payment(`pay${String(index).padStart(12, '0')}`))
+  const store = fakeStore(payments)
+  const asked = []
+  store.getCardPayment = async (id) => { asked.push(id); throw Object.assign(new Error('PocketBase down'), { status: 0 }) }
+  const poller = createCardPoller({ store, sumup: fakeSumUp(), log: silent, now: () => START })
+  await poller.loadPending()
+  await poller.run()
+  asked.length = 0
+  await poller.run()
+  assert.ok(asked.includes('pay000000000010') && asked.includes('pay000000000011'))
+})
+
 test('while a check is stuck the poll starts no second check of the same payment', async () => {
   const store = fakeStore([payment('pay000000000001')])
   let release
@@ -423,7 +471,7 @@ test('no new check starts once a run has used its time', async () => {
   assert.equal(reads, 1)
 })
 
-test('the poll gives up on a run that takes too long, and the next run starts fresh', async () => {
+test('a poll run returns after its time limit while a stuck check goes on', async () => {
   const store = fakeStore([payment('pay000000000001')])
   let release
   store.getCardPayment = () => new Promise((resolve) => { release = resolve })

@@ -161,8 +161,10 @@ export async function unpairTerminal ({ sumup }) {
 }
 
 // POST /api/card/charge: the record (as the owner, `pending`), then the checkout on the Solo. A SumUp error
-// or no answer leaves the record `failed`; nothing is booked then. A sandbox merchant's payment is marked.
-export async function startCharge ({ input: plain, sumup, store, host, isSandbox = async () => false, newToken = randomToken, log = console }) {
+// that refuses the checkout, or a terminal known to be offline, leaves the record `failed`; no answer leaves it
+// pending unless SumUp confirms it does not know it (see below). Nothing is booked before approval. A sandbox
+// merchant's payment is marked.
+export async function startCharge ({ input: plain, sumup, store, host, isSandbox = async () => false, newToken = randomToken, now = Date.now(), log = console }) {
   const input = (await isSandbox()) ? markSandbox(plain) : plain
   let reader
   try {
@@ -189,8 +191,8 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
       throw refuse(502, isUnreachable(error) ? TERMINAL_UNREACHABLE : PAYMENT_FAILED)
     }
     // No answer (or a 5xx): the checkout may have reached the Solo. Stop it, then ask SumUp. Only SumUp's
-    // "I do not know this payment" after a successful stop fails it; anything else stays pending for the
-    // refresh, the poll and the 10-minute rule, and the sheet watches it.
+    // "I do not know this payment" after a successful stop, more than a minute after the start, fails it;
+    // anything else stays pending for the refresh, the poll and the 10-minute rule, and the sheet watches it.
     let stopped = true
     try {
       await sumup.terminate(reader.id)
@@ -201,7 +203,7 @@ export async function startCharge ({ input: plain, sumup, store, host, isSandbox
     try {
       known = !!(await sumup.findTransaction({ foreignTransactionId: record.id }))
     } catch {}
-    if (stopped && !known) {
+    if (stopped && !known && now - createdAt(record) > CANCEL_CONFIRM_MS) {
       log.info(`[card] ${record.id} failed: ${error?.message || 'SumUp error'}`)
       await store.updateCardPayment(record.id, { status: 'failed' }).catch(() => {})
       throw refuse(502, TERMINAL_UNREACHABLE)
@@ -295,9 +297,9 @@ export async function callbackMatches ({ store, id, token }) {
   return tokenMatches(token, payment.callback_token)
 }
 
-// POST /api/card/cancel: stops the checkout on the Solo. Once SumUp has taken the stop, the payment is
-// `cancelled` (or `approved`, should the card have gone through after all). When there was nothing left to
-// stop (the customer already paid or cancelled), the status stays for the poll to settle.
+// POST /api/card/cancel: stops the checkout on the Solo, then asks SumUp. Only SumUp's word settles the
+// payment: `approved` (the card went through), `cancelled` (SumUp has it as cancelled or failed, or does not
+// know it a minute after the start and the stop was accepted). Otherwise it stays pending for the poll.
 export async function cancelCharge ({ store, sumup, id, now = Date.now(), log = console }) {
   if (!RECORD_ID.test(String(id ?? ''))) throw refuse(404, 'Unknown payment')
   let payment
@@ -311,6 +313,7 @@ export async function cancelCharge ({ store, sumup, id, now = Date.now(), log = 
   try {
     const reader = await pairedReader(sumup)
     if (reader) await sumup.terminate(reader.id)
+    else stopped = false
   } catch (error) {
     if (isUnreachable(error)) throw refuse(502, TERMINAL_UNREACHABLE)
     if (!['not_found', 'invalid', 'conflict'].includes(error?.kind)) throw refuse(502, SUMUP_UNREACHABLE)
